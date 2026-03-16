@@ -10,15 +10,15 @@ from typing import Any
 
 load_dotenv()
 
-# Inicializáljuk az adatbázist induláskor
+# Initialize the database on startup
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
-        print("Adatbázis táblák létrehozva.")
+        print("Database tables created.")
     except Exception as e:
-        print(f"DB init hiba: {e}")
+        print(f"DB init error: {e}")
 
-# Seed adatok (egyszerűsített)
+# Seed data (simplified)
 def seed_db():
     db = SessionLocal()
     try:
@@ -27,9 +27,9 @@ def seed_db():
             grinder = Equipment(type="grinder", brand="Kingrinder", model="K6")
             db.add_all([machine, grinder])
             db.commit()
-            print("Alap eszközök hozzáadva.")
+            print("Basic equipment added.")
     except Exception as e:
-        print(f"Seed hiba: {e}")
+        print(f"Seed error: {e}")
     finally:
         db.close()
 
@@ -43,7 +43,7 @@ client = discord.Client(intents=intents)  # type: ignore[reportUnknownArgumentTy
 
 @client.event
 async def on_ready():
-    print(f'BaristAI Discord Bot bejelentkezve mint {client.user}')  # type: ignore[reportUnknownMemberType]
+    print(f'BaristAI Discord Bot logged in as {client.user}')  # type: ignore[reportUnknownMemberType]
 
 @client.event
 async def on_message(message):
@@ -51,67 +51,67 @@ async def on_message(message):
     if author == client.user:
         return
 
-    # Ha van attachment (kép), és az képfájl
+    # If there is an attachment (image), and it's an image file
     if message.attachments:  # type: ignore[reportUnknownMemberType]
         for attachment in message.attachments:  # type: ignore[reportUnknownMemberType]
             if attachment.content_type and attachment.content_type.startswith('image/'):  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-                # Letöltjük a képet temp fájlba
+                # Download the image to a temp file
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_file:
                     await attachment.save(temp_file.name)  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                     temp_path = temp_file.name
 
                 try:
-                    # Elemzés
+                    # Analysis
                     coffee_data = analyze_coffee_bag(temp_path)
                     if not coffee_data:
-                        await message.reply("❌ Nem sikerült kinyerni adatokat a képből. Próbáld újra egy jobb minőségű fotóval!")  # type: ignore[reportUnknownMemberType]
+                        await message.reply("❌ Failed to extract data from the image. Try again with a better quality photo!")  # type: ignore[reportUnknownMemberType]
                         return
 
-                    # RAG keresés
+                    # RAG search
                     recommendation = get_best_grind_setting(coffee_data)
 
-                    # Válasz
+                    # Response
                     coffee_info = f"☕ **{coffee_data.get('roaster', 'Unknown')} {coffee_data.get('name', 'Unknown')} {coffee_data.get('roast_date', 'Unknown')}**\n" \
                                   f"🌍 {coffee_data.get('origin', 'Unknown')} | {coffee_data.get('process', 'Unknown')} | {coffee_data.get('roast_level', 'Unknown')}"
 
-                    response = f"{coffee_info}\n\n💡 **Javaslat az adatbázisból:**\n{recommendation}\n\n👍 Ha jó volt, reagálj thumbs up-pal, hogy elmentsük ezt a beállítást!"
+                    response = f"{coffee_info}\n\n💡 **Recommendation from the database:**\n{recommendation}\n\n👍 If it was good, react with thumbs up to save this setting!"
 
                     sent_message = await message.reply(response)  # type: ignore[reportUnknownMemberType]
 
-                    # Várunk reakcióra (egyszerű visszajelzés)
+                    # Wait for reaction (simple feedback)
                     def check(reaction, user):
                         return user == author and str(reaction.emoji) == '👍' and reaction.message.id == sent_message.id  # type: ignore[comparison-overlap, reportUnknownMemberType]
 
                     try:
-                        reaction, user = await client.wait_for('reaction_add', timeout=300.0, check=check)  # 5 perc  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-                        # Ha thumbs up, kérdezzük meg a tényleges beállítást
-                        await message.reply("👍 Szuper! Mi volt a tényleges darálási beállítás, amit használtál? Válaszolj pl. '36 klikk' vagy 'fine'.")  # type: ignore[reportUnknownMemberType]
+                        reaction, user = await client.wait_for('reaction_add', timeout=300.0, check=check)  # 5 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                        # If thumbs up, ask for the actual setting
+                        await message.reply("👍 Great! What was the actual grind setting you used? Reply e.g. '36 clicks' or 'fine'.")  # type: ignore[reportUnknownMemberType]
                         
-                        # Várunk a válaszra
+                        # Wait for the response
                         def msg_check(m):
                             return m.author == user and m.channel == message.channel  # type: ignore[reportUnknownMemberType]
                         
                         try:
-                            reply = await client.wait_for('message', timeout=120.0, check=msg_check)  # 2 perc  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                            reply = await client.wait_for('message', timeout=120.0, check=msg_check)  # 2 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                             actual_grind = reply.content.strip()
                             await save_dial_in_log(coffee_data, recommendation, author.name, actual_grind)  # type: ignore[attr-defined]
-                            await message.reply(f"✅ Elmentve: '{actual_grind}' beállítás az adatbázisba!")  # type: ignore[reportUnknownMemberType]
+                            await message.reply(f"✅ Saved: '{actual_grind}' setting to the database!")  # type: ignore[reportUnknownMemberType]
                         except:
-                            # Ha nem válaszol, mentsük az alapértelmezettet
+                            # If no response, save the default
                             await save_dial_in_log(coffee_data, recommendation, author.name)  # type: ignore[attr-defined]
-                            await message.reply("⏰ Időtúllépés. Elmentettem az alapértelmezett javaslatot.")  # type: ignore[reportUnknownMemberType]
+                            await message.reply("⏰ Timeout. Saved the default recommendation.")  # type: ignore[reportUnknownMemberType]
                     except:
-                        pass  # Timeout vagy nem reagált
+                        pass  # Timeout or didn't react
 
                 finally:
-                    # Töröljük a temp fájlt
+                    # Delete the temp file
                     os.unlink(temp_path)
 
 async def save_dial_in_log(coffee_data, recommendation, user_name, actual_grind=None):
-    """Új log mentése az adatbázisba (egyszerűsített)"""
+    """Save new log to database (simplified)"""
     db = SessionLocal()  # type: ignore[reportUnknownVariableType]
     try:
-        # Keressük vagy hozzuk létre a babot
+        # Find or create the bean
         bean = db.query(Bean).filter(  # type: ignore[reportUnknownMemberType]
             Bean.name == coffee_data.get('name'),  # type: ignore[reportUnknownArgumentType]
             Bean.roaster == coffee_data.get('roaster')  # type: ignore[reportUnknownArgumentType]
@@ -128,13 +128,13 @@ async def save_dial_in_log(coffee_data, recommendation, user_name, actual_grind=
             db.commit()  # type: ignore[reportUnknownMemberType]
             db.refresh(bean)  # type: ignore[reportUnknownMemberType]
 
-        # Keressük az alapértelmezett eszközt (feltételezzük, hogy van)
+        # Find the default equipment (assume it exists)
         grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()  # type: ignore[reportUnknownMemberType]
         machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()  # type: ignore[reportUnknownMemberType]
         if not grinder or not machine:
-            return  # Nincs eszköz, nem mentjük
+            return  # No equipment, don't save
 
-        # Beállítás: ha megadták, használjuk, különben parse-oljuk
+        # Setting: if provided, use it, otherwise parse
         if actual_grind:
             grind_setting = actual_grind
         else:
@@ -147,7 +147,7 @@ async def save_dial_in_log(coffee_data, recommendation, user_name, actual_grind=
                 except:
                     pass
         
-        dose_g = 16.0  # alapértelmezett
+        dose_g = 16.0  # default
 
         log = DialInLog(  # type: ignore[reportUnknownVariableType]
             bean_id=bean.id,  # type: ignore[reportUnknownMemberType]
@@ -155,8 +155,8 @@ async def save_dial_in_log(coffee_data, recommendation, user_name, actual_grind=
             machine_id=machine.id,  # type: ignore[reportUnknownMemberType]
             grind_setting=grind_setting,
             dose_g=dose_g,
-            rating=5,  # jó visszajelzés
-            tasting_notes=f"Discord visszajelzés: {user_name} - {recommendation[:100]}..."
+            rating=5,  # good feedback
+            tasting_notes=f"Discord feedback: {user_name} - {recommendation[:100]}..."
         )
         db.add(log)  # type: ignore[reportUnknownMemberType]
         db.commit()  # type: ignore[reportUnknownMemberType]
@@ -166,6 +166,6 @@ async def save_dial_in_log(coffee_data, recommendation, user_name, actual_grind=
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if not token:
-        print("DISCORD_TOKEN nincs beállítva!")
+        print("DISCORD_TOKEN not set!")
         exit(1)
     client.run(token)

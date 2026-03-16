@@ -1,12 +1,10 @@
 from database import engine, Base
-# Fontos: be kell importálnunk a modelleket, hogy az SQLAlchemy "lássa" őket, 
-# mielőtt kiadja a táblageneráló parancsot!
+# Important: we need to import the models so that SQLAlchemy 'sees' them before issuing the table generation command!
 import models  # noqa: F401  # type: ignore[reportUnusedImport]
 
-print("Adatbázis táblák létrehozása folyamatban...")
+print("Database table creation in progress...")
 
-# Ez a parancs nézi meg a Base-ből öröklődő osztályokat (Bean, Equipment, DialInLog),
-# és létrehozza őket a Postgresben, ha még nem léteznek.
+# This command looks at the classes inheriting from Base (Bean, Equipment, DialInLog), and creates them in Postgres if they don't exist.
 Base.metadata.create_all(bind=engine)
 
-print("Sikeres inicializálás! A táblák létrejöttek a PostgreSQL-ben.")
+print("Successful initialization! The tables have been created in PostgreSQL.")

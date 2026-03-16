@@ -21,7 +21,7 @@ An AI-powered Discord bot for coffee enthusiasts. Upload a photo of your coffee 
 
 ### 1. Clone the Repository
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/galdavido/BaristAI.git
 cd BaristAI
 ```
 
@@ -76,9 +76,9 @@ This starts:
   👍 React with thumbs up to save this setting!
   ```
 - User reacts 👍
-- Bot: "👍 Szuper! Mi volt a tényleges darálási beállítás, amit használtál? Válaszolj pl. '36 klikk' vagy 'fine'."
+- Bot: "👍 Great! What was the actual grind setting you used? Reply e.g. '36 clicks' or 'fine'."
 - User replies: "38 clicks"
-- Bot: "✅ Elmentve: '38 clicks' beállítás az adatbázisba!"
+- Bot: "✅ Saved: '38 clicks' setting to the database!"
 
 ## Code Comments and Architecture
 

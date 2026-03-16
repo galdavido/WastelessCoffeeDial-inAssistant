@@ -3,30 +3,30 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime, timezone
 from database import Base
 
-# 1. Kávék táblája
+# 1. Beans table
 class Bean(Base):
     __tablename__ = "beans"
 
     id = Column(Integer, primary_key=True, index=True)
-    roaster = Column(String, index=True)  # pl. Casino Mocca
-    name = Column(String)                 # pl. Honduras Las Capucas
-    origin = Column(String)               # Származás
-    process = Column(String)              # Feldolgozás (Washed, Natural stb.)
-    roast_level = Column(String)          # Pörkölési szint
+    roaster = Column(String, index=True)  # e.g. Casino Mocca
+    name = Column(String)                 # e.g. Honduras Las Capucas
+    origin = Column(String)               # Origin
+    process = Column(String)              # Process (Washed, Natural etc.)
+    roast_level = Column(String)          # Roast level
 
-    # Visszamutató kapcsolat a logokhoz
+    # Back reference to logs
     logs = relationship("DialInLog", back_populates="bean")
 
-# 2. Eszközök táblája (Daráló és Kávégép)
+# 2. Equipment table (Grinder and Espresso Machine)
 class Equipment(Base):
     __tablename__ = "equipment"
 
     id = Column(Integer, primary_key=True, index=True)
-    type = Column(String)                 # "grinder" vagy "espresso_machine"
-    brand = Column(String)                # pl. Comandante
-    model = Column(String)                # pl. C40 MK4
+    type = Column(String)                 # "grinder" or "espresso_machine"
+    brand = Column(String)                # e.g. Comandante
+    model = Column(String)                # e.g. C40 MK4
 
-# 3. A "Shot" logok táblája (Ez köti össze a kávét és az eszközöket)
+# 3. The "Shot" logs table (This connects the coffee and equipment)
 class DialInLog(Base):
     __tablename__ = "dial_in_logs"
 
@@ -35,15 +35,15 @@ class DialInLog(Base):
     grinder_id = Column(Integer, ForeignKey("equipment.id"))
     machine_id = Column(Integer, ForeignKey("equipment.id"))
     
-    grind_setting = Column(String)        # pl. "14 clicks"
-    dose_g: Mapped[float] = mapped_column(Float)                # Bemenő súly
-    yield_g: Mapped[float] = mapped_column(Float)               # Kijövő súly
-    time_s = Column(Integer)              # Lefolyási idő
-    rating = Column(Integer)              # Értékelés 1-5
-    tasting_notes = Column(Text, nullable=True) # Szöveges értékelés
+    grind_setting = Column(String)        # e.g. "14 clicks"
+    dose_g: Mapped[float] = mapped_column(Float)                # Input weight
+    yield_g: Mapped[float] = mapped_column(Float)               # Output weight
+    time_s = Column(Integer)              # Extraction time
+    rating = Column(Integer)              # Rating 1-5
+    tasting_notes = Column(Text, nullable=True) # Textual evaluation
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    # Ezek a sorok mondják meg a Pythonnak, hogy a ForeignKey ID-k mikhez tartoznak
+    # These lines tell Python what the ForeignKey IDs belong to
     bean = relationship("Bean", back_populates="logs")
     grinder = relationship("Equipment", foreign_keys=[grinder_id])
     machine = relationship("Equipment", foreign_keys=[machine_id])

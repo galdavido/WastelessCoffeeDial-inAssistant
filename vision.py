@@ -3,13 +3,13 @@ from PIL import Image
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-# Az ÚJ Google SDK importjai
+# The NEW Google SDK imports
 from google import genai
 from google.genai import types
 
 load_dotenv()
 
-# 1. Definiáljuk a Pydantic modellt (Az adatstruktúra, amit az AI-tól várunk)
+# 1. Define the Pydantic model (The data structure we expect from the AI)
 class CoffeeData(BaseModel):
     roaster: str | None
     name: str | None
@@ -19,42 +19,42 @@ class CoffeeData(BaseModel):
     roast_date: str | None
 
 def analyze_coffee_bag(image_path: str):
-    print(f"Kép elemzése folyamatban az új GenAI SDK-val: {image_path}...")
+    print(f"Image analysis in progress with the new GenAI SDK: {image_path}...")
     
     try:
         img = Image.open(image_path)
     except FileNotFoundError:
-        print(f"Hiba: A '{image_path}' fájl nem található a mappában!")
+        print(f"Error: The '{image_path}' file is not found in the folder!")
         return None
 
-    # Kliens inicializálása (Automatikusan behúzza a GEMINI_API_KEY-t a .env fájlból)
+    # Client initialization (Automatically pulls GEMINI_API_KEY from .env file)
     client = genai.Client()
     
-    # Mivel kikényszerítjük a sémát, a prompt lehet nagyon egyszerű
+    # Since we enforce the schema, the prompt can be very simple
     prompt = "You are an expert barista. Analyze this coffee bag packaging and extract the specific details."
 
     try:
-        # Hívás a Gemini modellhez, KIKÉNYSZERÍTETT JSON sémával
+        # Call to Gemini model, with ENFORCED JSON schema
         response = client.models.generate_content(
-            model='gemini-2.5-flash', # A legújabb, képelemzésre is kiváló modell
+            model='gemini-2.5-flash', # The latest model, excellent for image analysis too
             contents=[prompt, img],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=CoffeeData,
-                temperature=0.1, # Alacsony érték: tényeket akarunk, nem hallucinációt
+                temperature=0.1, # Low value: we want facts, not hallucinations
             ),
         )
 
         client.close()
 
-        # A válasz (response.text) most már garantáltan a fenti Pydantic sémának megfelelő JSON
+        # The response (response.text) is now guaranteed to be JSON matching the above Pydantic schema
         text = response.text
         if text is None:
             return None
         return json.loads(text)
         
     except Exception as e:
-        print(f"Hiba történt az API hívás során: {e}")
+        print(f"Error occurred during API call: {e}")
         client.close()
         return None
     
@@ -63,5 +63,5 @@ if __name__ == "__main__":
     result = analyze_coffee_bag(test_image)
     
     if result:
-        print("\n🎉 SIKERES KINYERÉS! Eredmény:")
+        print("\n🎉 SUCCESSFUL EXTRACTION! Result:")
         print(json.dumps(result, indent=4, ensure_ascii=False))

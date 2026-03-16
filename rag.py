@@ -6,7 +6,7 @@ from google import genai
 
 def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
     """
-    Kikeresi a saját adatokat, majd meghívja az LLM-et, hogy szintetizálja a végső javaslatot.
+    Retrieves own data, then calls the LLM to synthesize the final recommendation.
     """
     db = SessionLocal()
     try:
@@ -16,9 +16,9 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         name = str(coffee_json.get("name", ""))
         roast_date = str(coffee_json.get("roast_date", ""))
         
-        print(f"\n🔍 2/A. Keresés a saját Postgres adatbázisban ({origin}, {process})...")
+        print(f"\n🔍 2/A. Searching in own Postgres database ({origin}, {process})...")
 
-        # 1. RETRIEVAL: Adatbázis lekérdezés
+        # 1. RETRIEVAL: Database query
         similar_logs = (
             db.query(DialInLog, Bean, Equipment)
             .join(Bean, DialInLog.bean_id == Bean.id)
@@ -30,45 +30,45 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
             .all()
         )
 
-        # 2. KONTEXTUS ÉPÍTÉSE AZ LLM-NEK
+        # 2. BUILDING CONTEXT FOR THE LLM
         db_context = ""
         if not similar_logs:
-            db_context = "A felhasználó adatbázisa üres ehhez a kávéprofilhoz. Nincs korábbi tapasztalat."
+            db_context = "The user's database is empty for this coffee profile. No previous experience."
         else:
-            db_context = "A felhasználó korábbi SIKERES beállításai hasonló kávékhoz:\n"
+            db_context = "The user's previous SUCCESSFUL settings for similar coffees:\n"
             for log, bean, grinder in similar_logs:
-                db_context += f"- Kávé: {bean.name} ({bean.origin}, {bean.process})\n"
-                db_context += f"  Eszköz: {grinder.brand} {grinder.model}\n"
-                db_context += f"  Beállítás: {log.grind_setting} klikk, Dózis: {log.dose_g}g\n"
-                db_context += f"  Jegyzet: {log.tasting_notes}\n\n"
+                db_context += f"- Coffee: {bean.name} ({bean.origin}, {bean.process})\n"
+                db_context += f"  Equipment: {grinder.brand} {grinder.model}\n"
+                db_context += f"  Setting: {log.grind_setting} clicks, Dose: {log.dose_g}g\n"
+                db_context += f"  Notes: {log.tasting_notes}\n\n"
 
-        # 3. GENERATION: LLM hívás a szintézishez
-        print("🧠 2/B. LLM Barista hívása az adatok kiegészítésére...")
+        # 3. GENERATION: LLM call for synthesis
+        print("🧠 2/B. Calling LLM Barista to supplement the data...")
         
         client = genai.Client()
         
-        # A "System Prompt", ami irányítja az AI viselkedését
+        # The "System Prompt" that guides the AI's behavior
         prompt = f"""
-        Te egy profi Head Barista vagy. A felhasználó egy új kávét szeretne beállítani:
-        - Név: {name}
-        - Származás: {origin}
-        - Feldolgozás: {process}
-        - Pörkölés: {roast_level}, {roast_date}
+        You are a professional Head Barista. The user wants to dial in a new coffee:
+        - Name: {name}
+        - Origin: {origin}
+        - Process: {process}
+        - Roast: {roast_level}, {roast_date}
         
-        A felhasználó felszerelése: AVX Hero Plus 2024 (eszpresszó gép) és Kingrinder K6 (kézi őrlő).
+        The user's equipment: AVX Hero Plus 2024 (espresso machine) and Kingrinder K6 (manual grinder).
         
-        Itt vannak a felhasználó saját, múltbeli adatai a naplójából (RAG Database Context):
+        Here are the user's own past data from their log (RAG Database Context):
         ---
         {db_context}
         ---
         
-        FELADATOD:
-        Adj egy konkrét, gyakorlatias induló receptet (Dózis, Kingrinder K6 klikk, Hőmérséklet)!
+        YOUR TASK:
+        Give a specific, practical starting recipe (Dose, Kingrinder K6 clicks, Temperature)!
         
-        SZABÁLYOK:
-        1. Ha a "RAG Database Context" tartalmaz adatot a Kingrinder K6-ra, akkor ELSŐSORBAN azokra a klikk értékekre támaszkodj!
-        2. Ha a kontextus üres, használd a saját általános barista tudásodat! (Tipp: A Kingrinder K6-on az eszpresszó tartomány általában 30 és 45 klikk között van, pörköléstől függően. Világos pörkölés finomabb, sötét durvább).
-        3. Fogalmazz röviden, barátságosan, magyar nyelven.
+        RULES:
+        1. If the "RAG Database Context" contains data for the Kingrinder K6, then PRIMARILY rely on those click values!
+        2. If the context is empty, use your own general barista knowledge! (Tip: On the Kingrinder K6, the espresso range is generally between 30 and 45 clicks, depending on roast. Light roast finer, dark coarser).
+        3. Formulate briefly, friendly, in English.
         """
 
         response = client.models.generate_content(
@@ -78,18 +78,18 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         
         client.close()
 
-        return response.text or "Hiba: Üres válasz érkezett az AI Baristától."
+        return response.text or "Error: Empty response received from AI Barista."
 
     except Exception as e:
-        return f"Hiba történt az LLM augmentáció során: {e}"
+        return f"Error occurred during LLM augmentation: {e}"
     finally:
         db.close()
 
 if __name__ == "__main__":
-    # Teszt futtatás
+    # Test run
     test_json: Dict[str, Any] = {
-        "roaster": "Minta",
-        "name": "Ismeretlen Kolumbiai",
+        "roaster": "Sample",
+        "name": "Unknown Colombian",
         "origin": "Colombia",
         "process": "Anaerobic",
         "roast_level": "Light"

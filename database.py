@@ -3,19 +3,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 
-# Betöltjük a .env fájlban lévő változókat
+# Load the variables from the .env file
 load_dotenv()
 
-# Lekérjük a kapcsolati URL-t a környezeti változókból
+# Get the connection URL from environment variables
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 if SQLALCHEMY_DATABASE_URL is None:
     raise RuntimeError("DATABASE_URL is not set")
 
-# Létrehozzuk az engine-t (ez a motor, ami fizikailag kommunikál a Postgres-szel)
+# Create the engine (this is the engine that physically communicates with Postgres)
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
-# Létrehozunk egy Session osztályt, amivel majd adatokat tudunk írni/olvasni
+# Create a Session class with which we can write/read data
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Ez az az alaposztály, amiből majd a mi tábláink (Beans, Equipment) öröklődnek
+# This is the base class from which our tables (Beans, Equipment) will inherit
 Base = declarative_base()
