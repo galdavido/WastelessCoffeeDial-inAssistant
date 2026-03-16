@@ -35,9 +35,9 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()
         equipment_info = ""
         if grinder and machine:
-            equipment_info = f"{machine.brand} {machine.model} (espresso machine) and {grinder.brand} {grinder.model} (manual grinder)."
+            equipment_info = f"{machine.brand} {machine.model} (espresso machine) and {grinder.brand} {grinder.model} (grinder)."
         elif grinder:
-            equipment_info = f"Unknown espresso machine and {grinder.brand} {grinder.model} (manual grinder)."
+            equipment_info = f"Unknown espresso machine and {grinder.brand} {grinder.model} (grinder)."
         elif machine:
             equipment_info = f"{machine.brand} {machine.model} (espresso machine) and unknown grinder."
         else:
@@ -49,9 +49,10 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
             db_context = "The user's database is empty for this coffee profile. No previous experience."
         else:
             db_context = "The user's previous SUCCESSFUL settings for similar coffees:\n"
-            for log, bean, grinder in similar_logs:
+            for log, bean, grinder, machine in similar_logs:
                 db_context += f"- Coffee: {bean.name} ({bean.origin}, {bean.process})\n"
-                db_context += f"  Equipment: {grinder.brand} {grinder.model}\n"
+                db_context += f"  Grinder: {grinder.brand} {grinder.model}\n"
+                db_context += f"  Machine: {machine.brand} {machine.model}\n"
                 db_context += f"  Setting: {log.grind_setting} clicks, Dose: {log.dose_g}g\n"
                 db_context += f"  Notes: {log.tasting_notes}\n\n"
 
