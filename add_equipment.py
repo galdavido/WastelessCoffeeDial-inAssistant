@@ -1,4 +1,4 @@
-# import os
+from typing import cast
 from typing import Optional, List, Dict, Any
 from database import SessionLocal
 from models import ScrapedEquipment
@@ -59,7 +59,10 @@ def add_url_to_database(url: str) -> None:
     
     # Extract features list safely
     raw_features: Any = equipment_data.get('key_features')
-    features_list: List[str] = raw_features if isinstance(raw_features, list) else []
+    if isinstance(raw_features, list):
+        features_list: List[str] = [str(item) for item in cast(List[Any], raw_features)]
+    else:
+        features_list = []
     features_str: str = ", ".join([str(f) for f in features_list])
     
     # Build the contextual sentence for the AI to embed

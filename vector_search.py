@@ -52,7 +52,7 @@ def search_equipment(query: str, limit: int = 3) -> str:
         # but this is the standard and correct way to use pgvector's cosine_distance.
         results = (
             db.query(ScrapedEquipment)
-            .order_by(ScrapedEquipment.embedding.cosine_distance(query_vector))
+            .order_by(ScrapedEquipment.embedding.cosine_distance(query_vector))  # type: ignore
             .limit(limit)
             .all()
         )
