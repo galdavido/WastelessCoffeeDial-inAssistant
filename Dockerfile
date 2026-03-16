@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Ne futtassuk az init_db.py-t build időben, mert a DB még nem fut
+# Helyette egy entrypoint script fogja kezelni
+
+CMD ["python", "discord_bot.py"]
