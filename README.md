@@ -90,6 +90,37 @@ Before using the bot, set your espresso equipment so recommendations are tailore
 
 The bot will use this information to provide personalized grind recommendations based on your equipment.
 
+## Scraping Equipment Data
+
+To expand your equipment database with data scraped from online stores:
+
+### Single URL
+```bash
+python add_equipment.py
+```
+This will scrape the hard-coded test URL and add it to your database.
+
+### Multiple URLs from Code
+Modify the `test_urls` list in `add_equipment.py` and run:
+```bash
+python add_equipment.py
+```
+
+### Multiple URLs from File
+Create a `urls.txt` file with one URL per line:
+```
+# URLs to scrape for coffee equipment data
+https://example.com/grinder1
+https://example.com/machine1
+```
+
+Then run:
+```bash
+python add_equipment.py urls.txt
+```
+
+The scraper uses Google Gemini AI to extract structured data (brand, model, features) from product pages and stores them with vector embeddings for the RAG system.
+
 ## Code Comments and Architecture
 
 ### Key Files

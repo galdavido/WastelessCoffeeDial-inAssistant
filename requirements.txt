@@ -8,3 +8,4 @@ google-genai
 discord.py
 mcp
 pillow
+pgvector

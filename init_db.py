@@ -1,10 +1,16 @@
 from database import engine, Base
-# Important: we need to import the models so that SQLAlchemy 'sees' them before issuing the table generation command!
-import models  # noqa: F401  # type: ignore[reportUnusedImport]
+from sqlalchemy import text  # This is needed to run raw SQL commands
+import models  # noqa: F401  # Import to register models 
 
-print("Database table creation in progress...")
+print("Checking extensions and creating database tables in progress...")
 
-# This command looks at the classes inheriting from Base (Bean, Equipment, DialInLog), and creates them in Postgres if they don't exist.
+# 1. Enable the pgvector extension in the database
+with engine.connect() as conn:
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    conn.commit()
+    print("✅ pgvector extension activated!")
+
+# 2. Create tables based on the models (now it knows the Vector type too)
 Base.metadata.create_all(bind=engine)
 
-print("Successful initialization! The tables have been created in PostgreSQL.")
+print("🎉 Successful initialization! All tables created in PostgreSQL.")

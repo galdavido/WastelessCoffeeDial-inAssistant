@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKe
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime, timezone
 from database import Base
+from pgvector.sqlalchemy import Vector  # type: ignore
 
 # 1. Beans table
 class Bean(Base):
@@ -47,3 +48,22 @@ class DialInLog(Base):
     bean = relationship("Bean", back_populates="logs")
     grinder = relationship("Equipment", foreign_keys=[grinder_id])
     machine = relationship("Equipment", foreign_keys=[machine_id])
+
+# 4. Equipment scraped from the web (Vector database table)
+class ScrapedEquipment(Base):
+    __tablename__ = "scraped_equipment"
+
+    id = Column(Integer, primary_key=True, index=True)
+    brand = Column(String)
+    model = Column(String)
+    equipment_type = Column(String)  # grinder or espresso_machine
+    burr_size_mm = Column(Integer, nullable=True)
+    burr_type = Column(String, nullable=True)
+    boiler_type = Column(String, nullable=True)
+    
+    # Here we save the properties extracted by AI as a single text
+    features_text = Column(Text)
+    
+    # THIS IS THE ESSENCE! Here come the mathematical vectors. 
+    # The Gemini embedding model (text-embedding-004) returns exactly 768-dimensional numbers.
+    embedding = Column(Vector(768))  # type: ignore

@@ -1,0 +1,9 @@
+# URLs to scrape for coffee equipment data
+# One URL per line, comments start with #
+
+# Example grinder URLs
+https://www.avxcafe.hu/nb64v-single-dose-red-burrs-mp-kaveorlo-fekete-brazil-fazenda-da-lagoa-specialty-84p-porkolt-kave-1000g-ks
+
+# Add more URLs here...
+# https://example.com/grinder2
+# https://example.com/espresso-machine1
