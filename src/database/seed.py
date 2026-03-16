@@ -1,5 +1,5 @@
-from database import SessionLocal
-from models import Equipment, Bean, DialInLog
+from .database import SessionLocal
+from .models import Equipment, Bean, DialInLog
 
 def seed_data():
     # Open a session to the database

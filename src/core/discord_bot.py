@@ -1,10 +1,10 @@
 import discord
 import os
 import tempfile
-from vision import analyze_coffee_bag
-from rag import get_best_grind_setting
-from database import SessionLocal, engine, Base
-from models import Bean, Equipment, DialInLog
+from ..ai.vision import analyze_coffee_bag
+from ..ai.rag import get_best_grind_setting
+from ..database.database import SessionLocal, engine, Base
+from ..database.models import Bean, Equipment, DialInLog
 from dotenv import load_dotenv
 from typing import Any, Dict
 

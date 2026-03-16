@@ -1,9 +1,9 @@
 from typing import cast
 from typing import Optional, List, Dict, Any
-from database import SessionLocal
-from models import ScrapedEquipment
+from ..database.database import SessionLocal
+from ..database.models import ScrapedEquipment
 from google import genai
-from scraper import scrape_equipment_data
+from .scraper import scrape_equipment_data
 from dotenv import load_dotenv
 from google.genai import types
 

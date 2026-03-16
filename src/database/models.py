@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime, timezone
-from database import Base
+from .database import Base
 from pgvector.sqlalchemy import Vector  # type: ignore
 
 # 1. Beans table

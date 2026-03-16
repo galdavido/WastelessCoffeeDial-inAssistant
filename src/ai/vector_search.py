@@ -1,7 +1,7 @@
 # import os
 from typing import List, Optional
-from database import SessionLocal
-from models import ScrapedEquipment
+from ..database.database import SessionLocal
+from ..database.models import ScrapedEquipment
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv

@@ -1,6 +1,6 @@
 from typing import List, cast
-from database import SessionLocal
-from models import ScrapedEquipment
+from .database import SessionLocal
+from .models import ScrapedEquipment
 from dotenv import load_dotenv
 
 # Load environment variables

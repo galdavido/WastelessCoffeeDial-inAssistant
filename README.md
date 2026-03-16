@@ -13,13 +13,35 @@ An AI-powered Discord bot and MCP server for coffee enthusiasts. Upload a photo 
 - **MCP Server**: Integrate with AI agents (like Claude) for coffee dial-in assistance.
 - **Docker Ready**: Fully containerized for easy deployment on Linux servers.
 
-## Prerequisites
+## Project Structure
 
-- Python 3.11+
-- Docker and Docker Compose
-- A Discord account and server
-- Google Gemini API key
-- PostgreSQL with pgvector extension (handled via Docker)
+```
+baristai/
+├── src/                    # Source code
+│   ├── core/              # Main applications
+│   │   ├── discord_bot.py # Discord bot
+│   │   ├── mcp_server.py # MCP server for AI agents
+│   │   └── main.py        # CLI interface
+│   ├── ai/                # AI/ML functionality
+│   │   ├── vision.py      # Image analysis
+│   │   ├── rag.py         # RAG recommendations
+│   │   └── vector_search.py # Vector search
+│   ├── database/          # Database models and utilities
+│   │   ├── database.py    # DB connection
+│   │   ├── models.py      # SQLAlchemy models
+│   │   ├── init_db.py     # DB initialization
+│   │   ├── seed.py        # Sample data
+│   │   └── view_db.py     # DB viewer
+│   └── scraping/          # Web scraping tools
+│       ├── scraper.py     # Scraping logic
+│       └── add_equipment.py # Equipment processing
+├── config/                # Configuration files
+├── data/                  # Data files (URLs, test images)
+├── Dockerfile             # Docker build
+├── docker-compose.yml     # Docker services
+├── requirements.txt       # Python dependencies
+└── README.md             # This file
+```
 
 ## Setup
 
@@ -134,17 +156,18 @@ Or integrate the `search_equipment()` function into your applications for AI-pow
 ## Code Comments and Architecture
 
 ### Key Files
-- **`discord_bot.py`**: Main bot logic using `discord.py`. Handles events like `on_ready` and `on_message`. Processes attachments, calls vision/RAG modules, and manages reactions.
-- **`vision.py`**: Uses Google GenAI to analyze images and extract structured coffee data via Pydantic schema.
-- **`rag.py`**: Retrieval-Augmented Generation – queries the DB for similar coffees and formats recommendations.
-- **`vector_search.py`**: Semantic search for equipment using pgvector and cosine similarity.
-- **`scraper.py`**: Web scraping utility that extracts equipment data from online stores using AI.
-- **`add_equipment.py`**: Processes scraped data, generates embeddings, and saves to the vector database.
-- **`mcp_server.py`**: MCP server for AI agent integration, exposing coffee analysis tools.
-- **`models.py`**: SQLAlchemy ORM models for `Bean`, `Equipment`, `DialInLog`, and `ScrapedEquipment`.
-- **`database.py`**: DB connection setup with SQLAlchemy and pgvector support.
-- **`init_db.py` / `seed.py`**: Initialize tables and populate sample data.
-- **`view_db.py`**: Utility to display database contents and vector previews.
+- **`src/core/discord_bot.py`**: Main Discord bot logic using `discord.py`. Handles events like `on_ready` and `on_message`. Processes attachments, calls vision/RAG modules, and manages reactions.
+- **`src/core/mcp_server.py`**: MCP server for AI agent integration, exposing coffee analysis tools.
+- **`src/core/main.py`**: Command-line interface for testing coffee bag analysis.
+- **`src/ai/vision.py`**: Uses Google GenAI to analyze images and extract structured coffee data via Pydantic schema.
+- **`src/ai/rag.py`**: Retrieval-Augmented Generation – queries the DB for similar coffees and formats recommendations.
+- **`src/ai/vector_search.py`**: Semantic search for equipment using pgvector and cosine similarity.
+- **`src/scraping/scraper.py`**: Web scraping utility that extracts equipment data from online stores using AI.
+- **`src/scraping/add_equipment.py`**: Processes scraped data, generates embeddings, and saves to the vector database.
+- **`src/database/models.py`**: SQLAlchemy ORM models for `Bean`, `Equipment`, `DialInLog`, and `ScrapedEquipment`.
+- **`src/database/database.py`**: DB connection setup with SQLAlchemy and pgvector support.
+- **`src/database/init_db.py` / `src/database/seed.py`**: Initialize tables and populate sample data.
+- **`src/database/view_db.py`**: Utility to display database contents and vector previews.
 
 ### Bot Flow
 1. **Message Received**: Check for image attachments.
@@ -180,11 +203,13 @@ The MCP server exposes BaristAI's capabilities to AI agents:
 ## Development
 
 - Install dependencies: `pip install -r requirements.txt`
-- Run locally: `python discord_bot.py` (after setting up DB)
-- Test vision: `python main.py test_bag.jpg`
-- Test vector search: `python vector_search.py`
-- Test scraping: `python scraper.py`
-- View database: `python view_db.py`
+- Set Python path: `export PYTHONPATH=src:$PYTHONPATH` (or `set PYTHONPATH=src;%PYTHONPATH%` on Windows)
+- Run Discord bot locally: `python src/core/discord_bot.py` (after setting up DB)
+- Run MCP server: `python src/core/mcp_server.py`
+- Test vision: `python src/core/main.py data/test_bag.jpg`
+- Test vector search: `python src/ai/vector_search.py`
+- Test scraping: `python src/scraping/scraper.py`
+- View database: `python src/database/view_db.py`
 
 ## License
 
