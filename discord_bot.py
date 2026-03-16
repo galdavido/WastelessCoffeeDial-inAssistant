@@ -6,7 +6,7 @@ from rag import get_best_grind_setting
 from database import SessionLocal, engine, Base
 from models import Bean, Equipment, DialInLog
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, Dict
 
 load_dotenv()
 
@@ -33,7 +33,7 @@ def seed_db():
     finally:
         db.close()
 
-# Futtassuk az init-et
+# Run the init
 init_db()
 seed_db()
 
@@ -45,15 +45,71 @@ client = discord.Client(intents=intents)  # type: ignore[reportUnknownArgumentTy
 async def on_ready():
     print(f'BaristAI Discord Bot logged in as {client.user}')  # type: ignore[reportUnknownMemberType]
 
+async def save_dial_in_log(coffee_data: Dict[str, Any], recommendation: str, user_name: str, actual_grind: str | None = None):
+    """Save new log to database (simplified)"""
+    db = SessionLocal()  # type: ignore[reportUnknownVariableType]
+    try:
+        # Find or create the bean
+        bean = db.query(Bean).filter(  # type: ignore[reportUnknownMemberType]
+            Bean.name == coffee_data.get('name'),  # type: ignore[reportUnknownArgumentType]
+            Bean.roaster == coffee_data.get('roaster')  # type: ignore[reportUnknownArgumentType]
+        ).first()  # type: ignore[reportUnknownMemberType]
+        if not bean:
+            bean = Bean(  # type: ignore[reportUnknownVariableType]
+                roaster=coffee_data.get('roaster', 'Unknown'),
+                name=coffee_data.get('name', 'Unknown'),
+                origin=coffee_data.get('origin', 'Unknown'),
+                process=coffee_data.get('process', 'Unknown'),
+                roast_level=coffee_data.get('roast_level', 'Unknown')
+            )
+            db.add(bean)  # type: ignore[reportUnknownMemberType]
+            db.commit()  # type: ignore[reportUnknownMemberType]
+            db.refresh(bean)  # type: ignore[reportUnknownMemberType]
+
+        # Find the default equipment (assume it exists)
+        grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()  # type: ignore[reportUnknownMemberType]
+        machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()  # type: ignore[reportUnknownMemberType]
+        if not grinder or not machine:
+            return  # No equipment, don't save
+
+        # Setting: if provided, use it, otherwise parse
+        if actual_grind:
+            grind_setting = actual_grind
+        else:
+            grind_setting = "Unknown"
+            if "Suggested Grind Setting:" in recommendation:
+                try:
+                    start = recommendation.find("Suggested Grind Setting:") + len("Suggested Grind Setting:")
+                    end = recommendation.find("\n", start)
+                    grind_setting = recommendation[start:end].strip()
+                except Exception:
+                    pass
+        
+        dose_g = 16.0  # default
+
+        log = DialInLog(  # type: ignore[reportUnknownVariableType]
+            bean_id=bean.id,  # type: ignore[reportUnknownMemberType]
+            grinder_id=grinder.id,  # type: ignore[reportUnknownMemberType]
+            machine_id=machine.id,  # type: ignore[reportUnknownMemberType]
+            grind_setting=grind_setting,
+            dose_g=dose_g,
+            rating=5,  # good feedback
+            tasting_notes=f"Discord feedback: {user_name} - {recommendation[:100]}..."
+        )
+        db.add(log)  # type: ignore[reportUnknownMemberType]
+        db.commit()  # type: ignore[reportUnknownMemberType]
+    finally:
+        db.close()  # type: ignore[reportUnknownMemberType]
+
 @client.event
-async def on_message(message):
+async def on_message(message: Any):
     author: Any = message.author  # type: ignore[assignment]
     if author == client.user:
         return
 
     # Handle equipment setting commands
-    if message.content.startswith("!set_grinder "):
-        parts = message.content.split(" ", 2)
+    if message.content.startswith("!set_grinder "):  # type: ignore[attr-defined]
+        parts = message.content.split(" ", 2)  # type: ignore[attr-defined]
         if len(parts) >= 3:
             brand = parts[1]
             model = " ".join(parts[2:])  # In case model has spaces
@@ -62,7 +118,7 @@ async def on_message(message):
                 grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()
                 if grinder:
                     grinder.brand = brand
-                    grinder.model = model
+                    grinder.model = model  # type: ignore[assignment]
                 else:
                     grinder = Equipment(type="grinder", brand=brand, model=model)
                     db.add(grinder)
@@ -76,8 +132,8 @@ async def on_message(message):
             await message.reply("❌ Usage: !set_grinder <brand> <model>")  # type: ignore[reportUnknownMemberType]
         return
 
-    if message.content.startswith("!set_machine "):
-        parts = message.content.split(" ", 2)
+    if message.content.startswith("!set_machine "):  # type: ignore[attr-defined]
+        parts = message.content.split(" ", 2)  # type: ignore[attr-defined]
         if len(parts) >= 3:
             brand = parts[1]
             model = " ".join(parts[2:])
@@ -86,7 +142,7 @@ async def on_message(message):
                 machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()
                 if machine:
                     machine.brand = brand
-                    machine.model = model
+                    machine.model = model  # type: ignore[assignment]
                 else:
                     machine = Equipment(type="espresso_machine", brand=brand, model=model)
                     db.add(machine)
@@ -100,7 +156,7 @@ async def on_message(message):
             await message.reply("❌ Usage: !set_machine <brand> <model>")  # type: ignore[reportUnknownMemberType]
         return
 
-    if message.content == "!show_equipment":
+    if message.content == "!show_equipment":  # type: ignore[attr-defined]
         db = SessionLocal()
         try:
             grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()
@@ -142,8 +198,8 @@ async def on_message(message):
                     sent_message = await message.reply(response)  # type: ignore[reportUnknownMemberType]
 
                     # Wait for reaction (simple feedback)
-                    def check(reaction, user):
-                        return user == author and str(reaction.emoji) == '👍' and reaction.message.id == sent_message.id  # type: ignore[comparison-overlap, reportUnknownMemberType]
+                    def check(reaction: Any, user: Any) -> bool:
+                        return user == author and str(reaction.emoji) == '👍' and reaction.message.id == sent_message.id  # type: ignore[reportUnknownMemberType]
 
                     try:
                         reaction, user = await client.wait_for('reaction_add', timeout=300.0, check=check)  # 5 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
@@ -151,80 +207,24 @@ async def on_message(message):
                         await message.reply("👍 Great! What was the actual grind setting you used? Reply e.g. '36 clicks' or 'fine'.")  # type: ignore[reportUnknownMemberType]
                         
                         # Wait for the response
-                        def msg_check(m):
+                        def msg_check(m: Any) -> bool:
                             return m.author == user and m.channel == message.channel  # type: ignore[reportUnknownMemberType]
                         
                         try:
                             reply = await client.wait_for('message', timeout=120.0, check=msg_check)  # 2 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                             actual_grind = reply.content.strip()
-                            await save_dial_in_log(coffee_data, recommendation, author.name, actual_grind)  # type: ignore[attr-defined]
+                            await save_dial_in_log(coffee_data, recommendation, author.name, actual_grind)  # type: ignore[arg-type]
                             await message.reply(f"✅ Saved: '{actual_grind}' setting to the database!")  # type: ignore[reportUnknownMemberType]
-                        except:
+                        except Exception:
                             # If no response, save the default
-                            await save_dial_in_log(coffee_data, recommendation, author.name)  # type: ignore[attr-defined]
+                            await save_dial_in_log(coffee_data, recommendation, author.name)  # type: ignore[arg-type]
                             await message.reply("⏰ Timeout. Saved the default recommendation.")  # type: ignore[reportUnknownMemberType]
-                    except:
+                    except Exception:
                         pass  # Timeout or didn't react
 
                 finally:
                     # Delete the temp file
                     os.unlink(temp_path)
-
-async def save_dial_in_log(coffee_data, recommendation, user_name, actual_grind=None):
-    """Save new log to database (simplified)"""
-    db = SessionLocal()  # type: ignore[reportUnknownVariableType]
-    try:
-        # Find or create the bean
-        bean = db.query(Bean).filter(  # type: ignore[reportUnknownMemberType]
-            Bean.name == coffee_data.get('name'),  # type: ignore[reportUnknownArgumentType]
-            Bean.roaster == coffee_data.get('roaster')  # type: ignore[reportUnknownArgumentType]
-        ).first()  # type: ignore[reportUnknownMemberType]
-        if not bean:
-            bean = Bean(  # type: ignore[reportUnknownVariableType]
-                roaster=coffee_data.get('roaster', 'Unknown'),
-                name=coffee_data.get('name', 'Unknown'),
-                origin=coffee_data.get('origin', 'Unknown'),
-                process=coffee_data.get('process', 'Unknown'),
-                roast_level=coffee_data.get('roast_level', 'Unknown')
-            )
-            db.add(bean)  # type: ignore[reportUnknownMemberType]
-            db.commit()  # type: ignore[reportUnknownMemberType]
-            db.refresh(bean)  # type: ignore[reportUnknownMemberType]
-
-        # Find the default equipment (assume it exists)
-        grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()  # type: ignore[reportUnknownMemberType]
-        machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()  # type: ignore[reportUnknownMemberType]
-        if not grinder or not machine:
-            return  # No equipment, don't save
-
-        # Setting: if provided, use it, otherwise parse
-        if actual_grind:
-            grind_setting = actual_grind
-        else:
-            grind_setting = "Unknown"
-            if "Suggested Grind Setting:" in recommendation:
-                try:
-                    start = recommendation.find("Suggested Grind Setting:") + len("Suggested Grind Setting:")
-                    end = recommendation.find("\n", start)
-                    grind_setting = recommendation[start:end].strip()
-                except:
-                    pass
-        
-        dose_g = 16.0  # default
-
-        log = DialInLog(  # type: ignore[reportUnknownVariableType]
-            bean_id=bean.id,  # type: ignore[reportUnknownMemberType]
-            grinder_id=grinder.id,  # type: ignore[reportUnknownMemberType]
-            machine_id=machine.id,  # type: ignore[reportUnknownMemberType]
-            grind_setting=grind_setting,
-            dose_g=dose_g,
-            rating=5,  # good feedback
-            tasting_notes=f"Discord feedback: {user_name} - {recommendation[:100]}..."
-        )
-        db.add(log)  # type: ignore[reportUnknownMemberType]
-        db.commit()  # type: ignore[reportUnknownMemberType]
-    finally:
-        db.close()  # type: ignore[reportUnknownMemberType]
 
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
