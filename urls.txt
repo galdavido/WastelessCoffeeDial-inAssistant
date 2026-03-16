@@ -2,8 +2,56 @@
 # One URL per line, comments start with #
 
 # Example grinder URLs
-https://www.avxcafe.hu/nb64v-single-dose-red-burrs-mp-kaveorlo-fekete-brazil-fazenda-da-lagoa-specialty-84p-porkolt-kave-1000g-ks
+#https://www.avxcafe.hu/nb64v-single-dose-red-burrs-mp-kaveorlo-fekete-brazil-fazenda-da-lagoa-specialty-84p-porkolt-kave-1000g-ks
 
 # Add more URLs here...
-# https://example.com/grinder2
-# https://example.com/espresso-machine1
+https://international.lamarzocco.com/en/machine/linea-classic-s/
+https://international.lamarzocco.com/en/machine/strada-av/
+https://international.lamarzocco.com/en/machine/kb90/
+https://lamarzoccousa.com/home/products/espresso-machines/linea-micra/
+https://lamarzoccousa.com/home/products/espresso-machines/linea-mini/
+https://lamarzoccousa.com/home/products/espresso-machines/gs3/
+https://slayerespresso.com/product/slayer-espresso-single-group/
+https://slayerespresso.com/product/slayer-steam-ep/
+https://www.victoriaarduino.com/blackeagle/
+https://www.victoriaarduino.com/eagleone/
+https://www.victoriaarduino.com/mythos/
+https://simonelliusa.com/products/aurelia-wave-volumetric.asp
+https://simonelliusa.com/products/appia-life-volumetric.asp
+https://www.keesvanderwesten.com/spirit/
+https://www.keesvanderwesten.com/speedster/
+https://www.sanremomachines.com/en/machines/cafe-racer/
+https://www.sanremomachines.com/en/machines/opera-2-0/
+https://decentespresso.com/model?id=de1pro
+https://decentespresso.com/model?id=de1xl
+https://www.ranciliogroup.com/rancilio/silvia/silvia/
+https://www.ranciliogroup.com/rancilio/silvia/silvia-pro-x/
+https://www.gaggia.com/manual-machines/classic-pro/
+https://lelit.com/product/bianca-pl162t/
+https://lelit.com/product/mara-x-pl62x/
+https://rocket-espresso.com/appartamento.html
+https://rocket-espresso.com/r-cinquantotto.html
+https://www.ecm.de/en/products/details/product/Product/Details/synchronika/
+https://www.ecm.de/en/products/details/product/Product/Details/classika-pid/
+https://www.profitec-espresso.com/en/products/pro-700
+https://www.profitec-espresso.com/en/products/pro-500
+https://www.profitec-espresso.com/en/products/go
+https://www.sageappliances.com/eu/en/products/espresso/bes875.html
+https://www.sageappliances.com/eu/en/products/espresso/bes990.html
+https://www.sageappliances.com/eu/en/products/espresso/bes920.html
+https://www.olympia-express.ch/en/products/cremina
+https://www.faema.com/en-us/product/E61
+https://www.nichecoffee.co.uk/products/niche-zero
+https://www.nichecoffee.co.uk/products/niche-duo
+https://www.weberworkshops.com/products/eg-1
+https://www.weberworkshops.com/products/key-grinder
+https://comandantegrinder.com/
+https://www.1zpresso.coffee/j-ultra
+https://www.1zpresso.coffee/k-ultra
+https://df64coffee.com/products/df64-gen-2-single-dose-coffee-grinder
+https://df64coffee.com/products/df83-single-dose-coffee-grinder
+https://www.eureka.co.it/en/catalogo/prodotti/macinacaffè+on+demand/1/20.aspx
+https://www.mahlkoenig.com/products/ek43
+https://www.mahlkoenig.com/products/e65s-gwb
+https://www.fiorenzato.com/en/f64-evo/
+https://www.macap.it/en-gb/Products/M42

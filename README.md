@@ -1,12 +1,16 @@
-# BaristAI Discord Bot
+# BaristAI - AI-Powered Barista Assistant
 
-An AI-powered Discord bot for coffee enthusiasts. Upload a photo of your coffee bag, and get personalized grind setting recommendations based on historical data from your brewing logs.
+An AI-powered Discord bot and MCP server for coffee enthusiasts. Upload a photo of your coffee bag to get personalized grind setting recommendations, or search for equipment using natural language queries. Features web scraping, vector search, and integration with AI agents.
 
 ## Features
 
 - **Image Analysis**: Uses Google Gemini Vision API to extract coffee details (roaster, origin, process, roast level) from bag photos.
 - **RAG Recommendations**: Searches your PostgreSQL database for similar coffees and suggests optimal grind settings, dose, and brewing tips.
+- **Equipment Discovery**: Semantic search for coffee equipment using natural language queries (e.g., "quiet flat burr grinder for espresso").
+- **Web Scraping**: Automatically scrape and extract equipment data from online stores using AI.
+- **Vector Database**: Powered by pgvector for fast similarity searches on both coffee logs and equipment.
 - **Feedback Loop**: React with 👍 to provide the actual grind setting you used (based on experience), which is saved back to the database for improved future recommendations.
+- **MCP Server**: Integrate with AI agents (like Claude) for coffee dial-in assistance.
 - **Docker Ready**: Fully containerized for easy deployment on Linux servers.
 
 ## Prerequisites
@@ -15,7 +19,7 @@ An AI-powered Discord bot for coffee enthusiasts. Upload a photo of your coffee 
 - Docker and Docker Compose
 - A Discord account and server
 - Google Gemini API key
-- PostgreSQL (handled via Docker)
+- PostgreSQL with pgvector extension (handled via Docker)
 
 ## Setup
 
@@ -56,37 +60,33 @@ This starts:
 
 ## Usage
 
+### Discord Bot
+
 1. **Upload an Image**: In a Discord channel, attach a photo of your coffee bag (JPG/PNG).
 2. **Receive Analysis**: The bot replies with extracted coffee details and grind recommendations from your database.
 3. **Provide Feedback**: If the suggestion is good, react with 👍. The bot saves this as a new log entry for future reference.
 
-### Example Interaction
-- User uploads `coffee_bag.jpg`
-- Bot responds:
-  ```
-  ☕ **Blue Bottle Ethiopia Yirgacheffe**
-  🌍 Ethiopia | Washed | Light
+### Equipment Search
 
-  💡 **Recommendation from database:**
-  ☕ Similar coffee: Blue Bottle Ethiopia (Ethiopia, Washed)
-     ⚙️ Grinder: Kingrinder K6
-     🎯 Suggested setting: 39 clicks (16.0g dose)
-     📝 Notes: Perfect balance...
+- `!search_equipment <query>` - Search for equipment using natural language (e.g., `!search_equipment quiet espresso grinder`)
 
-  👍 React with thumbs up to save this setting!
-  ```
-- User reacts 👍
-- Bot: "👍 Great! What was the actual grind setting you used? Reply e.g. '36 clicks' or 'fine'."
-- User replies: "38 clicks"
-- Bot: "✅ Saved: '38 clicks' setting to the database!"
-
-## Equipment Setup
+### Equipment Setup
 
 Before using the bot, set your espresso equipment so recommendations are tailored to your setup:
 
 - `!set_grinder <brand> <model>` - Set your grinder (e.g., `!set_grinder Kingrinder K6`)
 - `!set_machine <brand> <model>` - Set your espresso machine (e.g., `!set_machine AVX Hero Plus 2024`)
 - `!show_equipment` - Display your current equipment settings
+
+### MCP Server
+
+The MCP server allows AI agents to access BaristAI's coffee analysis capabilities:
+
+```bash
+python mcp_server.py
+```
+
+This enables AI assistants to analyze coffee bag photos and provide dial-in recommendations programmatically.
 
 The bot will use this information to provide personalized grind recommendations based on your equipment.
 
@@ -119,7 +119,17 @@ Then run:
 python add_equipment.py urls.txt
 ```
 
-The scraper uses Google Gemini AI to extract structured data (brand, model, features) from product pages and stores them with vector embeddings for the RAG system.
+The scraper uses Google Gemini AI to extract structured data (brand, model, features) from product pages and stores them with vector embeddings for semantic search.
+
+## Vector Search
+
+Search your equipment database using natural language:
+
+```bash
+python vector_search.py
+```
+
+Or integrate the `search_equipment()` function into your applications for AI-powered equipment discovery.
 
 ## Code Comments and Architecture
 
@@ -127,9 +137,14 @@ The scraper uses Google Gemini AI to extract structured data (brand, model, feat
 - **`discord_bot.py`**: Main bot logic using `discord.py`. Handles events like `on_ready` and `on_message`. Processes attachments, calls vision/RAG modules, and manages reactions.
 - **`vision.py`**: Uses Google GenAI to analyze images and extract structured coffee data via Pydantic schema.
 - **`rag.py`**: Retrieval-Augmented Generation – queries the DB for similar coffees and formats recommendations.
-- **`models.py`**: SQLAlchemy ORM models for `Bean`, `Equipment`, `DialInLog`.
-- **`database.py`**: DB connection setup with SQLAlchemy.
+- **`vector_search.py`**: Semantic search for equipment using pgvector and cosine similarity.
+- **`scraper.py`**: Web scraping utility that extracts equipment data from online stores using AI.
+- **`add_equipment.py`**: Processes scraped data, generates embeddings, and saves to the vector database.
+- **`mcp_server.py`**: MCP server for AI agent integration, exposing coffee analysis tools.
+- **`models.py`**: SQLAlchemy ORM models for `Bean`, `Equipment`, `DialInLog`, and `ScrapedEquipment`.
+- **`database.py`**: DB connection setup with SQLAlchemy and pgvector support.
 - **`init_db.py` / `seed.py`**: Initialize tables and populate sample data.
+- **`view_db.py`**: Utility to display database contents and vector previews.
 
 ### Bot Flow
 1. **Message Received**: Check for image attachments.
@@ -138,11 +153,21 @@ The scraper uses Google Gemini AI to extract structured data (brand, model, feat
 4. **Response**: Format and send recommendation.
 5. **Feedback**: Wait for 👍 reaction, then save new log to DB.
 
+### Vector Search Flow
+1. **Query Received**: Convert natural language query to embedding vector.
+2. **Similarity Search**: Use pgvector cosine distance to find most similar equipment.
+3. **Results**: Return top matches with features and specifications.
+
+### MCP Integration
+The MCP server exposes BaristAI's capabilities to AI agents:
+- `get_coffee_dial_in(image_path)`: Analyze coffee bag photo and return dial-in recommendations.
+
 ### Notes
 - The bot ignores its own messages to prevent loops.
 - Temporary files are cleaned up after processing.
 - DB operations use SQLAlchemy sessions for safety.
 - Type checking is suppressed for `discord.py` (no stubs) using `# type: ignore`.
+- Vector embeddings use 768-dimensional Gemini embeddings for both coffee features and equipment data.
 
 ## Troubleshooting
 
@@ -157,6 +182,9 @@ The scraper uses Google Gemini AI to extract structured data (brand, model, feat
 - Install dependencies: `pip install -r requirements.txt`
 - Run locally: `python discord_bot.py` (after setting up DB)
 - Test vision: `python main.py test_bag.jpg`
+- Test vector search: `python vector_search.py`
+- Test scraping: `python scraper.py`
+- View database: `python view_db.py`
 
 ## License
 
