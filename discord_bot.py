@@ -51,6 +51,69 @@ async def on_message(message):
     if author == client.user:
         return
 
+    # Handle equipment setting commands
+    if message.content.startswith("!set_grinder "):
+        parts = message.content.split(" ", 2)
+        if len(parts) >= 3:
+            brand = parts[1]
+            model = " ".join(parts[2:])  # In case model has spaces
+            db = SessionLocal()
+            try:
+                grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()
+                if grinder:
+                    grinder.brand = brand
+                    grinder.model = model
+                else:
+                    grinder = Equipment(type="grinder", brand=brand, model=model)
+                    db.add(grinder)
+                db.commit()
+                await message.reply(f"✅ Grinder updated to {brand} {model}")  # type: ignore[reportUnknownMemberType]
+            except Exception as e:
+                await message.reply(f"❌ Error updating grinder: {e}")  # type: ignore[reportUnknownMemberType]
+            finally:
+                db.close()
+        else:
+            await message.reply("❌ Usage: !set_grinder <brand> <model>")  # type: ignore[reportUnknownMemberType]
+        return
+
+    if message.content.startswith("!set_machine "):
+        parts = message.content.split(" ", 2)
+        if len(parts) >= 3:
+            brand = parts[1]
+            model = " ".join(parts[2:])
+            db = SessionLocal()
+            try:
+                machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()
+                if machine:
+                    machine.brand = brand
+                    machine.model = model
+                else:
+                    machine = Equipment(type="espresso_machine", brand=brand, model=model)
+                    db.add(machine)
+                db.commit()
+                await message.reply(f"✅ Espresso machine updated to {brand} {model}")  # type: ignore[reportUnknownMemberType]
+            except Exception as e:
+                await message.reply(f"❌ Error updating machine: {e}")  # type: ignore[reportUnknownMemberType]
+            finally:
+                db.close()
+        else:
+            await message.reply("❌ Usage: !set_machine <brand> <model>")  # type: ignore[reportUnknownMemberType]
+        return
+
+    if message.content == "!show_equipment":
+        db = SessionLocal()
+        try:
+            grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()
+            machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()
+            grinder_info = f"{grinder.brand} {grinder.model}" if grinder else "Not set"
+            machine_info = f"{machine.brand} {machine.model}" if machine else "Not set"
+            await message.reply(f"🔧 **Current Equipment:**\n• Grinder: {grinder_info}\n• Espresso Machine: {machine_info}")  # type: ignore[reportUnknownMemberType]
+        except Exception as e:
+            await message.reply(f"❌ Error retrieving equipment: {e}")  # type: ignore[reportUnknownMemberType]
+        finally:
+            db.close()
+        return
+
     # If there is an attachment (image), and it's an image file
     if message.attachments:  # type: ignore[reportUnknownMemberType]
         for attachment in message.attachments:  # type: ignore[reportUnknownMemberType]

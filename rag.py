@@ -30,6 +30,19 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
             .all()
         )
 
+        # Get current equipment
+        grinder = db.query(Equipment).filter(Equipment.type == 'grinder').first()
+        machine = db.query(Equipment).filter(Equipment.type == 'espresso_machine').first()
+        equipment_info = ""
+        if grinder and machine:
+            equipment_info = f"{machine.brand} {machine.model} (espresso machine) and {grinder.brand} {grinder.model} (manual grinder)."
+        elif grinder:
+            equipment_info = f"Unknown espresso machine and {grinder.brand} {grinder.model} (manual grinder)."
+        elif machine:
+            equipment_info = f"{machine.brand} {machine.model} (espresso machine) and unknown grinder."
+        else:
+            equipment_info = "Unknown equipment."
+
         # 2. BUILDING CONTEXT FOR THE LLM
         db_context = ""
         if not similar_logs:
@@ -55,7 +68,7 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         - Process: {process}
         - Roast: {roast_level}, {roast_date}
         
-        The user's equipment: AVX Hero Plus 2024 (espresso machine) and Kingrinder K6 (manual grinder).
+        The user's equipment: {equipment_info}
         
         Here are the user's own past data from their log (RAG Database Context):
         ---
@@ -63,11 +76,11 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         ---
         
         YOUR TASK:
-        Give a specific, practical starting recipe (Dose, Kingrinder K6 clicks, Temperature)!
+        Give a specific, practical starting recipe (Dose, grinder clicks, Temperature)!
         
         RULES:
-        1. If the "RAG Database Context" contains data for the Kingrinder K6, then PRIMARILY rely on those click values!
-        2. If the context is empty, use your own general barista knowledge! (Tip: On the Kingrinder K6, the espresso range is generally between 30 and 45 clicks, depending on roast. Light roast finer, dark coarser).
+        1. If the "RAG Database Context" contains data for the user's equipment, then PRIMARILY rely on those setting values!
+        2. If the context is empty, use your own general barista knowledge! (Tip: For espresso, aim for 25-30 second extraction times with 18-20g in, 36g out. Adjust grind finer for lighter roasts, coarser for darker).
         3. Formulate briefly, friendly, in English.
         """
 

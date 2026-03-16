@@ -80,6 +80,16 @@ This starts:
 - User replies: "38 clicks"
 - Bot: "✅ Saved: '38 clicks' setting to the database!"
 
+## Equipment Setup
+
+Before using the bot, set your espresso equipment so recommendations are tailored to your setup:
+
+- `!set_grinder <brand> <model>` - Set your grinder (e.g., `!set_grinder Kingrinder K6`)
+- `!set_machine <brand> <model>` - Set your espresso machine (e.g., `!set_machine AVX Hero Plus 2024`)
+- `!show_equipment` - Display your current equipment settings
+
+The bot will use this information to provide personalized grind recommendations based on your equipment.
+
 ## Code Comments and Architecture
 
 ### Key Files
