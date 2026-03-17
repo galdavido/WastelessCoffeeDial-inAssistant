@@ -1,20 +1,32 @@
 # import os
-from typing import List, Optional
+
 from database.database import SessionLocal
 from database.models import ScrapedEquipment
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
+from core.optional_deps import load_dotenv_if_available, require_genai
 
-load_dotenv()
+load_dotenv_if_available()
 
 
-def get_query_embedding(query: str) -> Optional[List[float]]:
+def _get_genai_client_and_types() -> tuple[object, object] | None:
+    """Return initialized GenAI client and type namespace."""
+    try:
+        genai, types = require_genai()
+    except RuntimeError as exc:
+        print(f"Error during embedding generation: {exc}")
+        return None
+
+    return genai.Client(), types
+
+
+def get_query_embedding(query: str) -> list[float] | None:
     """
     Converts a search query string into a 768-dimensional float vector
     using Google's embedding model.
     """
-    client = genai.Client()
+    setup = _get_genai_client_and_types()
+    if setup is None:
+        return None
+    client, types = setup
 
     try:
         response = client.models.embed_content(
@@ -34,6 +46,8 @@ def get_query_embedding(query: str) -> Optional[List[float]]:
     except Exception as e:
         print(f"Error during embedding generation: {str(e)}")
         return None
+    finally:
+        client.close()
 
 
 def search_equipment(query: str, limit: int = 3) -> str:
@@ -43,7 +57,7 @@ def search_equipment(query: str, limit: int = 3) -> str:
     """
     print(f"\n🔍 Searching for: '{query}'...")
 
-    query_vector: Optional[List[float]] = get_query_embedding(query)
+    query_vector: list[float] | None = get_query_embedding(query)
 
     if not query_vector:
         return "Error: Could not generate vector for the search query."
@@ -62,7 +76,7 @@ def search_equipment(query: str, limit: int = 3) -> str:
         if not results:
             return "No matching equipment found in the database."
 
-        response_lines: List[str] = [f"✅ Top {limit} results for '{query}':\n"]
+        response_lines: list[str] = [f"✅ Top {limit} results for '{query}':\n"]
 
         for item in results:
             # Explicit type casting to ensure Pylance knows these are strings

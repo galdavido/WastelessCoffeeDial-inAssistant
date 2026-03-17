@@ -1,28 +1,73 @@
 import sys
 from pathlib import Path
-from typing import cast
-from typing import Optional, List, Dict, Any
+from typing import Any, cast
+
 from database.database import SessionLocal
 from database.models import ScrapedEquipment
-from google import genai
+from core.optional_deps import load_dotenv_if_available, require_genai
 
 try:
     from .scraper import scrape_equipment_data
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scraping.scraper import scrape_equipment_data
-from dotenv import load_dotenv
-from google.genai import types
 
 # Load environment variables (API keys)
-load_dotenv()
+load_dotenv_if_available()
 
 
-def get_embedding(text: str) -> Optional[List[float]]:
+def _get_genai_client_and_types() -> tuple[object, object] | None:
+    """Return initialized GenAI client and type namespace."""
+    try:
+        genai, types = require_genai()
+    except RuntimeError as exc:
+        print(f"❌ Error generating embedding: {str(exc)}")
+        return None
+
+    return genai.Client(), types
+
+
+def _build_embedding_text(equipment_data: dict[str, Any]) -> tuple[str, str, str, str]:
+    """Build searchable sentence used for embedding and storage."""
+    brand: str = str(equipment_data.get("brand") or "Unknown")
+    model: str = str(equipment_data.get("model") or "Unknown")
+    equipment_type: str = str(equipment_data.get("equipment_type") or "Unknown")
+
+    raw_features: Any = equipment_data.get("key_features")
+    if isinstance(raw_features, list):
+        features_list: list[str] = [str(item) for item in cast(list[Any], raw_features)]
+    else:
+        features_list = []
+
+    features_str: str = ", ".join([str(f) for f in features_list])
+    text_to_embed = f"Brand: {brand}, Model: {model}. Features: {features_str}"
+    return brand, model, equipment_type, text_to_embed
+
+
+def _extract_optional_fields(
+    equipment_data: dict[str, Any],
+) -> tuple[int | None, str | None, str | None]:
+    """Extract optional numeric/text fields from scraped schema payload."""
+    raw_burr_size: Any = equipment_data.get("burr_size_mm")
+    burr_size_mm: int | None = int(raw_burr_size) if raw_burr_size is not None else None
+
+    raw_burr_type: Any = equipment_data.get("burr_type")
+    burr_type: str | None = str(raw_burr_type) if raw_burr_type is not None else None
+
+    raw_boiler: Any = equipment_data.get("boiler_type")
+    boiler_type: str | None = str(raw_boiler) if raw_boiler is not None else None
+
+    return burr_size_mm, burr_type, boiler_type
+
+
+def get_embedding(text: str) -> list[float] | None:
     """
     Converts text into a 768-dimensional float vector using Google's newest embedding model.
     """
-    client = genai.Client()
+    setup = _get_genai_client_and_types()
+    if setup is None:
+        return None
+    client, types = setup
 
     try:
         # We use the new model and strictly enforce the 768 dimensionality
@@ -43,6 +88,8 @@ def get_embedding(text: str) -> Optional[List[float]]:
     except Exception as e:
         print(f"❌ Error generating embedding: {str(e)}")
         return None
+    finally:
+        client.close()
 
 
 def add_url_to_database(url: str) -> None:
@@ -53,7 +100,7 @@ def add_url_to_database(url: str) -> None:
     print(f"\n🌍 Step 1: Scraping equipment data from {url}...")
 
     # We define the expected return type from the scraper
-    equipment_data: Optional[Dict[str, Any]] = scrape_equipment_data(url)
+    equipment_data: dict[str, Any] | None = scrape_equipment_data(url)
 
     if not equipment_data:
         print("❌ Process aborted: Failed to scrape data from the URL.")
@@ -61,23 +108,9 @@ def add_url_to_database(url: str) -> None:
 
     print("🧠 Step 2: Preparing text and generating vector embedding...")
 
-    # Safely extract and type-cast the dictionary values for Pylance
-    brand: str = str(equipment_data.get("brand") or "Unknown")
-    model: str = str(equipment_data.get("model") or "Unknown")
-    equipment_type: str = str(equipment_data.get("equipment_type") or "Unknown")
+    brand, model, equipment_type, text_to_embed = _build_embedding_text(equipment_data)
 
-    # Extract features list safely
-    raw_features: Any = equipment_data.get("key_features")
-    if isinstance(raw_features, list):
-        features_list: List[str] = [str(item) for item in cast(List[Any], raw_features)]
-    else:
-        features_list = []
-    features_str: str = ", ".join([str(f) for f in features_list])
-
-    # Build the contextual sentence for the AI to embed
-    text_to_embed: str = f"Brand: {brand}, Model: {model}. Features: {features_str}"
-
-    embedding_vector: Optional[List[float]] = get_embedding(text_to_embed)
+    embedding_vector: list[float] | None = get_embedding(text_to_embed)
 
     if not embedding_vector:
         print("❌ Process aborted: Failed to generate embedding vector.")
@@ -86,19 +119,7 @@ def add_url_to_database(url: str) -> None:
     print("💾 Step 3: Saving data to the pgvector database...")
     db = SessionLocal()
     try:
-        # Safely extract optionals (integers and strings that might be None)
-        raw_burr_size: Any = equipment_data.get("burr_size_mm")
-        burr_size_mm: Optional[int] = (
-            int(raw_burr_size) if raw_burr_size is not None else None
-        )
-
-        raw_burr_type: Any = equipment_data.get("burr_type")
-        burr_type: Optional[str] = (
-            str(raw_burr_type) if raw_burr_type is not None else None
-        )
-
-        raw_boiler: Any = equipment_data.get("boiler_type")
-        boiler_type: Optional[str] = str(raw_boiler) if raw_boiler is not None else None
+        burr_size_mm, burr_type, boiler_type = _extract_optional_fields(equipment_data)
 
         # Instantiate the database model
         new_equipment = ScrapedEquipment(
@@ -123,7 +144,7 @@ def add_url_to_database(url: str) -> None:
         db.close()
 
 
-def add_urls_to_database(urls: List[str]) -> None:
+def add_urls_to_database(urls: list[str]) -> None:
     """
     Scrapes multiple URLs, generates embeddings for each,
     and saves them to the PostgreSQL pgvector database.
@@ -169,7 +190,7 @@ if __name__ == "__main__":
         add_urls_from_file(file_path)
     else:
         # Test with multiple URLs
-        test_urls: List[str] = [
+        test_urls: list[str] = [
             "https://www.avxcafe.hu/nb64v-single-dose-red-burrs-mp-kaveorlo-fekete-brazil-fazenda-da-lagoa-specialty-84p-porkolt-kave-1000g-ks",
             # Add more URLs here as needed
         ]

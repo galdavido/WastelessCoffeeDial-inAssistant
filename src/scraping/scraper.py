@@ -2,12 +2,11 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from typing import Any
-from pydantic import BaseModel, Field
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
 
-load_dotenv()
+from pydantic import BaseModel, Field
+from core.optional_deps import load_dotenv_if_available, require_genai
+
+load_dotenv_if_available()
 
 
 # 1. Define Pydantic model for equipment
@@ -36,9 +35,8 @@ class EquipmentData(BaseModel):
     )
 
 
-def scrape_equipment_data(url: str) -> dict[str, Any] | None:
-    print(f"🌍 1. Downloading webpage: {url}...")
-
+def _download_page_text(url: str) -> str | None:
+    """Download and normalize visible webpage text for LLM extraction."""
     try:
         # Send headers to appear as a browser, otherwise many webshops block us
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -50,16 +48,15 @@ def scrape_equipment_data(url: str) -> dict[str, Any] | None:
         page_text = soup.get_text(separator="\n", strip=True)
 
         # Limit text size to avoid sending unnecessarily huge content to LLM (approx. first 15000 chars)
-        page_text = page_text[:15000]
-
+        return page_text[:15000]
     except Exception as e:
         print(f"❌ Error downloading webpage: {e}")
         return None
 
-    print("🧠 2. Passing raw text to AI for structuring...")
-    client = genai.Client()
 
-    prompt = f"""
+def _build_prompt(page_text: str) -> str:
+    """Build the prompt for schema-constrained equipment extraction."""
+    return f"""
     You are an expert on coffee machines and grinders.
     The text below is from a product page on an online store.
     Find the product's technical specifications and fill in the JSON schema!
@@ -67,6 +64,25 @@ def scrape_equipment_data(url: str) -> dict[str, Any] | None:
     Webpage text:
     {page_text}
     """
+
+
+def scrape_equipment_data(url: str) -> dict[str, Any] | None:
+    """Scrape product details from a URL and return structured equipment data."""
+    print(f"🌍 1. Downloading webpage: {url}...")
+
+    page_text = _download_page_text(url)
+    if page_text is None:
+        return None
+
+    print("🧠 2. Passing raw text to AI for structuring...")
+    try:
+        genai, types = require_genai()
+    except RuntimeError as exc:
+        print(f"❌ {exc}")
+        return None
+
+    client = genai.Client()
+    prompt = _build_prompt(page_text)
 
     try:
         # Make LLM call with enforced Pydantic schema
@@ -90,6 +106,8 @@ def scrape_equipment_data(url: str) -> dict[str, Any] | None:
     except Exception as e:
         print(f"❌ Error during AI processing: {e}")
         return None
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

@@ -10,10 +10,10 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from database.database import SessionLocal
     from database.models import ScrapedEquipment
-from dotenv import load_dotenv
+from core.optional_deps import load_dotenv_if_available
 
 # Load environment variables
-load_dotenv()
+load_dotenv_if_available()
 
 
 def display_database_contents() -> None:

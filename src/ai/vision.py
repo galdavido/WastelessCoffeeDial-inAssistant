@@ -1,13 +1,14 @@
 import json
-from PIL import Image
-from dotenv import load_dotenv
+from typing import Any
+
 from pydantic import BaseModel
+from core.optional_deps import (
+    load_dotenv_if_available,
+    require_genai,
+    require_pillow_image,
+)
 
-# The NEW Google SDK imports
-from google import genai
-from google.genai import types
-
-load_dotenv()
+load_dotenv_if_available()
 
 
 # 1. Define the Pydantic model (The data structure we expect from the AI)
@@ -20,20 +21,42 @@ class CoffeeData(BaseModel):
     roast_date: str | None
 
 
-def analyze_coffee_bag(image_path: str):
+def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
+    """Return PIL image module plus initialized GenAI client/types."""
+    try:
+        image_module = require_pillow_image()
+        genai, types = require_genai()
+    except RuntimeError as exc:
+        print(f"Error: {exc}")
+        return None
+
+    return image_module, genai.Client(), types
+
+
+def _build_prompt() -> str:
+    """Build the extraction prompt for coffee bag image analysis."""
+    return (
+        "You are an expert barista. Analyze this coffee bag packaging and "
+        "extract the specific details."
+    )
+
+
+def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
+    """Analyze a coffee bag image and return normalized coffee metadata."""
     print(f"Image analysis in progress with the new GenAI SDK: {image_path}...")
 
+    setup = _get_image_module_and_client()
+    if setup is None:
+        return None
+    image_module, client, types = setup
+
     try:
-        img = Image.open(image_path)
+        img = image_module.open(image_path)
     except FileNotFoundError:
         print(f"Error: The '{image_path}' file is not found in the folder!")
         return None
 
-    # Client initialization (Automatically pulls GEMINI_API_KEY from .env file)
-    client = genai.Client()
-
-    # Since we enforce the schema, the prompt can be very simple
-    prompt = "You are an expert barista. Analyze this coffee bag packaging and extract the specific details."
+    prompt = _build_prompt()
 
     try:
         # Call to Gemini model, with ENFORCED JSON schema
@@ -47,8 +70,6 @@ def analyze_coffee_bag(image_path: str):
             ),
         )
 
-        client.close()
-
         # The response (response.text) is now guaranteed to be JSON matching the above Pydantic schema
         text = response.text
         if text is None:
@@ -57,8 +78,9 @@ def analyze_coffee_bag(image_path: str):
 
     except Exception as e:
         print(f"Error occurred during API call: {e}")
-        client.close()
         return None
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

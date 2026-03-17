@@ -6,10 +6,10 @@ from ai.vision import analyze_coffee_bag
 from ai.rag import get_best_grind_setting
 from database.database import SessionLocal, engine, Base
 from database.models import Bean, Equipment, DialInLog
-from dotenv import load_dotenv
+from core.optional_deps import load_dotenv_if_available
 from typing import Any, Dict
 
-load_dotenv()
+load_dotenv_if_available()
 
 
 # Initialize the database on startup
