@@ -202,6 +202,29 @@ The MCP server exposes BaristAI's capabilities to AI agents:
 
 ## Development
 
+### Dev Container (Recommended for multi-laptop workflow)
+
+If you use VS Code Dev Containers, most local setup is automatic and consistent across machines.
+
+Prerequisites:
+- Docker Desktop
+- VS Code
+- Dev Containers extension (`ms-vscode-remote.remote-containers`)
+
+Quick start:
+1. Clone the repository.
+2. Open it in VS Code.
+3. Run `Dev Containers: Reopen in Container`.
+4. Wait for the initial build and `postCreateCommand` to finish.
+
+What the container sets up:
+- Python 3.11 development environment
+- Project dependencies from `requirements.txt`
+- `pre-commit` + installed git hook
+- Local PostgreSQL (`pgvector/pgvector:pg15`) on port `5434`
+
+Note: Keep your real API keys and Discord token in your local `.env` file. Secrets are not committed.
+
 - Install dependencies: `pip install -r requirements.txt`
 - Install pre-commit: `pip install pre-commit`
 - Enable git hooks: `pre-commit install`

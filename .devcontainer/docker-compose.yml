@@ -1,0 +1,29 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    working_dir: /workspace
+    command: sleep infinity
+    environment:
+      PYTHONPATH: /workspace/src
+      DATABASE_URL: postgresql://barista:supersecret@db:5432/barista_db
+    depends_on:
+      - db
+
+  db:
+    image: pgvector/pgvector:pg15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: barista
+      POSTGRES_PASSWORD: supersecret
+      POSTGRES_DB: barista_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - devcontainer_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  devcontainer_postgres_data:
