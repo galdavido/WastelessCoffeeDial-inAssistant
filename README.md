@@ -52,7 +52,9 @@ cd BaristAI
 ```
 
 ### 2. Environment Configuration
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory.
+
+For the root `docker-compose.yml` workflow (running from your host machine), use:
 ```env
 POSTGRES_USER=barista
 POSTGRES_PASSWORD=supersecret
@@ -64,6 +66,12 @@ DISCORD_TOKEN=your_discord_bot_token_here
 
 - **GEMINI_API_KEY**: Get from [Google AI Studio](https://makersuite.google.com/app/apikey).
 - **DISCORD_TOKEN**: Create a bot at [Discord Developer Portal](https://discord.com/developers/applications). Enable "Message Content Intent" and set permissions for Send Messages, Read Message History, Add Reactions.
+
+If you use the VS Code Dev Container workflow, the database hostname is different inside the container network:
+
+```env
+DATABASE_URL=postgresql://barista:supersecret@db:5432/barista_db
+```
 
 ### 3. Build and Run with Docker
 ```bash
@@ -218,10 +226,26 @@ Quick start:
 4. Wait for the initial build and `postCreateCommand` to finish.
 
 What the container sets up:
-- Python 3.11 development environment
+- Python 3.14 development environment
 - Project dependencies from `requirements.txt`
 - `pre-commit` + installed git hook
 - Local PostgreSQL (`pgvector/pgvector:pg15`) available inside the Dev Container as `db:5432`
+
+Recommended first-time Dev Container flow:
+1. Create `.env` in the repository root with at least:
+  ```env
+  POSTGRES_USER=barista
+  POSTGRES_PASSWORD=supersecret
+  POSTGRES_DB=barista_db
+  DATABASE_URL=postgresql://barista:supersecret@db:5432/barista_db
+  GEMINI_API_KEY=your_gemini_api_key_here
+  DISCORD_TOKEN=your_discord_bot_token_here
+  ```
+2. Run `Dev Containers: Reopen in Container`.
+3. Wait for `postCreateCommand` to finish.
+4. Verify the setup in the container terminal:
+  - `python --version` (should show Python 3.14.x)
+  - `python -m unittest discover -s tests -v`
 
 Note: Keep your real API keys and Discord token in your local `.env` file. Secrets are not committed.
 
