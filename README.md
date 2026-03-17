@@ -203,6 +203,9 @@ The MCP server exposes BaristAI's capabilities to AI agents:
 ## Development
 
 - Install dependencies: `pip install -r requirements.txt`
+- Install pre-commit: `pip install pre-commit`
+- Enable git hooks: `pre-commit install`
+- Run all quality checks manually: `pre-commit run --all-files`
 - Set Python path: `export PYTHONPATH=src:$PYTHONPATH` (or `set PYTHONPATH=src;%PYTHONPATH%` on Windows)
 - Run Discord bot locally: `python src/core/discord_bot.py` (after setting up DB)
 - Run MCP server: `python src/core/mcp_server.py`
