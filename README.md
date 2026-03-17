@@ -229,6 +229,8 @@ Note: Keep your real API keys and Discord token in your local `.env` file. Secre
 - Install pre-commit: `pip install pre-commit`
 - Enable git hooks: `pre-commit install`
 - Run all quality checks manually: `pre-commit run --all-files`
+- Run syntax smoke check: `python -m compileall -q src`
+- Run unit tests: `PYTHONPATH=src python -m unittest discover -s tests -v`
 - Set Python path: `export PYTHONPATH=src:$PYTHONPATH` (or `set PYTHONPATH=src;%PYTHONPATH%` on Windows)
 - Run Discord bot locally: `python src/core/discord_bot.py` (after setting up DB)
 - Run MCP server: `python src/core/mcp_server.py`
@@ -236,6 +238,17 @@ Note: Keep your real API keys and Discord token in your local `.env` file. Secre
 - Test vector search: `python src/ai/vector_search.py`
 - Test scraping: `python src/scraping/scraper.py`
 - View database: `python src/database/view_db.py`
+
+## Public Release Checklist
+
+Before marking the repository as public, verify the following:
+
+- Secrets are not tracked (`.env` is ignored and only `config/.env.example` is committed).
+- Quality checks pass locally: `pre-commit run --all-files`.
+- Syntax check passes: `python -m compileall -q src`.
+- Unit tests pass: `PYTHONPATH=src python -m unittest discover -s tests -v`.
+- GitHub Actions CI is green on the latest commit.
+- API keys and bot token in your personal `.env` are rotated if they were ever exposed.
 
 ## License
 
