@@ -8,9 +8,6 @@
     "db"
   ],
   "shutdownAction": "stopCompose",
-  "forwardPorts": [
-    5434
-  ],
   "remoteEnv": {
     "PYTHONPATH": "/workspace/src"
   },

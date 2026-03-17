@@ -221,7 +221,7 @@ What the container sets up:
 - Python 3.11 development environment
 - Project dependencies from `requirements.txt`
 - `pre-commit` + installed git hook
-- Local PostgreSQL (`pgvector/pgvector:pg15`) on port `5434`
+- Local PostgreSQL (`pgvector/pgvector:pg15`) available inside the Dev Container as `db:5432`
 
 Note: Keep your real API keys and Discord token in your local `.env` file. Secrets are not committed.
 
