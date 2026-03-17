@@ -9,3 +9,5 @@ discord.py
 mcp
 pillow
 pgvector
+requests
+beautifulsoup4

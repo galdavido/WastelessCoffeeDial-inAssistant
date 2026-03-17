@@ -1,7 +1,7 @@
 # import os
 from typing import Dict, Any
-from ..database.database import SessionLocal
-from ..database.models import Bean, DialInLog, Equipment
+from database.database import SessionLocal
+from database.models import Bean, DialInLog, Equipment
 from google import genai
 
 

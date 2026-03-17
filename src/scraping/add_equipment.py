@@ -1,9 +1,16 @@
+import sys
+from pathlib import Path
 from typing import cast
 from typing import Optional, List, Dict, Any
-from ..database.database import SessionLocal
-from ..database.models import ScrapedEquipment
+from database.database import SessionLocal
+from database.models import ScrapedEquipment
 from google import genai
-from .scraper import scrape_equipment_data
+
+try:
+    from .scraper import scrape_equipment_data
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scraping.scraper import scrape_equipment_data
 from dotenv import load_dotenv
 from google.genai import types
 

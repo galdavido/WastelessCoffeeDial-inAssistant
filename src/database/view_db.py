@@ -1,6 +1,15 @@
+import sys
+from pathlib import Path
 from typing import List, cast
-from .database import SessionLocal
-from .models import ScrapedEquipment
+
+try:
+    from .database import SessionLocal
+    from .models import ScrapedEquipment
+except ImportError:
+    # Allow running as a script: `python src/database/view_db.py`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from database.database import SessionLocal
+    from database.models import ScrapedEquipment
 from dotenv import load_dotenv
 
 # Load environment variables

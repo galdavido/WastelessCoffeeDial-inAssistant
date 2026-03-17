@@ -1,10 +1,11 @@
 import discord
 import os
 import tempfile
-from ..ai.vision import analyze_coffee_bag
-from ..ai.rag import get_best_grind_setting
-from ..database.database import SessionLocal, engine, Base
-from ..database.models import Bean, Equipment, DialInLog
+from sqlalchemy import text
+from ai.vision import analyze_coffee_bag
+from ai.rag import get_best_grind_setting
+from database.database import SessionLocal, engine, Base
+from database.models import Bean, Equipment, DialInLog
 from dotenv import load_dotenv
 from typing import Any, Dict
 
@@ -14,6 +15,9 @@ load_dotenv()
 # Initialize the database on startup
 def init_db():
     try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            conn.commit()
         Base.metadata.create_all(bind=engine)
         print("Database tables created.")
     except Exception as e:
@@ -245,7 +249,7 @@ async def on_message(message: Any):
                         )  # type: ignore[reportUnknownMemberType]
 
                     try:
-                        reaction, user = await client.wait_for(
+                        _, user = await client.wait_for(
                             "reaction_add", timeout=300.0, check=check
                         )  # 5 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                         # If thumbs up, ask for the actual setting

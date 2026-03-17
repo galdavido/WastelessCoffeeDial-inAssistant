@@ -1,6 +1,6 @@
 from mcp.server.fastmcp import FastMCP
-from ..ai.vision import analyze_coffee_bag
-from ..ai.rag import get_best_grind_setting
+from ai.vision import analyze_coffee_bag
+from ai.rag import get_best_grind_setting
 
 # Create the MCP server itself
 mcp = FastMCP("BaristAI")

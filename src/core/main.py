@@ -1,7 +1,7 @@
 import os
 import sys
-from ..ai.vision import analyze_coffee_bag
-from ..ai.rag import get_best_grind_setting
+from ai.vision import analyze_coffee_bag
+from ai.rag import get_best_grind_setting
 
 
 def main(image_path: str) -> None:
