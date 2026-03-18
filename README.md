@@ -77,7 +77,7 @@ DATABASE_URL=postgresql://barista:supersecret@db:5432/barista_db
 
 ### 3. Build and Run with Docker
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
 This starts:
@@ -86,7 +86,7 @@ This starts:
 
 Check logs:
 ```bash
-docker-compose logs -f wcda-bot
+docker compose logs -f wcda-bot
 ```
 
 ### 4. Invite the Bot to Your Server
@@ -209,7 +209,7 @@ The MCP server exposes WCDA's capabilities to AI agents:
 
 ## Troubleshooting
 
-- **Bot not responding?** Check logs: `docker-compose logs wcda-bot`. Ensure token is valid and intents enabled.
+- **Bot not responding?** Check logs: `docker compose logs wcda-bot`. Ensure token is valid and intents enabled.
 - **401 Unauthorized?** Reset Discord token and update `.env`.
 - **No recommendations?** Seed data might be missing; run `python seed.py` locally or check DB.
 - **Image analysis fails?** Verify Gemini API key and image quality.
@@ -236,6 +236,7 @@ What the container sets up:
 - Python 3.14.3 development environment
 - Project dependencies from `requirements.txt`
 - `pre-commit` + installed git hook
+- Docker CLI + `docker compose` (via host Docker socket)
 - Local PostgreSQL (`pgvector/pgvector:pg15`) available inside the Dev Container as `db:5432`
 
 Recommended first-time Dev Container flow:
