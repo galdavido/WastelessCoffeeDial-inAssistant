@@ -3,7 +3,7 @@ from ai.vision import analyze_coffee_bag
 from ai.rag import get_best_grind_setting
 
 # Create the MCP server itself
-mcp = FastMCP("BaristAI")
+mcp = FastMCP("Wasteless Coffee Dial-in Assistant (WCDA)")
 
 
 # The @mcp.tool() decorator is the key!
@@ -35,5 +35,5 @@ def get_coffee_dial_in(image_path: str) -> str:
 if __name__ == "__main__":
     # This starts the server in "stdio" (Standard Input/Output) mode.
     # This way AI clients can run it in the background, as a process, and communicate with it.
-    print("BaristAI MCP Server starting...")
+    print("Wasteless Coffee Dial-in Assistant (WCDA) MCP Server starting...")
     mcp.run()

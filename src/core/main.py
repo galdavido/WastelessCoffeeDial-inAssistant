@@ -6,7 +6,7 @@ from ai.rag import get_best_grind_setting
 
 def main(image_path: str) -> None:
     print("\n" + "=" * 50)
-    print("☕ BARISTAI - AI DIAL-IN ASSISTANT")
+    print("☕ WASTELESS COFFEE DIAL-IN ASSISTANT (WCDA)")
     print("=" * 50)
     print(f"📸 Step 1: Processing image ({image_path})...")
 

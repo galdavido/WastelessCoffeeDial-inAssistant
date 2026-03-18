@@ -1,4 +1,4 @@
-# Contributing to BaristAI
+# Contributing to Wasteless Coffee Dial-in Assistant (WCDA)
 
 Thanks for your interest in contributing! We welcome bug reports, feature requests, and pull requests.
 
@@ -42,4 +42,4 @@ Thanks for your interest in contributing! We welcome bug reports, feature reques
 
 Open a GitHub Discussion or issue—we're happy to help!
 
-Thank you for contributing to BaristAI!
+Thank you for contributing to Wasteless Coffee Dial-in Assistant (WCDA)!

@@ -1,4 +1,4 @@
-# BaristAI - AI-Powered Barista Assistant
+# Wasteless Coffee Dial-in Assistant (WCDA)
 
 An AI-powered Discord bot and MCP server for coffee enthusiasts. Upload a photo of your coffee bag to get personalized grind setting recommendations, or search for equipment using natural language queries. Features web scraping, vector search, and integration with AI agents.
 
@@ -16,7 +16,7 @@ An AI-powered Discord bot and MCP server for coffee enthusiasts. Upload a photo 
 ## Project Structure
 
 ```
-baristai/
+wasteless-coffee-dial-in-assistant/
 ├── src/                    # Source code
 │   ├── core/              # Main applications
 │   │   ├── discord_bot.py # Discord bot
@@ -47,12 +47,14 @@ baristai/
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/galdavido/BaristAI.git
-cd BaristAI
+git clone https://github.com/galdavido/Wasteless-Coffee-Dial-in-Assistant.git
+cd Wasteless-Coffee-Dial-in-Assistant
 ```
 
 ### 2. Environment Configuration
 Create a `.env` file in the root directory.
+
+> `.venv` is intentionally excluded from git and Docker context. New users do **not** need your local virtual environment—Python is provided by the pinned Docker image (`3.14.3`) and dependencies are installed from `requirements.txt` during image/build setup.
 
 For the root `docker-compose.yml` workflow (running from your host machine), use:
 ```env
@@ -80,7 +82,12 @@ docker-compose up --build -d
 
 This starts:
 - PostgreSQL database on port 5434
-- BaristAI bot (auto-initializes DB and seeds sample data)
+- WCDA bot (auto-initializes DB and seeds sample data)
+
+Check logs:
+```bash
+docker-compose logs -f wcda-bot
+```
 
 ### 4. Invite the Bot to Your Server
 - In Discord Developer Portal > OAuth2 > URL Generator:
@@ -110,7 +117,7 @@ Before using the bot, set your espresso equipment so recommendations are tailore
 
 ### MCP Server
 
-The MCP server allows AI agents to access BaristAI's coffee analysis capabilities:
+The MCP server allows AI agents to access WCDA's coffee analysis capabilities:
 
 ```bash
 python mcp_server.py
@@ -190,7 +197,7 @@ Or integrate the `search_equipment()` function into your applications for AI-pow
 3. **Results**: Return top matches with features and specifications.
 
 ### MCP Integration
-The MCP server exposes BaristAI's capabilities to AI agents:
+The MCP server exposes WCDA's capabilities to AI agents:
 - `get_coffee_dial_in(image_path)`: Analyze coffee bag photo and return dial-in recommendations.
 
 ### Notes
@@ -202,7 +209,7 @@ The MCP server exposes BaristAI's capabilities to AI agents:
 
 ## Troubleshooting
 
-- **Bot not responding?** Check logs: `docker-compose logs baristai-bot`. Ensure token is valid and intents enabled.
+- **Bot not responding?** Check logs: `docker-compose logs wcda-bot`. Ensure token is valid and intents enabled.
 - **401 Unauthorized?** Reset Discord token and update `.env`.
 - **No recommendations?** Seed data might be missing; run `python seed.py` locally or check DB.
 - **Image analysis fails?** Verify Gemini API key and image quality.
@@ -226,7 +233,7 @@ Quick start:
 4. Wait for the initial build and `postCreateCommand` to finish.
 
 What the container sets up:
-- Python 3.14 development environment
+- Python 3.14.3 development environment
 - Project dependencies from `requirements.txt`
 - `pre-commit` + installed git hook
 - Local PostgreSQL (`pgvector/pgvector:pg15`) available inside the Dev Container as `db:5432`
@@ -244,7 +251,7 @@ Recommended first-time Dev Container flow:
 2. Run `Dev Containers: Reopen in Container`.
 3. Wait for `postCreateCommand` to finish.
 4. Verify the setup in the container terminal:
-  - `python --version` (should show Python 3.14.x)
+  - `python --version` (should show Python 3.14.3)
   - `python -m unittest discover -s tests -v`
 
 Note: Keep your real API keys and Discord token in your local `.env` file. Secrets are not committed.

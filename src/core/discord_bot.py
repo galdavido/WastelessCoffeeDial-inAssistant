@@ -53,7 +53,7 @@ client = discord.Client(intents=intents)  # type: ignore[reportUnknownArgumentTy
 
 @client.event
 async def on_ready():
-    print(f"BaristAI Discord Bot logged in as {client.user}")  # type: ignore[reportUnknownMemberType]
+    print(f"WCDA Discord Bot logged in as {client.user}")  # type: ignore[reportUnknownMemberType]
 
 
 async def save_dial_in_log(

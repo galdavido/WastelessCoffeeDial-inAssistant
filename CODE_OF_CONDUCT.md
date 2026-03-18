@@ -36,4 +36,4 @@ Maintainers will review reports and take appropriate action, which may include w
 
 This Code of Conduct applies to all project spaces (GitHub, discussions, Discord, etc.) and extends to official project communications.
 
-Thank you for helping make BaristAI a respectful and inclusive community!
+Thank you for helping make Wasteless Coffee Dial-in Assistant (WCDA) a respectful and inclusive community!

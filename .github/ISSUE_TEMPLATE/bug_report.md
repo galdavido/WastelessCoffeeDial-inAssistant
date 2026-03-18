@@ -28,7 +28,7 @@ assignees: ""
 
 - **OS**: (e.g., Ubuntu 22.04, macOS 14)
 - **Python Version**: (e.g., 3.11)
-- **BaristAI Version**: (commit hash or latest)
+- **WCDA Version**: (commit hash or latest)
 
 ## Logs or Error Messages
 

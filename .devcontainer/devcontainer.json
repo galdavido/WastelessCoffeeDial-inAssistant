@@ -1,5 +1,5 @@
 {
-  "name": "BaristAI Dev Container",
+  "name": "WCDA Dev Container",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspace",
