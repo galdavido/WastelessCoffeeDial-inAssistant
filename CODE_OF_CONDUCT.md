@@ -15,6 +15,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 ## Unacceptable Behavior
 
 The following behaviors are not tolerated:
+
 - Harassment, intimidation, or discrimination
 - Offensive language or personal attacks
 - Spam or unsolicited promotion
@@ -24,6 +25,7 @@ The following behaviors are not tolerated:
 ## Reporting Violations
 
 If you encounter behavior that violates this Code of Conduct:
+
 1. Report it to the maintainers via email or private message on GitHub.
 2. Include details of the incident and any relevant context.
 3. Maintain confidentiality during the investigation.

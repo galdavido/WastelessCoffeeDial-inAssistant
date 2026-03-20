@@ -46,17 +46,20 @@ wasteless-coffee-dial-in-assistant/
 ## Setup
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/galdavido/Wasteless-Coffee-Dial-in-Assistant.git
 cd Wasteless-Coffee-Dial-in-Assistant
 ```
 
 ### 2. Environment Configuration
+
 Create a `.env` file in the root directory.
 
 > `.venv` is intentionally excluded from git and Docker context. New users do **not** need your local virtual environment—Python is provided by the pinned Docker image (`3.14.3`) and dependencies are installed from `requirements.txt` during image/build setup.
 
 For the root `docker-compose.yml` workflow (running from your host machine), use:
+
 ```env
 POSTGRES_USER=barista
 POSTGRES_PASSWORD=supersecret
@@ -76,20 +79,24 @@ DATABASE_URL=postgresql://barista:supersecret@db:5432/barista_db
 ```
 
 ### 3. Build and Run with Docker
+
 ```bash
 docker compose up --build -d
 ```
 
 This starts:
+
 - PostgreSQL database on port 5434
 - WCDA bot (auto-initializes DB and seeds sample data)
 
 Check logs:
+
 ```bash
 docker compose logs -f wcda-bot
 ```
 
 ### 4. Invite the Bot to Your Server
+
 - In Discord Developer Portal > OAuth2 > URL Generator:
   - Scopes: `bot`
   - Permissions: Send Messages, Read Message History, Add Reactions
@@ -132,19 +139,25 @@ The bot will use this information to provide personalized grind recommendations 
 To expand your equipment database with data scraped from online stores:
 
 ### Single URL
+
 ```bash
 python add_equipment.py
 ```
+
 This will scrape the hard-coded test URL and add it to your database.
 
 ### Multiple URLs from Code
+
 Modify the `test_urls` list in `add_equipment.py` and run:
+
 ```bash
 python add_equipment.py
 ```
 
 ### Multiple URLs from File
+
 Create a `urls.txt` file with one URL per line:
+
 ```
 # URLs to scrape for coffee equipment data
 https://example.com/grinder1
@@ -152,6 +165,7 @@ https://example.com/machine1
 ```
 
 Then run:
+
 ```bash
 python add_equipment.py urls.txt
 ```
@@ -171,6 +185,7 @@ Or integrate the `search_equipment()` function into your applications for AI-pow
 ## Code Comments and Architecture
 
 ### Key Files
+
 - **`src/core/discord_bot.py`**: Main Discord bot logic using `discord.py`. Handles events like `on_ready` and `on_message`. Processes attachments, calls vision/RAG modules, and manages reactions.
 - **`src/core/mcp_server.py`**: MCP server for AI agent integration, exposing coffee analysis tools.
 - **`src/core/main.py`**: Command-line interface for testing coffee bag analysis.
@@ -185,6 +200,7 @@ Or integrate the `search_equipment()` function into your applications for AI-pow
 - **`src/database/view_db.py`**: Utility to display database contents and vector previews.
 
 ### Bot Flow
+
 1. **Message Received**: Check for image attachments.
 2. **Vision Analysis**: Download image, send to Gemini, parse JSON response.
 3. **DB Search**: Query for matching beans (by origin/process), retrieve logs with high ratings.
@@ -192,15 +208,19 @@ Or integrate the `search_equipment()` function into your applications for AI-pow
 5. **Feedback**: Wait for 👍 reaction, then save new log to DB.
 
 ### Vector Search Flow
+
 1. **Query Received**: Convert natural language query to embedding vector.
 2. **Similarity Search**: Use pgvector cosine distance to find most similar equipment.
 3. **Results**: Return top matches with features and specifications.
 
 ### MCP Integration
+
 The MCP server exposes WCDA's capabilities to AI agents:
+
 - `get_coffee_dial_in(image_path)`: Analyze coffee bag photo and return dial-in recommendations.
 
 ### Notes
+
 - The bot ignores its own messages to prevent loops.
 - Temporary files are cleaned up after processing.
 - DB operations use SQLAlchemy sessions for safety.
@@ -222,17 +242,20 @@ The MCP server exposes WCDA's capabilities to AI agents:
 If you use VS Code Dev Containers, most local setup is automatic and consistent across machines.
 
 Prerequisites:
+
 - Docker Desktop
 - VS Code
 - Dev Containers extension (`ms-vscode-remote.remote-containers`)
 
 Quick start:
+
 1. Clone the repository.
 2. Open it in VS Code.
 3. Run `Dev Containers: Reopen in Container`.
 4. Wait for the initial build and `postCreateCommand` to finish.
 
 What the container sets up:
+
 - Python 3.14.3 development environment
 - Project dependencies from `requirements.txt`
 - `pre-commit` + installed git hook
@@ -240,7 +263,9 @@ What the container sets up:
 - Local PostgreSQL (`pgvector/pgvector:pg15`) available inside the Dev Container as `db:5432`
 
 Recommended first-time Dev Container flow:
+
 1. Create `.env` in the repository root with at least:
+
   ```env
   POSTGRES_USER=barista
   POSTGRES_PASSWORD=supersecret
@@ -249,11 +274,13 @@ Recommended first-time Dev Container flow:
   GEMINI_API_KEY=your_gemini_api_key_here
   DISCORD_TOKEN=your_discord_bot_token_here
   ```
-2. Run `Dev Containers: Reopen in Container`.
-3. Wait for `postCreateCommand` to finish.
-4. Verify the setup in the container terminal:
-  - `python --version` (should show Python 3.14.3)
-  - `python -m unittest discover -s tests -v`
+
+1. Run `Dev Containers: Reopen in Container`.
+2. Wait for `postCreateCommand` to finish.
+3. Verify the setup in the container terminal:
+
+- `python --version` (should show Python 3.14.3)
+- `python -m unittest discover -s tests -v`
 
 Note: Keep your real API keys and Discord token in your local `.env` file. Secrets are not committed.
 

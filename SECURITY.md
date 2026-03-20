@@ -3,6 +3,7 @@
 ## Reporting a Vulnerability
 
 Please **do not** publicly disclose security vulnerabilities. Instead, email `security@example.com` (or contact the maintainer privately via GitHub) with:
+
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact

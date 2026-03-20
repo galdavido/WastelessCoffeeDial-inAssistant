@@ -84,7 +84,7 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
 
 
 if __name__ == "__main__":
-    test_image = "test_bag.jpg"
+    test_image = "data/test_bag.jpg"
     result = analyze_coffee_bag(test_image)
 
     if result:
