@@ -1,7 +1,10 @@
+import asyncio
 import discord
 import os
 import tempfile
+import time
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from ai.vision import analyze_coffee_bag
 from ai.rag import get_best_grind_setting
 from database.database import SessionLocal, engine, Base
@@ -14,14 +17,22 @@ load_dotenv_if_available()
 
 # Initialize the database on startup
 def init_db():
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            conn.commit()
-        Base.metadata.create_all(bind=engine)
-        print("Database tables created.")
-    except Exception as e:
-        print(f"DB init error: {e}")
+    for attempt in range(1, 6):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                conn.commit()
+            Base.metadata.create_all(bind=engine)
+            print("Database tables created.")
+            return
+        except Exception as e:
+            print(f"DB init error (attempt {attempt}/5): {e}")
+            if attempt < 5:
+                time.sleep(2)
+
+
+def ensure_tables_exist() -> None:
+    Base.metadata.create_all(bind=engine)
 
 
 # Seed data (simplified)
@@ -57,7 +68,18 @@ async def on_ready():
 
 
 def get_default_dose_g(db: Any) -> float:
-    setting = db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
+    try:
+        setting = (
+            db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
+        )
+    except ProgrammingError as e:
+        if "app_settings" not in str(e):
+            raise
+        db.rollback()  # type: ignore[reportUnknownMemberType]
+        ensure_tables_exist()
+        setting = (
+            db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
+        )
     if not setting:
         return 16.0
     try:
@@ -78,6 +100,54 @@ def set_default_dose_g(db: Any, dose: float) -> None:
     db.commit()
 
 
+def get_grind_offset_clicks(db: Any) -> float:
+    try:
+        setting = (
+            db.query(AppSetting)
+            .filter(AppSetting.key == "default_grind_offset_clicks")
+            .first()
+        )
+    except ProgrammingError as e:
+        if "app_settings" not in str(e):
+            raise
+        db.rollback()  # type: ignore[reportUnknownMemberType]
+        ensure_tables_exist()
+        setting = (
+            db.query(AppSetting)
+            .filter(AppSetting.key == "default_grind_offset_clicks")
+            .first()
+        )
+
+    if not setting:
+        return 0.0
+    try:
+        return float(setting.value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def set_grind_offset_clicks(db: Any, offset_clicks: float) -> None:
+    setting = (
+        db.query(AppSetting)
+        .filter(AppSetting.key == "default_grind_offset_clicks")
+        .first()
+    )
+    if setting:
+        setting.value = str(offset_clicks)
+    else:
+        db.add(AppSetting(key="default_grind_offset_clicks", value=str(offset_clicks)))
+    db.commit()
+
+
+def _as_non_empty_text(value: Any, default: str = "Unknown") -> str:
+    if value is None:
+        return default
+    text_value = str(value).strip()
+    if not text_value or text_value.lower() == "none":
+        return default
+    return text_value
+
+
 async def save_dial_in_log(
     coffee_data: Dict[str, Any],
     recommendation: str,
@@ -88,22 +158,28 @@ async def save_dial_in_log(
     """Save new log to database (simplified)"""
     db = SessionLocal()  # type: ignore[reportUnknownVariableType]
     try:
+        bean_name = _as_non_empty_text(coffee_data.get("name"))
+        bean_roaster = _as_non_empty_text(coffee_data.get("roaster"))
+        bean_origin = _as_non_empty_text(coffee_data.get("origin"))
+        bean_process = _as_non_empty_text(coffee_data.get("process"))
+        bean_roast_level = _as_non_empty_text(coffee_data.get("roast_level"))
+
         # Find or create the bean
         bean = (
             db.query(Bean)
             .filter(  # type: ignore[reportUnknownMemberType]
-                Bean.name == coffee_data.get("name"),  # type: ignore[reportUnknownArgumentType]
-                Bean.roaster == coffee_data.get("roaster"),  # type: ignore[reportUnknownArgumentType]
+                Bean.name == bean_name,
+                Bean.roaster == bean_roaster,
             )
             .first()
         )  # type: ignore[reportUnknownMemberType]
         if not bean:
             bean = Bean(  # type: ignore[reportUnknownVariableType]
-                roaster=coffee_data.get("roaster", "Unknown"),
-                name=coffee_data.get("name", "Unknown"),
-                origin=coffee_data.get("origin", "Unknown"),
-                process=coffee_data.get("process", "Unknown"),
-                roast_level=coffee_data.get("roast_level", "Unknown"),
+                roaster=bean_roaster,
+                name=bean_name,
+                origin=bean_origin,
+                process=bean_process,
+                roast_level=bean_roast_level,
             )
             db.add(bean)  # type: ignore[reportUnknownMemberType]
             db.commit()  # type: ignore[reportUnknownMemberType]
@@ -134,17 +210,26 @@ async def save_dial_in_log(
 
         resolved_dose_g = dose_g if dose_g is not None else get_default_dose_g(db)
 
+        # Keep defaults practical when the user only confirms grind setting.
+        estimated_yield_g = round(resolved_dose_g * 2.0, 1)
+        estimated_time_s = 28
+
         log = DialInLog(  # type: ignore[reportUnknownVariableType]
             bean_id=bean.id,  # type: ignore[reportUnknownMemberType]
             grinder_id=grinder.id,  # type: ignore[reportUnknownMemberType]
             machine_id=machine.id,  # type: ignore[reportUnknownMemberType]
             grind_setting=grind_setting,
             dose_g=resolved_dose_g,
+            yield_g=estimated_yield_g,
+            time_s=estimated_time_s,
             rating=5,  # good feedback
             tasting_notes=f"Discord feedback: {user_name} - {recommendation[:100]}...",
         )
         db.add(log)  # type: ignore[reportUnknownMemberType]
         db.commit()  # type: ignore[reportUnknownMemberType]
+    except Exception:
+        db.rollback()  # type: ignore[reportUnknownMemberType]
+        raise
     finally:
         db.close()  # type: ignore[reportUnknownMemberType]
 
@@ -164,6 +249,8 @@ async def on_message(message: Any):
             "• `!show_equipment` - Show current grinder and machine\n"
             "• `!set_dose <grams>` - Set default dose (example: `!set_dose 16`)\n"
             "• `!show_dose` - Show current default dose\n\n"
+            "• `!set_grind_offset <clicks>` - Set grind calibration offset (example: `!set_grind_offset -2`)\n"
+            "• `!show_grind_offset` - Show current grind offset\n\n"
             "☕ To get a recommendation: upload a coffee bag photo."
         )
         await message.reply(help_text)  # type: ignore[reportUnknownMemberType]
@@ -281,6 +368,45 @@ async def on_message(message: Any):
             db.close()
         return
 
+    if message.content.startswith("!set_grind_offset "):  # type: ignore[attr-defined]
+        parts = message.content.split(" ", 1)  # type: ignore[attr-defined]
+        if len(parts) == 2:
+            raw_value = (
+                parts[1].strip().lower().replace("clicks", "").replace("click", "")
+            )
+            try:
+                offset = float(raw_value)
+            except Exception:
+                await message.reply(
+                    "❌ Usage: !set_grind_offset <clicks> (example: !set_grind_offset -2)"
+                )  # type: ignore[reportUnknownMemberType]
+                return
+
+            db = SessionLocal()
+            try:
+                set_grind_offset_clicks(db, offset)
+                await message.reply(f"✅ Grind offset updated to {offset:+.1f} clicks")  # type: ignore[reportUnknownMemberType]
+            except Exception as e:
+                await message.reply(f"❌ Error updating grind offset: {e}")  # type: ignore[reportUnknownMemberType]
+            finally:
+                db.close()
+        else:
+            await message.reply(
+                "❌ Usage: !set_grind_offset <clicks> (example: !set_grind_offset -2)"
+            )  # type: ignore[reportUnknownMemberType]
+        return
+
+    if message.content == "!show_grind_offset":  # type: ignore[attr-defined]
+        db = SessionLocal()
+        try:
+            offset = get_grind_offset_clicks(db)
+            await message.reply(f"🎯 Current grind offset: {offset:+.1f} clicks")  # type: ignore[reportUnknownMemberType]
+        except Exception as e:
+            await message.reply(f"❌ Error retrieving grind offset: {e}")  # type: ignore[reportUnknownMemberType]
+        finally:
+            db.close()
+        return
+
     # If there is an attachment (image), and it's an image file
     if message.attachments:  # type: ignore[reportUnknownMemberType]
         for attachment in message.attachments:  # type: ignore[reportUnknownMemberType]
@@ -304,10 +430,12 @@ async def on_message(message: Any):
                     db = SessionLocal()
                     try:
                         default_dose_g = get_default_dose_g(db)
+                        grind_offset_clicks = get_grind_offset_clicks(db)
                     finally:
                         db.close()
 
                     coffee_data["preferred_dose_g"] = default_dose_g
+                    coffee_data["preferred_grind_offset_clicks"] = grind_offset_clicks
 
                     # RAG search
                     recommendation = get_best_grind_setting(coffee_data)
@@ -347,28 +475,39 @@ async def on_message(message: Any):
                             reply = await client.wait_for(
                                 "message", timeout=120.0, check=msg_check
                             )  # 2 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-                            actual_grind = reply.content.strip()
-                            await save_dial_in_log(
-                                coffee_data,
-                                recommendation,
-                                author.name,
-                                actual_grind,
-                                default_dose_g,
-                            )  # type: ignore[arg-type]
-                            await message.reply(
-                                f"✅ Saved: '{actual_grind}' setting to the database!"
-                            )  # type: ignore[reportUnknownMemberType]
-                        except Exception:
+                        except asyncio.TimeoutError:
                             # If no response, save the default
-                            await save_dial_in_log(
-                                coffee_data,
-                                recommendation,
-                                author.name,
-                                dose_g=default_dose_g,
-                            )  # type: ignore[arg-type]
-                            await message.reply(
-                                "⏰ Timeout. Saved the default recommendation."
-                            )  # type: ignore[reportUnknownMemberType]
+                            try:
+                                await save_dial_in_log(
+                                    coffee_data,
+                                    recommendation,
+                                    author.name,
+                                    dose_g=default_dose_g,
+                                )  # type: ignore[arg-type]
+                                await message.reply(
+                                    "⏰ Timeout. Saved the default recommendation."
+                                )  # type: ignore[reportUnknownMemberType]
+                            except Exception as e:
+                                await message.reply(
+                                    f"❌ Failed to save the default setting: {e}"
+                                )  # type: ignore[reportUnknownMemberType]
+                        else:
+                            actual_grind = reply.content.strip()
+                            try:
+                                await save_dial_in_log(
+                                    coffee_data,
+                                    recommendation,
+                                    author.name,
+                                    actual_grind,
+                                    default_dose_g,
+                                )  # type: ignore[arg-type]
+                                await message.reply(
+                                    f"✅ Saved: '{actual_grind}' setting to the database!"
+                                )  # type: ignore[reportUnknownMemberType]
+                            except Exception as e:
+                                await message.reply(
+                                    f"❌ Failed to save your setting: {e}"
+                                )  # type: ignore[reportUnknownMemberType]
                     except Exception:
                         pass  # Timeout or didn't react
 

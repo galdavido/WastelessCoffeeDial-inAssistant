@@ -61,7 +61,7 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
     try:
         # Call to Gemini model, with ENFORCED JSON schema
         response = client.models.generate_content(
-            model="gemini-2.5-flash",  # The latest model, excellent for image analysis too
+            model="gemini-3.1-flash-lite-preview",
             contents=[prompt, img],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
