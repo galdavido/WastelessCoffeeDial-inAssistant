@@ -4,14 +4,16 @@ An AI-powered Discord bot and MCP server for coffee enthusiasts. Upload a photo 
 
 ## Features
 
-- **Image Analysis**: Uses Google Gemini Vision API to extract coffee details (roaster, origin, process, roast level) from bag photos.
-- **RAG Recommendations**: Searches your PostgreSQL database for similar coffees and suggests optimal grind settings, dose, and brewing tips.
+- **Image Analysis**: Uses Google Gemini Vision API with multi-model fallback chain to extract coffee details (roaster, origin, process, roast level) from bag photos. Supports Hungarian coffee bags with automatic language normalization.
+- **RAG Recommendations**: Searches your PostgreSQL database for similar coffees and suggests optimal grind settings, dose, and brewing tips. Integrates web grounding via Google Search for current information.
+- **Bean Deduplication**: Automatically detects duplicate beans across repeated scans using normalized and fuzzy string matching, preventing database clutter.
+- **Personalized Calibration**: Set your default dose and grind offset to fine-tune recommendations for your specific equipment.
 - **Equipment Discovery**: Semantic search for coffee equipment using natural language queries (e.g., "quiet flat burr grinder for espresso").
 - **Web Scraping**: Automatically scrape and extract equipment data from online stores using AI.
 - **Vector Database**: Powered by pgvector for fast similarity searches on both coffee logs and equipment.
 - **Feedback Loop**: React with 👍 to provide the actual grind setting you used (based on experience), which is saved back to the database for improved future recommendations.
 - **MCP Server**: Integrate with AI agents (like Claude) for coffee dial-in assistance.
-- **Docker Ready**: Fully containerized for easy deployment on Linux servers.
+- **Docker Ready**: Fully containerized for easy deployment on Linux servers with automatic database initialization.
 
 ## Project Structure
 
@@ -103,17 +105,26 @@ docker compose logs -f wcda-bot
 2. **Receive Analysis**: The bot replies with extracted coffee details and grind recommendations from your database.
 3. **Provide Feedback**: If the suggestion is good, react with 👍. The bot saves this as a new log entry for future reference.
 
-### Equipment Search
+### Bot Commands
 
-- `!search_equipment <query>` - Search for equipment using natural language (e.g., `!search_equipment quiet espresso grinder`)
+#### General
+- `!help` - Display all available bot commands
 
-### Equipment Setup
-
+#### Equipment Setup
 Before using the bot, set your espresso equipment so recommendations are tailored to your setup:
 
 - `!set_grinder <brand> <model>` - Set your grinder (e.g., `!set_grinder Kingrinder K6`)
 - `!set_machine <brand> <model>` - Set your espresso machine (e.g., `!set_machine AVX Hero Plus 2024`)
 - `!show_equipment` - Display your current equipment settings
+
+#### Dose and Grind Calibration
+- `!set_dose <grams>` - Set your default espresso dose (e.g., `!set_dose 18` for 18g)
+- `!show_dose` - Display your current default dose setting
+- `!set_grind_offset <clicks>` - Set a grind offset to calibrate recommendations for your grinder (e.g., `!set_grind_offset +2` or `!set_grind_offset -1`)
+- `!show_grind_offset` - Display your current grind offset setting
+
+#### Search
+- `!search_equipment <query>` - Search for equipment using natural language (e.g., `!search_equipment quiet espresso grinder`)
 
 ### MCP Server
 
@@ -212,8 +223,10 @@ The MCP server exposes WCDA's capabilities to AI agents:
 - **Bot not responding?** Check logs: `docker compose logs wcda-bot`. Ensure token is valid and intents enabled.
 - **401 Unauthorized?** Reset Discord token and update `.env`.
 - **No recommendations?** Seed data might be missing; run `python seed.py` locally or check DB.
-- **Image analysis fails?** Verify Gemini API key and image quality.
+- **Image analysis fails?** The bot uses a fallback chain of Gemini models; if one fails, it tries others. Check logs for specific errors. Verify Gemini API key and image quality.
+- **Duplicate beans in database?** The bot now deduplicates beans automatically on new uploads. To clean up historical duplicates, drop and reinitialize your database: drop tables, then rebuild your containers (`docker compose up --build -d`).
 - **Permissions issues?** Re-invite bot with correct permissions.
+- **Database won't reinitialize?** Ensure the PostgreSQL container has sufficient time to start. The bot includes retry logic for database initialization.
 
 ## Development
 
