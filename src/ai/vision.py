@@ -11,6 +11,9 @@ from core.optional_deps import (
 load_dotenv_if_available()
 
 
+_LAST_VISION_ERROR: str | None = None
+
+
 # 1. Define the Pydantic model (The data structure we expect from the AI)
 class CoffeeData(BaseModel):
     roaster: str | None
@@ -19,6 +22,15 @@ class CoffeeData(BaseModel):
     process: str | None
     roast_level: str | None
     roast_date: str | None
+
+
+def get_last_vision_error() -> str | None:
+    return _LAST_VISION_ERROR
+
+
+def _set_last_vision_error(message: str | None) -> None:
+    global _LAST_VISION_ERROR
+    _LAST_VISION_ERROR = message
 
 
 def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
@@ -41,8 +53,19 @@ def _build_prompt() -> str:
     )
 
 
+def _vision_models() -> list[str]:
+    # Ordered by preference, with stable fallbacks for account/API differences.
+    return [
+        "gemini-3.1-flash-lite-preview",
+        "gemini-flash-lite-latest",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash-lite",
+    ]
+
+
 def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
     """Analyze a coffee bag image and return normalized coffee metadata."""
+    _set_last_vision_error(None)
     print(f"Image analysis in progress with the new GenAI SDK: {image_path}...")
 
     setup = _get_image_module_and_client()
@@ -51,33 +74,41 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
     image_module, client, types = setup
 
     try:
-        img = image_module.open(image_path)
+        img = image_module.open(image_path).convert("RGB")
     except FileNotFoundError:
-        print(f"Error: The '{image_path}' file is not found in the folder!")
+        message = f"The '{image_path}' file is not found in the folder."
+        print(f"Error: {message}")
+        _set_last_vision_error(message)
         return None
 
     prompt = _build_prompt()
 
     try:
-        # Call to Gemini model, with ENFORCED JSON schema
-        response = client.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
-            contents=[prompt, img],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=CoffeeData,
-                temperature=0.1,  # Low value: we want facts, not hallucinations
-            ),
-        )
+        last_error = "Unknown extraction error"
+        for model_name in _vision_models():
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt, img],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=CoffeeData,
+                        temperature=0.1,  # Low value: we want facts, not hallucinations
+                    ),
+                )
 
-        # The response (response.text) is now guaranteed to be JSON matching the above Pydantic schema
-        text = response.text
-        if text is None:
-            return None
-        return json.loads(text)
+                text = response.text
+                if text is None:
+                    last_error = f"{model_name}: empty response"
+                    continue
+                parsed = json.loads(text)
+                _set_last_vision_error(None)
+                return parsed
+            except Exception as e:
+                last_error = f"{model_name}: {e}"
+                print(f"Vision model '{model_name}' failed: {e}")
 
-    except Exception as e:
-        print(f"Error occurred during API call: {e}")
+        _set_last_vision_error(last_error)
         return None
     finally:
         client.close()
