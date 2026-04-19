@@ -11,7 +11,7 @@ from core.optional_deps import (
 load_dotenv_if_available()
 
 
-_LAST_VISION_ERROR: str | None = None
+_last_vision_error: str | None = None
 
 
 # 1. Define the Pydantic model (The data structure we expect from the AI)
@@ -25,12 +25,12 @@ class CoffeeData(BaseModel):
 
 
 def get_last_vision_error() -> str | None:
-    return _LAST_VISION_ERROR
+    return _last_vision_error
 
 
 def _set_last_vision_error(message: str | None) -> None:
-    global _LAST_VISION_ERROR
-    _LAST_VISION_ERROR = message
+    global _last_vision_error
+    _last_vision_error = message
 
 
 def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
@@ -49,7 +49,11 @@ def _build_prompt() -> str:
     """Build the extraction prompt for coffee bag image analysis."""
     return (
         "You are an expert barista. Analyze this coffee bag packaging and "
-        "extract the specific details."
+        "extract the specific details. "
+        "The source text may be Hungarian or another non-English language. "
+        "Always normalize extracted values to English in the JSON fields. "
+        "Translate process/style terms to standard English coffee terms "
+        "(for example, 'mosott' -> 'Washed', 'vilagos porkoles' -> 'Light')."
     )
 
 
