@@ -1,8 +1,11 @@
 import asyncio
 import discord
+from difflib import SequenceMatcher
 import os
+import re
 import tempfile
 import time
+import unicodedata
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from ai.vision import analyze_coffee_bag
@@ -148,6 +151,87 @@ def _as_non_empty_text(value: Any, default: str = "Unknown") -> str:
     return text_value
 
 
+def _normalize_label(value: str) -> str:
+    lowered = value.strip().lower()
+    deaccented = (
+        unicodedata.normalize("NFKD", lowered).encode("ascii", "ignore").decode()
+    )
+    cleaned = re.sub(r"[^a-z0-9]+", " ", deaccented)
+    return " ".join(cleaned.split())
+
+
+def _similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, _normalize_label(a), _normalize_label(b)).ratio()
+
+
+def _find_existing_bean(
+    db: Any,
+    name: str,
+    roaster: str,
+    origin: str,
+    process: str,
+) -> Any:
+    # 1) Fast exact lookup
+    exact = (
+        db.query(Bean)
+        .filter(  # type: ignore[reportUnknownMemberType]
+            Bean.name == name,
+            Bean.roaster == roaster,
+        )
+        .first()
+    )
+    if exact:
+        return exact
+
+    roaster_norm = _normalize_label(roaster)
+    name_norm = _normalize_label(name)
+    origin_norm = _normalize_label(origin)
+    process_norm = _normalize_label(process)
+
+    # 2) OCR-tolerant fuzzy match among same roaster candidates
+    candidates = db.query(Bean).all()  # type: ignore[reportUnknownMemberType]
+    best_candidate = None
+    best_score = 0.0
+
+    for candidate in candidates:
+        candidate_roaster_norm = _normalize_label(str(candidate.roaster))
+        if roaster_norm != "unknown" and candidate_roaster_norm != roaster_norm:
+            continue
+
+        candidate_name = str(candidate.name)
+        score = _similarity(name, candidate_name)
+
+        candidate_name_norm = _normalize_label(candidate_name)
+        if candidate_name_norm == name_norm:
+            score = 1.0
+
+        candidate_origin_norm = _normalize_label(str(candidate.origin))
+        if (
+            origin_norm != "unknown"
+            and candidate_origin_norm != "unknown"
+            and candidate_origin_norm == origin_norm
+        ):
+            score += 0.05
+
+        candidate_process_norm = _normalize_label(str(candidate.process))
+        if (
+            process_norm != "unknown"
+            and candidate_process_norm != "unknown"
+            and candidate_process_norm == process_norm
+        ):
+            score += 0.05
+
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+
+    # High threshold to avoid accidental merges.
+    if best_candidate is not None and best_score >= 0.9:
+        return best_candidate
+
+    return None
+
+
 async def save_dial_in_log(
     coffee_data: Dict[str, Any],
     recommendation: str,
@@ -164,15 +248,14 @@ async def save_dial_in_log(
         bean_process = _as_non_empty_text(coffee_data.get("process"))
         bean_roast_level = _as_non_empty_text(coffee_data.get("roast_level"))
 
-        # Find or create the bean
-        bean = (
-            db.query(Bean)
-            .filter(  # type: ignore[reportUnknownMemberType]
-                Bean.name == bean_name,
-                Bean.roaster == bean_roaster,
-            )
-            .first()
-        )  # type: ignore[reportUnknownMemberType]
+        # Find or create the bean (fuzzy matching avoids duplicate rows from OCR variations)
+        bean = _find_existing_bean(
+            db,
+            name=bean_name,
+            roaster=bean_roaster,
+            origin=bean_origin,
+            process=bean_process,
+        )
         if not bean:
             bean = Bean(  # type: ignore[reportUnknownVariableType]
                 roaster=bean_roaster,
