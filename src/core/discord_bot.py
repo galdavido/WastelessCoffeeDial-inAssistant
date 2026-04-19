@@ -5,7 +5,7 @@ from sqlalchemy import text
 from ai.vision import analyze_coffee_bag
 from ai.rag import get_best_grind_setting
 from database.database import SessionLocal, engine, Base
-from database.models import Bean, Equipment, DialInLog
+from database.models import AppSetting, Bean, Equipment, DialInLog
 from core.optional_deps import load_dotenv_if_available
 from typing import Any, Dict
 
@@ -56,11 +56,34 @@ async def on_ready():
     print(f"WCDA Discord Bot logged in as {client.user}")  # type: ignore[reportUnknownMemberType]
 
 
+def get_default_dose_g(db: Any) -> float:
+    setting = db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
+    if not setting:
+        return 16.0
+    try:
+        dose = float(setting.value)
+        if dose > 0:
+            return dose
+    except (TypeError, ValueError):
+        pass
+    return 16.0
+
+
+def set_default_dose_g(db: Any, dose: float) -> None:
+    setting = db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
+    if setting:
+        setting.value = str(dose)
+    else:
+        db.add(AppSetting(key="default_dose_g", value=str(dose)))
+    db.commit()
+
+
 async def save_dial_in_log(
     coffee_data: Dict[str, Any],
     recommendation: str,
     user_name: str,
     actual_grind: str | None = None,
+    dose_g: float | None = None,
 ):
     """Save new log to database (simplified)"""
     db = SessionLocal()  # type: ignore[reportUnknownVariableType]
@@ -109,14 +132,14 @@ async def save_dial_in_log(
                 except Exception:
                     pass
 
-        dose_g = 16.0  # default
+        resolved_dose_g = dose_g if dose_g is not None else get_default_dose_g(db)
 
         log = DialInLog(  # type: ignore[reportUnknownVariableType]
             bean_id=bean.id,  # type: ignore[reportUnknownMemberType]
             grinder_id=grinder.id,  # type: ignore[reportUnknownMemberType]
             machine_id=machine.id,  # type: ignore[reportUnknownMemberType]
             grind_setting=grind_setting,
-            dose_g=dose_g,
+            dose_g=resolved_dose_g,
             rating=5,  # good feedback
             tasting_notes=f"Discord feedback: {user_name} - {recommendation[:100]}...",
         )
@@ -130,6 +153,20 @@ async def save_dial_in_log(
 async def on_message(message: Any):
     author: Any = message.author  # type: ignore[assignment]
     if author == client.user:
+        return
+
+    if message.content == "!help":  # type: ignore[attr-defined]
+        help_text = (
+            "📘 **WCDA Bot Commands**\n"
+            "• `!help` - Show this help message\n"
+            "• `!set_grinder <brand> <model>` - Set your grinder\n"
+            "• `!set_machine <brand> <model>` - Set your espresso machine\n"
+            "• `!show_equipment` - Show current grinder and machine\n"
+            "• `!set_dose <grams>` - Set default dose (example: `!set_dose 16`)\n"
+            "• `!show_dose` - Show current default dose\n\n"
+            "☕ To get a recommendation: upload a coffee bag photo."
+        )
+        await message.reply(help_text)  # type: ignore[reportUnknownMemberType]
         return
 
     # Handle equipment setting commands
@@ -207,6 +244,43 @@ async def on_message(message: Any):
             db.close()
         return
 
+    if message.content.startswith("!set_dose "):  # type: ignore[attr-defined]
+        parts = message.content.split(" ", 1)  # type: ignore[attr-defined]
+        if len(parts) == 2:
+            raw_value = parts[1].strip().lower().replace("g", "")
+            try:
+                dose = float(raw_value)
+                if dose <= 0:
+                    raise ValueError("Dose must be positive")
+            except Exception:
+                await message.reply(
+                    "❌ Usage: !set_dose <grams> (example: !set_dose 16)"
+                )  # type: ignore[reportUnknownMemberType]
+                return
+
+            db = SessionLocal()
+            try:
+                set_default_dose_g(db, dose)
+                await message.reply(f"✅ Default dose updated to {dose:.1f}g")  # type: ignore[reportUnknownMemberType]
+            except Exception as e:
+                await message.reply(f"❌ Error updating dose: {e}")  # type: ignore[reportUnknownMemberType]
+            finally:
+                db.close()
+        else:
+            await message.reply("❌ Usage: !set_dose <grams> (example: !set_dose 16)")  # type: ignore[reportUnknownMemberType]
+        return
+
+    if message.content == "!show_dose":  # type: ignore[attr-defined]
+        db = SessionLocal()
+        try:
+            dose = get_default_dose_g(db)
+            await message.reply(f"⚖️ Current default dose: {dose:.1f}g")  # type: ignore[reportUnknownMemberType]
+        except Exception as e:
+            await message.reply(f"❌ Error retrieving dose: {e}")  # type: ignore[reportUnknownMemberType]
+        finally:
+            db.close()
+        return
+
     # If there is an attachment (image), and it's an image file
     if message.attachments:  # type: ignore[reportUnknownMemberType]
         for attachment in message.attachments:  # type: ignore[reportUnknownMemberType]
@@ -226,6 +300,14 @@ async def on_message(message: Any):
                             "❌ Failed to extract data from the image. Try again with a better quality photo!"
                         )  # type: ignore[reportUnknownMemberType]
                         return
+
+                    db = SessionLocal()
+                    try:
+                        default_dose_g = get_default_dose_g(db)
+                    finally:
+                        db.close()
+
+                    coffee_data["preferred_dose_g"] = default_dose_g
 
                     # RAG search
                     recommendation = get_best_grind_setting(coffee_data)
@@ -267,7 +349,11 @@ async def on_message(message: Any):
                             )  # 2 minutes  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                             actual_grind = reply.content.strip()
                             await save_dial_in_log(
-                                coffee_data, recommendation, author.name, actual_grind
+                                coffee_data,
+                                recommendation,
+                                author.name,
+                                actual_grind,
+                                default_dose_g,
                             )  # type: ignore[arg-type]
                             await message.reply(
                                 f"✅ Saved: '{actual_grind}' setting to the database!"
@@ -275,7 +361,10 @@ async def on_message(message: Any):
                         except Exception:
                             # If no response, save the default
                             await save_dial_in_log(
-                                coffee_data, recommendation, author.name
+                                coffee_data,
+                                recommendation,
+                                author.name,
+                                dose_g=default_dose_g,
                             )  # type: ignore[arg-type]
                             await message.reply(
                                 "⏰ Timeout. Saved the default recommendation."
