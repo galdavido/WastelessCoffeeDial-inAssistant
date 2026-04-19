@@ -76,3 +76,12 @@ class ScrapedEquipment(Base):
     # THIS IS THE ESSENCE! Here come the mathematical vectors.
     # The Gemini embedding model (text-embedding-004) returns exactly 768-dimensional numbers.
     embedding: Mapped[list[float]] = mapped_column(Vector(768))  # type: ignore[arg-type]
+
+
+# 5. Simple key-value settings table for bot/app preferences
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String, unique=True, index=True)
+    value: Mapped[str] = mapped_column(String)

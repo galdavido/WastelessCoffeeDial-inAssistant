@@ -1,4 +1,5 @@
 # import os
+from datetime import date, datetime
 from typing import Any, Dict, Sequence, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
@@ -17,6 +18,27 @@ class CoffeeProfile(TypedDict):
     process: str
     roast_level: str
     roast_date: str
+    brew_date: str
+    days_since_roast: int | None
+    preferred_dose_g: float | None
+
+
+def _parse_date(date_text: str) -> date | None:
+    cleaned = date_text.strip()
+    if not cleaned:
+        return None
+
+    # Accept common date formats from OCR/metadata.
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(cleaned, fmt).date()
+        except ValueError:
+            continue
+
+    try:
+        return datetime.fromisoformat(cleaned.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
 
 
 def _describe_equipment(
@@ -48,6 +70,7 @@ def _build_db_context(similar_logs: Sequence[SimilarLogRow]) -> str:
         lines.append(f"- Coffee: {bean.name} ({bean.origin}, {bean.process})")
         lines.append(f"  Grinder: {grinder.brand} {grinder.model}")
         lines.append(f"  Machine: {machine.brand} {machine.model}")
+        lines.append(f"  Brew date: {log.created_at.date().isoformat()}")
         lines.append(f"  Setting: {log.grind_setting} clicks, Dose: {log.dose_g}g")
         lines.append(f"  Notes: {log.tasting_notes}")
         lines.append("")
@@ -56,12 +79,42 @@ def _build_db_context(similar_logs: Sequence[SimilarLogRow]) -> str:
 
 
 def _normalize_coffee_profile(coffee_json: Dict[str, Any]) -> CoffeeProfile:
+    roast_date_raw = str(coffee_json.get("roast_date", "")).strip()
+    brew_date_raw = str(coffee_json.get("brew_date", "")).strip()
+
+    roast_date_parsed = _parse_date(roast_date_raw)
+    brew_date_parsed = _parse_date(brew_date_raw)
+
+    if brew_date_parsed is None:
+        brew_date_parsed = date.today()
+
+    days_since_roast: int | None = None
+    if roast_date_parsed is not None:
+        delta_days = (brew_date_parsed - roast_date_parsed).days
+        if delta_days >= 0:
+            days_since_roast = delta_days
+
+    preferred_dose_g: float | None = None
+    raw_dose = coffee_json.get("preferred_dose_g")
+    if raw_dose is not None:
+        try:
+            candidate = float(raw_dose)
+            if candidate > 0:
+                preferred_dose_g = candidate
+        except (TypeError, ValueError):
+            preferred_dose_g = None
+
     return {
         "name": str(coffee_json.get("name", "")),
         "origin": str(coffee_json.get("origin", "")),
         "process": str(coffee_json.get("process", "")),
         "roast_level": str(coffee_json.get("roast_level", "")),
-        "roast_date": str(coffee_json.get("roast_date", "")),
+        "roast_date": (
+            roast_date_parsed.isoformat() if roast_date_parsed else roast_date_raw
+        ),
+        "brew_date": brew_date_parsed.isoformat(),
+        "days_since_roast": days_since_roast,
+        "preferred_dose_g": preferred_dose_g,
     }
 
 
@@ -75,7 +128,11 @@ def _build_prompt(
         - Name: {profile["name"]}
         - Origin: {profile["origin"]}
         - Process: {profile["process"]}
-        - Roast: {profile["roast_level"]}, {profile["roast_date"]}
+        - Roast level: {profile["roast_level"]}
+        - Roast date: {profile["roast_date"]}
+        - Brew date: {profile["brew_date"]}
+        - Days since roast: {profile["days_since_roast"]}
+        - Preferred dose: {profile["preferred_dose_g"]}g
 
         The user's equipment: {equipment_info}
 
@@ -89,8 +146,14 @@ def _build_prompt(
 
         RULES:
         1. If the "RAG Database Context" contains data for the user's equipment, then PRIMARILY rely on those setting values!
-        2. If the context is empty, use your own general barista knowledge! (Tip: For espresso, aim for 25-30 second extraction times with 18-20g in, 36g out. Adjust grind finer for lighter roasts, coarser for darker).
-        3. Formulate briefly, friendly, in English.
+        2. Always factor roast date and brew date into the recommendation. Use "Days since roast" to adapt the recipe.
+        3. If Days since roast is 0-6, expect more CO2: suggest slightly coarser grind and/or lower temperature to reduce channeling and sourness.
+        4. If Days since roast is 7-21, treat as normal peak window and prioritize balance.
+        5. If Days since roast is >21, suggest slightly finer grind and/or higher extraction support (temperature, ratio) to recover sweetness and clarity.
+        6. If roast date is missing or invalid, explicitly say so and use roast level + historical logs.
+        7. If Preferred dose is provided, keep dose at that value in your recipe unless there is a strong reason to adjust.
+        8. If the context is empty, use your own general barista knowledge! (Tip: For espresso, aim for 25-30 second extraction times with 18-20g in, 36g out. Adjust grind finer for lighter roasts, coarser for darker).
+        9. Formulate briefly, friendly, in English.
         """
 
 
