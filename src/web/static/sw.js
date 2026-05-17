@@ -1,10 +1,10 @@
-const CACHE = 'barista-ai-v3';
+const CACHE = 'barista-ai-v4';
 const PRECACHE = [
   '/',
-  '/static/style.css?v=20260517',
-  '/static/desktop.css?v=20260517',
-  '/static/app.js?v=20260517',
-  '/static/manifest.json?v=20260517',
+  '/static/style.css?v=20260517-2',
+  '/static/desktop.css?v=20260517-2',
+  '/static/app.js?v=20260517-2',
+  '/static/manifest.json?v=20260517-2',
 ];
 
 self.addEventListener('install', event => {

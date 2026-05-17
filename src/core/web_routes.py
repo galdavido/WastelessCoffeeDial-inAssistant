@@ -68,7 +68,10 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return FileResponse(
             os.path.join(static_dir, "sw.js"),
             media_type="application/javascript",
-            headers={"Service-Worker-Allowed": "/"},
+            headers={
+                "Service-Worker-Allowed": "/",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+            },
         )
 
     @app.post("/api/analyze")
