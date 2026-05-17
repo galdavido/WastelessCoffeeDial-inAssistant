@@ -24,5 +24,19 @@ services:
       - db
     command: python src/core/discord_bot.py
 
+  wcda-web:
+    build: .
+    container_name: wcda_web
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://barista:supersecret@db:5432/barista_db
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      WEB_PORT: "8080"
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+    command: python src/core/web_server.py
+
 volumes:
   postgres_data:
