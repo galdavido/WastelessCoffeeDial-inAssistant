@@ -63,6 +63,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   gap: 12px;
   margin-bottom: 14px;
 }
+.tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .tab-title {
   font-size: 20px;
   font-weight: 700;
@@ -147,7 +152,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .log-title {
   font-size: 15px;
@@ -170,6 +175,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
+}
+.log-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 .log-grid {
   display: grid;
@@ -369,9 +379,22 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   padding: 24px 20px; width: 100%; max-width: 480px;
   display: flex; flex-direction: column; gap: 12px;
 }
+.dialog-card-form {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .dialog-title { font-size: 18px; font-weight: 700; color: var(--text-1); }
 .dialog-sub { font-size: 13px; color: var(--text-2); }
 .dialog-actions { display: flex; gap: 10px; }
+.form-grid {
+  display: grid;
+  gap: 10px;
+}
+.form-grid textarea.input {
+  min-height: 72px;
+  resize: vertical;
+}
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 .toast {
@@ -443,6 +466,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
     gap: 10px;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .tab-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 106px;
   }
 
   .setting-inline {

@@ -122,7 +122,10 @@
             <h2 class="tab-title">Bean Logs</h2>
             <p class="tab-subtitle">Your recent saved dial-in entries</p>
           </div>
-          <button class="btn btn-sm btn-ghost" id="btn-refresh-logs">Refresh</button>
+          <div class="tab-actions">
+            <button class="btn btn-sm btn-primary" id="btn-add-log">Add</button>
+            <button class="btn btn-sm btn-ghost" id="btn-refresh-logs">Refresh</button>
+          </div>
         </div>
 
         <div id="logs-list" class="logs-list">
@@ -247,6 +250,30 @@
 
   <!-- Toast notification -->
   <div class="toast hidden" id="toast"></div>
+
+  <div class="dialog-overlay hidden" id="log-editor-dialog">
+    <div class="dialog-card dialog-card-form">
+      <h3 class="dialog-title" id="log-editor-title">Add Record</h3>
+      <p class="dialog-sub">Create or edit a bean record and its latest log.</p>
+      <div class="form-grid">
+        <input class="input" id="form-roaster" placeholder="Roaster" />
+        <input class="input" id="form-name" placeholder="Bean name" />
+        <input class="input" id="form-origin" placeholder="Origin" />
+        <input class="input" id="form-process" placeholder="Process" />
+        <input class="input" id="form-roast-level" placeholder="Roast level" />
+        <input class="input" id="form-grind-setting" placeholder="Grind setting (e.g. 34 clicks)" />
+        <input class="input input-number" type="number" id="form-dose" placeholder="Dose g" step="0.1" min="1" />
+        <input class="input input-number" type="number" id="form-yield" placeholder="Yield g" step="0.1" min="1" />
+        <input class="input input-number" type="number" id="form-time" placeholder="Time s" step="1" min="1" />
+        <input class="input input-number" type="number" id="form-rating" placeholder="Rating 1-5" step="1" min="1" max="5" />
+        <textarea class="input" id="form-notes" placeholder="Tasting notes" rows="3"></textarea>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-primary" id="btn-save-record">Save</button>
+        <button class="btn btn-ghost" id="btn-cancel-record">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js?v=20260517"></script>
 </body>

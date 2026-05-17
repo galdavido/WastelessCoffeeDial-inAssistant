@@ -397,6 +397,24 @@ class GrindOffsetUpdate(BaseModel):
     offset_clicks: float
 
 
+class LogDetailsInput(BaseModel):
+    grind_setting: str | None = None
+    dose_g: float | None = None
+    yield_g: float | None = None
+    time_s: int | None = None
+    rating: int | None = None
+    tasting_notes: str | None = None
+
+
+class BeanRecordInput(BaseModel):
+    roaster: str
+    name: str
+    origin: str
+    process: str
+    roast_level: str
+    log: LogDetailsInput | None = None
+
+
 # ── API endpoints ─────────────────────────────────────────────────────────────
 
 
@@ -544,6 +562,7 @@ async def get_logs(limit: int = 20) -> dict[str, list[dict[str, Any]]]:
                     "roast_level": bean.roast_level,
                     "logs_count": len(bean.logs),
                     "latest_log": {
+                        "id": latest_log.id,
                         "created_at": latest_log.created_at.isoformat(),
                         "grinder": latest_log.grinder.brand
                         + " "
@@ -564,6 +583,164 @@ async def get_logs(limit: int = 20) -> dict[str, list[dict[str, Any]]]:
             )
 
         return {"entries": entries}
+    finally:
+        db.close()
+
+
+def _ensure_default_equipment(db: Any) -> tuple[Any, Any]:
+    grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
+    machine = db.query(Equipment).filter(Equipment.type == "espresso_machine").first()
+    if not grinder:
+        grinder = Equipment(type="grinder", brand="Unknown", model="Unknown")
+        db.add(grinder)
+    if not machine:
+        machine = Equipment(type="espresso_machine", brand="Unknown", model="Unknown")
+        db.add(machine)
+    db.commit()
+    db.refresh(grinder)
+    db.refresh(machine)
+    return grinder, machine
+
+
+def _resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
+    default_dose = get_default_dose_g(db)
+    dose = default_dose
+    if log and log.dose_g is not None and log.dose_g > 0:
+        dose = float(log.dose_g)
+    yield_g = round(dose * 2.0, 1)
+    if log and log.yield_g is not None and log.yield_g > 0:
+        yield_g = float(log.yield_g)
+    time_s = 28
+    if log and log.time_s is not None and log.time_s > 0:
+        time_s = int(log.time_s)
+    rating = 5
+    if log and log.rating is not None:
+        rating = max(1, min(5, int(log.rating)))
+    grind_setting = "Unknown"
+    if log and log.grind_setting:
+        grind_setting = log.grind_setting.strip() or "Unknown"
+    notes = None
+    if log and log.tasting_notes:
+        notes = log.tasting_notes.strip() or None
+    return {
+        "dose_g": dose,
+        "yield_g": yield_g,
+        "time_s": time_s,
+        "rating": rating,
+        "grind_setting": grind_setting,
+        "tasting_notes": notes,
+    }
+
+
+@app.post("/api/logs/manual")
+async def create_manual_log(body: BeanRecordInput) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        bean = Bean(
+            roaster=_as_non_empty_text(body.roaster),
+            name=_as_non_empty_text(body.name),
+            origin=_as_non_empty_text(body.origin),
+            process=_as_non_empty_text(body.process),
+            roast_level=_as_non_empty_text(body.roast_level),
+        )
+        db.add(bean)
+        db.commit()
+        db.refresh(bean)
+
+        grinder, machine = _ensure_default_equipment(db)
+        values = _resolve_log_values(body.log, db)
+        db.add(
+            DialInLog(
+                bean_id=bean.id,
+                grinder_id=grinder.id,
+                machine_id=machine.id,
+                grind_setting=values["grind_setting"],
+                dose_g=values["dose_g"],
+                yield_g=values["yield_g"],
+                time_s=values["time_s"],
+                rating=values["rating"],
+                tasting_notes=values["tasting_notes"],
+            )
+        )
+        db.commit()
+        return {"status": "created", "bean_id": bean.id}
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.put("/api/logs/{bean_id}")
+async def update_log_record(bean_id: int, body: BeanRecordInput) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        if not bean:
+            raise HTTPException(status_code=404, detail="Bean not found")
+
+        bean.roaster = _as_non_empty_text(body.roaster)
+        bean.name = _as_non_empty_text(body.name)
+        bean.origin = _as_non_empty_text(body.origin)
+        bean.process = _as_non_empty_text(body.process)
+        bean.roast_level = _as_non_empty_text(body.roast_level)
+
+        latest_log = None
+        if bean.logs:
+            latest_log = max(bean.logs, key=lambda log: log.created_at)
+
+        values = _resolve_log_values(body.log, db)
+        if latest_log is None:
+            grinder, machine = _ensure_default_equipment(db)
+            db.add(
+                DialInLog(
+                    bean_id=bean.id,
+                    grinder_id=grinder.id,
+                    machine_id=machine.id,
+                    grind_setting=values["grind_setting"],
+                    dose_g=values["dose_g"],
+                    yield_g=values["yield_g"],
+                    time_s=values["time_s"],
+                    rating=values["rating"],
+                    tasting_notes=values["tasting_notes"],
+                )
+            )
+        else:
+            latest_log.grind_setting = values["grind_setting"]
+            latest_log.dose_g = values["dose_g"]
+            latest_log.yield_g = values["yield_g"]
+            latest_log.time_s = values["time_s"]
+            latest_log.rating = values["rating"]
+            latest_log.tasting_notes = values["tasting_notes"]
+
+        db.commit()
+        return {"status": "updated", "bean_id": bean.id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.delete("/api/logs/{bean_id}")
+async def delete_log_record(bean_id: int) -> dict[str, str]:
+    db = SessionLocal()
+    try:
+        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        if not bean:
+            raise HTTPException(status_code=404, detail="Bean not found")
+
+        db.query(DialInLog).filter(DialInLog.bean_id == bean_id).delete()
+        db.delete(bean)
+        db.commit()
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
     finally:
         db.close()
 

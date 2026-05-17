@@ -1,6 +1,7 @@
 /* ── State ──────────────────────────────────────────────────────────────── */
 let currentCoffeeData = null;
 let currentRecommendation = null;
+let editingBeanId = null;
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
@@ -100,6 +101,9 @@ $('btn-new-scan').addEventListener('click', () => showPanel('scan-idle'));
 
 /* ── Logs ──────────────────────────────────────────────────────────────── */
 $('btn-refresh-logs').addEventListener('click', () => loadLogs());
+$('btn-add-log').addEventListener('click', () => openRecordEditor());
+$('btn-save-record').addEventListener('click', () => saveRecordFromForm());
+$('btn-cancel-record').addEventListener('click', () => closeRecordEditor());
 
 async function loadLogs() {
   const list = $('logs-list');
@@ -150,13 +154,114 @@ async function loadLogs() {
           </div>
           <span class="log-rating">${escapeHtml(String(logsCount))} log${logsCount === 1 ? '' : 's'}</span>
         </div>
+        <div class="log-actions">
+          <button class="btn btn-sm btn-ghost js-edit-record">Edit</button>
+          <button class="btn btn-sm btn-ghost js-delete-record">Delete</button>
+        </div>
         ${latestHtml}
       `;
+      card.querySelector('.js-edit-record')?.addEventListener('click', () => openRecordEditor(entry));
+      card.querySelector('.js-delete-record')?.addEventListener('click', () => deleteRecord(entry));
       list.appendChild(card);
     });
   } catch (err) {
     list.innerHTML = `<div class="logs-empty">${escapeHtml(err.message || 'Could not load beans')}</div>`;
   }
+}
+
+function openRecordEditor(entry = null) {
+  editingBeanId = entry ? Number(entry.bean_id) : null;
+  $('log-editor-title').textContent = editingBeanId ? 'Edit Record' : 'Add Record';
+
+  $('form-roaster').value = entry?.roaster || '';
+  $('form-name').value = entry?.bean_name || '';
+  $('form-origin').value = entry?.origin || '';
+  $('form-process').value = entry?.process || '';
+  $('form-roast-level').value = entry?.roast_level || '';
+  $('form-grind-setting').value = entry?.latest_log?.grind_setting || '';
+  $('form-dose').value = entry?.latest_log?.dose_g ?? '';
+  $('form-yield').value = entry?.latest_log?.yield_g ?? '';
+  $('form-time').value = entry?.latest_log?.time_s ?? '';
+  $('form-rating').value = entry?.latest_log?.rating ?? '';
+  $('form-notes').value = entry?.latest_log?.tasting_notes || '';
+
+  $('log-editor-dialog').classList.remove('hidden');
+}
+
+function closeRecordEditor() {
+  editingBeanId = null;
+  $('log-editor-dialog').classList.add('hidden');
+}
+
+async function saveRecordFromForm() {
+  const payload = {
+    roaster: $('form-roaster').value.trim(),
+    name: $('form-name').value.trim(),
+    origin: $('form-origin').value.trim(),
+    process: $('form-process').value.trim(),
+    roast_level: $('form-roast-level').value.trim(),
+    log: {
+      grind_setting: $('form-grind-setting').value.trim() || null,
+      dose_g: parseNullableNumber($('form-dose').value),
+      yield_g: parseNullableNumber($('form-yield').value),
+      time_s: parseNullableInt($('form-time').value),
+      rating: parseNullableInt($('form-rating').value),
+      tasting_notes: $('form-notes').value.trim() || null,
+    },
+  };
+
+  if (!payload.roaster || !payload.name || !payload.origin || !payload.process || !payload.roast_level) {
+    showToast('Please fill bean details first');
+    return;
+  }
+
+  try {
+    const url = editingBeanId ? `/api/logs/${editingBeanId}` : '/api/logs/manual';
+    const method = editingBeanId ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Save failed');
+
+    closeRecordEditor();
+    await loadLogs();
+    showToast('✅ Record saved');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not save record'));
+  }
+}
+
+async function deleteRecord(entry) {
+  const beanId = Number(entry?.bean_id);
+  if (!beanId) return;
+  if (!window.confirm(`Delete ${entry.roaster} ${entry.bean_name}?`)) return;
+
+  try {
+    const res = await fetch(`/api/logs/${beanId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Delete failed');
+    await loadLogs();
+    showToast('✅ Record deleted');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not delete record'));
+  }
+}
+
+function parseNullableNumber(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return null;
+  const n = Number.parseFloat(v);
+  return Number.isNaN(n) ? null : n;
+}
+
+function parseNullableInt(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return null;
+  const n = Number.parseInt(v, 10);
+  return Number.isNaN(n) ? null : n;
 }
 
 /* ── Feedback: "It worked!" ─────────────────────────────────────────────── */
