@@ -746,7 +746,7 @@ async def update_setup(setup_id: int, body: SetupInput) -> dict[str, Any]:
         db.close()
 
 
-@app.put("/api/setups/select")
+@app.put("/api/setups/active")
 async def select_setup(body: SetupSelectInput) -> dict[str, Any]:
     db = SessionLocal()
     try:

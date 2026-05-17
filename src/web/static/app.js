@@ -510,7 +510,7 @@ async function selectSetup(setupId) {
   if (!parsed) return;
 
   try {
-    const res = await fetch('/api/setups/select', {
+    const res = await fetch('/api/setups/active', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ setup_id: parsed, active_setup_id: parsed }),
