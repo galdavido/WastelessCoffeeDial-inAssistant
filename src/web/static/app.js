@@ -3,6 +3,7 @@ let currentCoffeeData = null;
 let currentRecommendation = null;
 let editingBeanId = null;
 let setupEditingId = null;
+let equipmentEditingId = null;
 let cachedSetups = [];
 let cachedEquipmentLibrary = { grinders: [], machines: [] };
 
@@ -147,6 +148,7 @@ $('btn-cancel-setup').addEventListener('click', () => closeSetupManager());
 $('btn-manage-equipment').addEventListener('click', () => openEquipmentManager());
 $('btn-save-equipment').addEventListener('click', () => saveEquipmentFromForm());
 $('btn-close-equipment').addEventListener('click', () => closeEquipmentManager());
+$('btn-cancel-equipment-edit').addEventListener('click', () => clearEquipmentForm());
 
 async function loadLogs() {
   const list = $('logs-list');
@@ -452,6 +454,9 @@ function renderEquipmentList() {
   const list = $('equipment-list');
   if (!list) return;
 
+  const activeSetupId = Number($('setup-select')?.value || 0);
+  const activeSetup = cachedSetups.find(s => Number(s.id) === activeSetupId) || null;
+
   const items = [
     ...cachedEquipmentLibrary.grinders,
     ...cachedEquipmentLibrary.machines,
@@ -465,12 +470,28 @@ function renderEquipmentList() {
   items.forEach(item => {
     const row = document.createElement('div');
     row.className = 'setup-item';
+    const usageCount = cachedSetups.filter(
+      s => Number(s.grinder?.id) === Number(item.id) || Number(s.machine?.id) === Number(item.id)
+    ).length;
+    const isActive = activeSetup
+      ? Number(activeSetup.grinder?.id) === Number(item.id) || Number(activeSetup.machine?.id) === Number(item.id)
+      : false;
     row.innerHTML = `
       <div class="setup-item-main">
-        <div class="setup-item-name">${escapeHtml(item.brand)} ${escapeHtml(item.model)}</div>
+        <div class="setup-item-name">
+          ${escapeHtml(item.brand)} ${escapeHtml(item.model)}
+          ${isActive ? '<span class="setup-active-pill">Active Setup</span>' : ''}
+          ${usageCount > 0 ? `<span class="setup-active-pill">Used by ${usageCount} setup${usageCount === 1 ? '' : 's'}</span>` : ''}
+        </div>
         <div class="setup-item-meta">${escapeHtml(item.type)}</div>
       </div>
+      <div class="setup-item-actions">
+        <button class="btn btn-sm btn-ghost js-equipment-edit">Edit</button>
+        <button class="btn btn-sm btn-ghost js-equipment-delete">Delete</button>
+      </div>
     `;
+    row.querySelector('.js-equipment-edit')?.addEventListener('click', () => populateEquipmentForm(item));
+    row.querySelector('.js-equipment-delete')?.addEventListener('click', () => deleteEquipment(item));
     list.appendChild(row);
   });
 }
@@ -542,11 +563,29 @@ function closeSetupManager() {
 
 function openEquipmentManager() {
   $('equipment-manager-dialog').classList.remove('hidden');
+  clearEquipmentForm();
   renderEquipmentList();
+  loadEquipmentLibrary();
 }
 
 function closeEquipmentManager() {
   $('equipment-manager-dialog').classList.add('hidden');
+}
+
+function clearEquipmentForm() {
+  equipmentEditingId = null;
+  $('equipment-form-title').textContent = 'Add Equipment';
+  $('equipment-form-type').value = 'grinder';
+  $('equipment-form-brand').value = '';
+  $('equipment-form-model').value = '';
+}
+
+function populateEquipmentForm(item) {
+  equipmentEditingId = Number(item.id);
+  $('equipment-form-title').textContent = `Edit Equipment #${item.id}`;
+  $('equipment-form-type').value = item.type || 'grinder';
+  $('equipment-form-brand').value = item.brand || '';
+  $('equipment-form-model').value = item.model || '';
 }
 
 function clearSetupForm() {
@@ -611,20 +650,41 @@ async function saveEquipmentFromForm() {
   }
 
   try {
-    const res = await fetch('/api/equipment/library', {
-      method: 'POST',
+    const isEdit = Boolean(equipmentEditingId);
+    const url = equipmentEditingId
+      ? `/api/equipment/library/${equipmentEditingId}`
+      : '/api/equipment/library';
+    const method = equipmentEditingId ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not save equipment');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not save equipment'));
 
-    $('equipment-form-brand').value = '';
-    $('equipment-form-model').value = '';
-    await loadEquipmentLibrary();
-    showToast('✅ Equipment saved');
+    clearEquipmentForm();
+    await Promise.all([loadEquipmentLibrary(), loadSetups(), loadSettings()]);
+    showToast(isEdit ? '✅ Equipment updated' : '✅ Equipment saved');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save equipment'));
+  }
+}
+
+async function deleteEquipment(item) {
+  if (!item?.id) return;
+  if (!window.confirm(`Delete equipment "${item.brand} ${item.model}"?`)) return;
+
+  try {
+    const res = await fetch(`/api/equipment/library/${item.id}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not delete equipment'));
+
+    clearEquipmentForm();
+    await Promise.all([loadEquipmentLibrary(), loadSetups(), loadSettings()]);
+    showToast('✅ Equipment deleted');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not delete equipment'));
   }
 }
 
@@ -645,17 +705,11 @@ async function deleteSetup(setup) {
 }
 
 $('btn-save-grinder').addEventListener('click', async () => {
-  const brand = $('grinder-brand').value.trim();
-  const model = $('grinder-model').value.trim();
-  if (!brand || !model) { showToast('Enter brand and model'); return; }
-  await putJson('/api/equipment/grinder', { brand, model }, 'Grinder saved ✓');
+  openEquipmentManager();
 });
 
 $('btn-save-machine').addEventListener('click', async () => {
-  const brand = $('machine-brand').value.trim();
-  const model = $('machine-model').value.trim();
-  if (!brand || !model) { showToast('Enter brand and model'); return; }
-  await putJson('/api/equipment/machine', { brand, model }, 'Machine saved ✓');
+  openEquipmentManager();
 });
 
 $('btn-save-dose').addEventListener('click', async () => {

@@ -127,18 +127,18 @@
             <div class="setting-card">
               <div class="setting-card-label">Grinder</div>
               <div class="setting-inputs">
-                <input class="input" type="text" id="grinder-brand" placeholder="Brand" />
-                <input class="input" type="text" id="grinder-model" placeholder="Model" />
+                <input class="input" type="text" id="grinder-brand" placeholder="Brand" readonly />
+                <input class="input" type="text" id="grinder-model" placeholder="Model" readonly />
               </div>
-              <button class="btn btn-sm btn-primary" id="btn-save-grinder">Save</button>
+              <button class="btn btn-sm btn-primary" id="btn-save-grinder">Manage Library</button>
             </div>
             <div class="setting-card">
               <div class="setting-card-label">Espresso Machine</div>
               <div class="setting-inputs">
-                <input class="input" type="text" id="machine-brand" placeholder="Brand" />
-                <input class="input" type="text" id="machine-model" placeholder="Model" />
+                <input class="input" type="text" id="machine-brand" placeholder="Brand" readonly />
+                <input class="input" type="text" id="machine-model" placeholder="Model" readonly />
               </div>
-              <button class="btn btn-sm btn-primary" id="btn-save-machine">Save</button>
+              <button class="btn btn-sm btn-primary" id="btn-save-machine">Manage Library</button>
             </div>
           </div>
 
@@ -225,9 +225,10 @@
   <div class="dialog-overlay hidden" id="equipment-manager-dialog">
     <div class="dialog-card dialog-card-form">
       <h3 class="dialog-title">Manage Equipment</h3>
-      <p class="dialog-sub">Select existing gear in setups or save new items here.</p>
+      <p class="dialog-sub">Add, edit, or delete equipment. Setups only link to saved equipment.</p>
       <div class="setup-list" id="equipment-list"></div>
       <div class="form-grid">
+        <div class="settings-heading" id="equipment-form-title">Add Equipment</div>
         <select class="input" id="equipment-form-type">
           <option value="grinder">Grinder</option>
           <option value="espresso_machine">Espresso Machine</option>
@@ -238,6 +239,7 @@
         <input class="input" id="equipment-form-model" placeholder="Model" />
       </div>
       <div class="dialog-actions">
+        <button class="btn btn-ghost" id="btn-cancel-equipment-edit">Cancel Edit</button>
         <button class="btn btn-primary" id="btn-save-equipment">Save Equipment</button>
         <button class="btn btn-ghost" id="btn-close-equipment">Close</button>
       </div>

@@ -457,6 +457,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   background: rgba(200, 134, 10, 0.14);
 }
 
+.setup-item .setup-active-pill + .setup-active-pill {
+  margin-left: 2px;
+  opacity: 0.9;
+}
+
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 .toast {
   position: fixed; bottom: calc(var(--nav-h) + 12px); left: 50%;

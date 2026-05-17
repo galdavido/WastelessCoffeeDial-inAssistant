@@ -428,6 +428,12 @@ class EquipmentLibraryCreateInput(BaseModel):
     model: str
 
 
+class EquipmentLibraryUpdateInput(BaseModel):
+    type: str
+    brand: str
+    model: str
+
+
 class LogDetailsInput(BaseModel):
     grind_setting: str | None = None
     dose_g: float | None = None
@@ -650,6 +656,100 @@ async def create_equipment_library_item(
         db.commit()
         db.refresh(item)
         return {"status": "created", "equipment": _serialize_equipment(item)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.put("/api/equipment/library/{equipment_id}")
+async def update_equipment_library_item(
+    equipment_id: int,
+    body: EquipmentLibraryUpdateInput,
+) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Equipment not found")
+
+        eq_type = _as_non_empty_text(body.type).lower()
+        if eq_type not in {"grinder", "espresso_machine", "filter", "other"}:
+            raise HTTPException(status_code=400, detail="Invalid equipment type")
+
+        if eq_type == "grinder":
+            setup_refs = (
+                db.query(BrewSetup).filter(BrewSetup.machine_id == equipment_id).count()
+            )
+            log_refs = (
+                db.query(DialInLog).filter(DialInLog.machine_id == equipment_id).count()
+            )
+        else:
+            setup_refs = (
+                db.query(BrewSetup).filter(BrewSetup.grinder_id == equipment_id).count()
+            )
+            log_refs = (
+                db.query(DialInLog).filter(DialInLog.grinder_id == equipment_id).count()
+            )
+
+        if setup_refs > 0 or log_refs > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot change equipment category while it is referenced",
+            )
+
+        item.type = eq_type
+        item.brand = _as_non_empty_text(body.brand)
+        item.model = _as_non_empty_text(body.model)
+        db.commit()
+        db.refresh(item)
+        return {"status": "updated", "equipment": _serialize_equipment(item)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.delete("/api/equipment/library/{equipment_id}")
+async def delete_equipment_library_item(equipment_id: int) -> dict[str, str]:
+    db = SessionLocal()
+    try:
+        item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Equipment not found")
+
+        setup_refs = (
+            db.query(BrewSetup)
+            .filter(
+                (BrewSetup.grinder_id == equipment_id)
+                | (BrewSetup.machine_id == equipment_id)
+            )
+            .count()
+        )
+        log_refs = (
+            db.query(DialInLog)
+            .filter(
+                (DialInLog.grinder_id == equipment_id)
+                | (DialInLog.machine_id == equipment_id)
+            )
+            .count()
+        )
+
+        if setup_refs > 0 or log_refs > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Equipment is in use by setups/logs and cannot be deleted",
+            )
+
+        db.delete(item)
+        db.commit()
+        return {"status": "deleted"}
     except HTTPException:
         raise
     except Exception as exc:
