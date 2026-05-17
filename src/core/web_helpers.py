@@ -23,6 +23,13 @@ def init_db() -> None:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
                 conn.commit()
             Base.metadata.create_all(bind=engine)
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE dial_in_logs ADD COLUMN IF NOT EXISTS image_path TEXT;"
+                    )
+                )
+                conn.commit()
             print("Database tables created.")
             return
         except Exception as exc:
@@ -300,6 +307,7 @@ def save_dial_in_log(
     recommendation: str,
     actual_grind: str | None = None,
     dose_g: float | None = None,
+    image_name: str | None = None,
 ) -> None:
     db = SessionLocal()
     try:
@@ -349,6 +357,9 @@ def save_dial_in_log(
                     pass
 
         resolved_dose_g = dose_g if dose_g is not None else get_default_dose_g(db)
+        resolved_image_name = image_name or coffee_data.get("image_name")
+        if resolved_image_name:
+            resolved_image_name = os.path.basename(str(resolved_image_name))
 
         db.add(
             DialInLog(
@@ -361,6 +372,7 @@ def save_dial_in_log(
                 time_s=28,
                 rating=5,
                 tasting_notes=f"Web app: {recommendation[:100]}...",
+                image_path=resolved_image_name,
             )
         )
         db.commit()

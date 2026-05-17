@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -39,6 +40,11 @@ from .web_schemas import (
 
 
 def register_routes(app: FastAPI, static_dir: str) -> None:
+    uploads_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data", "log_images")
+    )
+    os.makedirs(uploads_dir, exist_ok=True)
+
     @app.get("/")
     async def root(request: Request) -> FileResponse:
         user_agent = request.headers.get("user-agent", "").lower()
@@ -74,8 +80,10 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         if file.filename and "." in file.filename:
             suffix = os.path.splitext(file.filename)[1] or ".jpg"
 
+        content = await file.read()
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await file.read())
+            tmp.write(content)
             tmp_path = tmp.name
 
         try:
@@ -87,10 +95,16 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             detail = get_last_vision_error() or "Failed to extract data from image."
             raise HTTPException(status_code=422, detail=detail)
 
+        image_name = f"{uuid.uuid4().hex}{suffix.lower()}"
+        saved_image_path = os.path.join(uploads_dir, image_name)
+        with open(saved_image_path, "wb") as image_file:
+            image_file.write(content)
+
         db = SessionLocal()
         try:
             coffee_data["preferred_dose_g"] = get_default_dose_g(db)
             coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
+            coffee_data["image_name"] = image_name
         finally:
             db.close()
 
@@ -105,10 +119,22 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 body.recommendation,
                 actual_grind=body.actual_grind,
                 dose_g=body.dose_g,
+                image_name=body.image_name,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         return {"status": "saved"}
+
+    @app.get("/api/log-images/{image_name}")
+    async def get_log_image(image_name: str) -> FileResponse:
+        safe_name = os.path.basename(image_name)
+        if not safe_name or safe_name != image_name:
+            raise HTTPException(status_code=400, detail="Invalid image name")
+
+        file_path = os.path.join(uploads_dir, safe_name)
+        if not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="Image not found")
+        return FileResponse(file_path)
 
     @app.get("/api/equipment")
     async def get_equipment() -> dict[str, Any]:
@@ -208,6 +234,10 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                             "time_s": latest_log.time_s,
                             "rating": latest_log.rating,
                             "tasting_notes": latest_log.tasting_notes,
+                            "image_name": latest_log.image_path,
+                            "image_url": f"/api/log-images/{latest_log.image_path}"
+                            if latest_log.image_path
+                            else None,
                         }
                         if latest_log
                         else None,

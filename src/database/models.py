@@ -58,6 +58,7 @@ class DialInLog(Base):
     time_s: Mapped[int] = mapped_column(Integer)
     rating: Mapped[int] = mapped_column(Integer)
     tasting_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

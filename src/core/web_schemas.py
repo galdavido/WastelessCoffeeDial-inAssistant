@@ -10,6 +10,7 @@ class FeedbackRequest(BaseModel):
     recommendation: str
     actual_grind: str | None = None
     dose_g: float | None = None
+    image_name: str | None = None
 
 
 class EquipmentUpdate(BaseModel):

@@ -176,6 +176,7 @@ async function loadLogs() {
 
       const latestHtml = hasLatest
         ? `
+          ${latest.image_url ? `<img class="log-photo" src="${escapeHtml(latest.image_url)}" alt="Coffee bag" loading="lazy">` : ''}
           <div class="log-grid">
             <div><span class="log-label">Grind</span><span class="log-value">${escapeHtml(latest.grind_setting)}</span></div>
             <div><span class="log-label">Dose</span><span class="log-value">${escapeHtml(String(latest.dose_g))}g</span></div>
@@ -331,6 +332,7 @@ async function saveFeedback(actualGrind) {
         recommendation: currentRecommendation,
         actual_grind:   actualGrind || null,
         dose_g:         currentCoffeeData.preferred_dose_g ?? null,
+        image_name:     currentCoffeeData.image_name ?? null,
       }),
     });
     if (!res.ok) {
