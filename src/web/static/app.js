@@ -34,7 +34,10 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 });
 
 /* ── Scan flow ──────────────────────────────────────────────────────────── */
-$('btn-scan').addEventListener('click', () => $('file-input').click());
+const installHint = $('install-hint');
+if (installHint && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+  installHint.hidden = false;
+}
 
 $('file-input').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
