@@ -103,54 +103,59 @@ $('btn-refresh-logs').addEventListener('click', () => loadLogs());
 
 async function loadLogs() {
   const list = $('logs-list');
-  list.innerHTML = '<div class="logs-empty">Loading recent logs…</div>';
+  list.innerHTML = '<div class="logs-empty">Loading saved beans…</div>';
 
   try {
     const response = await fetch('/api/logs?limit=20');
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Failed to load logs');
+    if (!response.ok) throw new Error(data.detail || 'Failed to load beans');
 
-    const logs = data.logs || [];
-    if (!logs.length) {
-      list.innerHTML = '<div class="logs-empty">No logs yet. Scan a bag and save a setting to populate this view.</div>';
+    const entries = data.entries || [];
+    if (!entries.length) {
+      list.innerHTML = '<div class="logs-empty">No saved beans yet. Scan a bag and save feedback to populate this view.</div>';
       return;
     }
 
     list.innerHTML = '';
-    logs.forEach(log => {
+    entries.forEach(entry => {
       const card = document.createElement('article');
       card.className = 'log-card';
 
-      const date = new Date(log.created_at);
-      const dateLabel = Number.isNaN(date.getTime())
-        ? log.created_at
-        : date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const latest = entry.latest_log;
+      const logsCount = Number(entry.logs_count || 0);
+      const hasLatest = Boolean(latest);
+
+      const latestHtml = hasLatest
+        ? `
+          <div class="log-grid">
+            <div><span class="log-label">Grind</span><span class="log-value">${escapeHtml(latest.grind_setting)}</span></div>
+            <div><span class="log-label">Dose</span><span class="log-value">${escapeHtml(String(latest.dose_g))}g</span></div>
+            <div><span class="log-label">Yield</span><span class="log-value">${escapeHtml(String(latest.yield_g))}g</span></div>
+            <div><span class="log-label">Time</span><span class="log-value">${escapeHtml(String(latest.time_s))}s</span></div>
+          </div>
+          <div class="log-foot">
+            <span>${escapeHtml(latest.grinder)}</span>
+            <span>${escapeHtml(latest.machine)}</span>
+            <span>${escapeHtml(new Date(latest.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>
+          </div>
+          ${latest.tasting_notes ? `<p class="log-notes">${escapeHtml(latest.tasting_notes)}</p>` : ''}
+        `
+        : '<div class="logs-empty logs-empty-compact">No dial-in log saved yet for this bean.</div>';
 
       card.innerHTML = `
         <div class="log-card-head">
           <div>
-            <h3 class="log-title">${escapeHtml(log.roaster)} ${escapeHtml(log.bean_name)}</h3>
-            <p class="log-meta">${escapeHtml(log.origin)} • ${escapeHtml(log.process)} • ${escapeHtml(log.roast_level)}</p>
+            <h3 class="log-title">${escapeHtml(entry.roaster)} ${escapeHtml(entry.bean_name)}</h3>
+            <p class="log-meta">${escapeHtml(entry.origin)} • ${escapeHtml(entry.process)} • ${escapeHtml(entry.roast_level)}</p>
           </div>
-          <span class="log-rating">${escapeHtml(String(log.rating))}/5</span>
+          <span class="log-rating">${escapeHtml(String(logsCount))} log${logsCount === 1 ? '' : 's'}</span>
         </div>
-        <div class="log-grid">
-          <div><span class="log-label">Grind</span><span class="log-value">${escapeHtml(log.grind_setting)}</span></div>
-          <div><span class="log-label">Dose</span><span class="log-value">${escapeHtml(String(log.dose_g))}g</span></div>
-          <div><span class="log-label">Yield</span><span class="log-value">${escapeHtml(String(log.yield_g))}g</span></div>
-          <div><span class="log-label">Time</span><span class="log-value">${escapeHtml(String(log.time_s))}s</span></div>
-        </div>
-        <div class="log-foot">
-          <span>${escapeHtml(log.grinder)}</span>
-          <span>${escapeHtml(log.machine)}</span>
-          <span>${escapeHtml(dateLabel)}</span>
-        </div>
-        ${log.tasting_notes ? `<p class="log-notes">${escapeHtml(log.tasting_notes)}</p>` : ''}
+        ${latestHtml}
       `;
       list.appendChild(card);
     });
   } catch (err) {
-    list.innerHTML = `<div class="logs-empty">${escapeHtml(err.message || 'Could not load logs')}</div>`;
+    list.innerHTML = `<div class="logs-empty">${escapeHtml(err.message || 'Could not load beans')}</div>`;
   }
 }
 

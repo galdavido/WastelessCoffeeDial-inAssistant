@@ -133,6 +133,10 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   text-align: center;
   font-size: 14px;
 }
+.logs-empty-compact {
+  margin-top: 12px;
+  padding: 14px;
+}
 .log-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

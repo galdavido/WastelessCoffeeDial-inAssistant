@@ -521,6 +521,53 @@ async def get_settings() -> dict[str, float]:
         db.close()
 
 
+@app.get("/api/logs")
+async def get_logs(limit: int = 20) -> dict[str, list[dict[str, Any]]]:
+    db = SessionLocal()
+    try:
+        safe_limit = max(1, min(limit, 50))
+        beans = db.query(Bean).order_by(Bean.id.desc()).limit(safe_limit).all()
+
+        entries: list[dict[str, Any]] = []
+        for bean in beans:
+            latest_log = None
+            if bean.logs:
+                latest_log = max(bean.logs, key=lambda log: log.created_at)
+
+            entries.append(
+                {
+                    "bean_id": bean.id,
+                    "bean_name": bean.name,
+                    "roaster": bean.roaster,
+                    "origin": bean.origin,
+                    "process": bean.process,
+                    "roast_level": bean.roast_level,
+                    "logs_count": len(bean.logs),
+                    "latest_log": {
+                        "created_at": latest_log.created_at.isoformat(),
+                        "grinder": latest_log.grinder.brand
+                        + " "
+                        + latest_log.grinder.model,
+                        "machine": latest_log.machine.brand
+                        + " "
+                        + latest_log.machine.model,
+                        "grind_setting": latest_log.grind_setting,
+                        "dose_g": latest_log.dose_g,
+                        "yield_g": latest_log.yield_g,
+                        "time_s": latest_log.time_s,
+                        "rating": latest_log.rating,
+                        "tasting_notes": latest_log.tasting_notes,
+                    }
+                    if latest_log
+                    else None,
+                }
+            )
+
+        return {"entries": entries}
+    finally:
+        db.close()
+
+
 @app.put("/api/settings/dose")
 async def update_dose(body: DoseUpdate) -> dict[str, Any]:
     if body.dose_g <= 0:
