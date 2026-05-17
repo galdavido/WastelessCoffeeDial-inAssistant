@@ -40,10 +40,21 @@ from .web_schemas import (
 
 
 def register_routes(app: FastAPI, static_dir: str) -> None:
-    uploads_dir = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "data", "log_images")
+    uploads_dir = os.getenv(
+        "LOG_IMAGES_DIR",
+        os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "data", "log_images")
+        ),
     )
-    os.makedirs(uploads_dir, exist_ok=True)
+    try:
+        os.makedirs(uploads_dir, exist_ok=True)
+    except OSError:
+        fallback_dir = "/tmp/log_images"
+        try:
+            os.makedirs(fallback_dir, exist_ok=True)
+            uploads_dir = fallback_dir
+        except OSError:
+            uploads_dir = ""
 
     @app.get("/")
     async def root(request: Request) -> FileResponse:
@@ -98,16 +109,22 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             detail = get_last_vision_error() or "Failed to extract data from image."
             raise HTTPException(status_code=422, detail=detail)
 
-        image_name = f"{uuid.uuid4().hex}{suffix.lower()}"
-        saved_image_path = os.path.join(uploads_dir, image_name)
-        with open(saved_image_path, "wb") as image_file:
-            image_file.write(content)
+        image_name: str | None = None
+        if uploads_dir:
+            image_name = f"{uuid.uuid4().hex}{suffix.lower()}"
+            saved_image_path = os.path.join(uploads_dir, image_name)
+            try:
+                with open(saved_image_path, "wb") as image_file:
+                    image_file.write(content)
+            except OSError:
+                image_name = None
 
         db = SessionLocal()
         try:
             coffee_data["preferred_dose_g"] = get_default_dose_g(db)
             coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
-            coffee_data["image_name"] = image_name
+            if image_name:
+                coffee_data["image_name"] = image_name
         finally:
             db.close()
 
@@ -130,6 +147,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.get("/api/log-images/{image_name}")
     async def get_log_image(image_name: str) -> FileResponse:
+        if not uploads_dir:
+            raise HTTPException(status_code=404, detail="Image storage is unavailable")
+
         safe_name = os.path.basename(image_name)
         if not safe_name or safe_name != image_name:
             raise HTTPException(status_code=400, detail="Invalid image name")
