@@ -65,7 +65,7 @@ DATABASE_URL=postgresql://barista:supersecret@db:5432/barista_db
 ## Run with Docker Compose
 
 ```bash
-docker compose up --build -d
+docker-compose up --build -d
 ```
 
 Services:
@@ -80,10 +80,12 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 export PYTHONPATH=src:$PYTHONPATH
-python src/core/web_server.py
+python -m core.web_server
 ```
 
 App URL: `http://localhost:8080` (or `http://localhost:8081` when running via compose port mapping).
+
+When working inside a VS Code dev container, open the forwarded `8081` port in the host browser from the **Ports** panel.
 
 ## Tests
 

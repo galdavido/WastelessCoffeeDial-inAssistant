@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.optional_deps import load_dotenv_if_available
 
-from core.web_helpers import generate_app_icons, init_db, seed_db
+from core.web_helpers import init_db, seed_db
 from core.web_routes import register_routes
 
 load_dotenv_if_available()
@@ -18,7 +18,6 @@ _static_dir = os.path.normpath(
 # Startup bootstrap: initialize DB and static assets once.
 init_db()
 seed_db()
-generate_app_icons(_static_dir)
 
 app = FastAPI(title="WCDA Web")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")

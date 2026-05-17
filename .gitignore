@@ -26,6 +26,7 @@ nosetests.xml
 
 # Logs and local runtime files
 *.log
+src/web/static/icons/
 
 # IDE/editor files
 .vscode/
