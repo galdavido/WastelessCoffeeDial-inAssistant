@@ -5,8 +5,8 @@ from fastapi.staticfiles import StaticFiles
 
 from core.optional_deps import load_dotenv_if_available
 
-from .web_helpers import generate_app_icons, init_db, seed_db
-from .web_routes import register_routes
+from core.web_helpers import generate_app_icons, init_db, seed_db
+from core.web_routes import register_routes
 
 load_dotenv_if_available()
 

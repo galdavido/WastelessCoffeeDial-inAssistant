@@ -44,4 +44,4 @@ PYEOF
 # Ne futtassuk az init_db.py-t build időben, mert a DB még nem fut
 # Helyette egy entrypoint script fogja kezelni
 
-CMD ["python", "src/core/web_server.py"]
+CMD ["python", "-m", "core.web_server"]

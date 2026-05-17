@@ -24,7 +24,7 @@ services:
       - db
     ports:
       - "8081:8080"
-    command: python src/core/web_server.py
+    command: python -m core.web_server
 
 volumes:
   postgres_data:

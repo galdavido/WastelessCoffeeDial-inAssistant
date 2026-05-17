@@ -48,7 +48,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ["python", "src/core/web_server.py"]
+    command: ["python", "-m", "core.web_server"]
     ports:
       - "8081:8080"
     read_only: true
