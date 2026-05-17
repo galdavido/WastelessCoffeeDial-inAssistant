@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import json
 from typing import Any
 
 from pydantic import BaseModel
-from ai.model_selection import is_transient_model_error, resolve_model_candidates
+
+from ai.model_selection import GEMINI_MODEL_CANDIDATES, try_model_candidates
 from core.optional_deps import (
     load_dotenv_if_available,
     require_genai,
@@ -40,7 +43,7 @@ def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
         image_module = require_pillow_image()
         genai, types = require_genai()
     except RuntimeError as exc:
-        print(f"Error: {exc}")
+        _set_last_vision_error(str(exc))
         return None
 
     return image_module, genai.Client(), types
@@ -58,24 +61,19 @@ def _build_prompt() -> str:
     )
 
 
-def _vision_models() -> list[str]:
-    # Prefer stable, generally available models first; keep preview models last.
-    return resolve_model_candidates(
-        [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-flash-lite-latest",
-            "gemini-2.0-flash-lite",
-            "gemini-3.1-flash-lite-preview",
-        ]
-    )
+def _parse_coffee_data_response(text: str) -> dict[str, Any] | None:
+    """Parse and validate model JSON response into a stable dict payload."""
+    try:
+        payload = json.loads(text)
+        model = CoffeeData.model_validate(payload)
+        return model.model_dump()
+    except Exception:
+        return None
 
 
 def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
     """Analyze a coffee bag image and return normalized coffee metadata."""
     _set_last_vision_error(None)
-    print(f"Image analysis in progress with the new GenAI SDK: {image_path}...")
 
     setup = _get_image_module_and_client()
     if setup is None:
@@ -86,49 +84,53 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
         img = image_module.open(image_path).convert("RGB")
     except FileNotFoundError:
         message = f"The '{image_path}' file is not found in the folder."
-        print(f"Error: {message}")
         _set_last_vision_error(message)
+        return None
+    except Exception as exc:
+        _set_last_vision_error(f"Failed to read image: {exc}")
         return None
 
     prompt = _build_prompt()
 
     try:
-        last_error = "Unknown extraction error"
-        for model_name in _vision_models():
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[prompt, img],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=CoffeeData,
-                        temperature=0.1,  # Low value: we want facts, not hallucinations
-                    ),
-                )
+        parsed_payload: dict[str, Any] | None = None
 
-                text = response.text
-                if text is None:
-                    last_error = f"{model_name}: empty response"
-                    continue
-                parsed = json.loads(text)
-                _set_last_vision_error(None)
-                return parsed
-            except Exception as e:
-                last_error = f"{model_name}: {e}"
-                print(f"Vision model '{model_name}' failed: {e}")
-                if is_transient_model_error(e):
-                    continue
+        def call_model(model_name: str) -> Any:
+            return client.models.generate_content(
+                model=model_name,
+                contents=[prompt, img],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=CoffeeData,
+                    temperature=0.1,
+                ),
+            )
 
-        _set_last_vision_error(last_error)
+        def evaluate_response(response: Any) -> tuple[bool, str | None]:
+            nonlocal parsed_payload
+
+            text = getattr(response, "text", None)
+            if text is None:
+                return False, "empty response"
+
+            parsed = _parse_coffee_data_response(text)
+            if parsed is None:
+                return False, "invalid JSON schema in response"
+
+            parsed_payload = parsed
+            return True, None
+
+        _response, last_error = try_model_candidates(
+            GEMINI_MODEL_CANDIDATES,
+            call_model=call_model,
+            evaluate_result=evaluate_response,
+        )
+
+        if parsed_payload is not None:
+            _set_last_vision_error(None)
+            return parsed_payload
+
+        _set_last_vision_error(last_error or "Unknown extraction error")
         return None
     finally:
         client.close()
-
-
-if __name__ == "__main__":
-    test_image = "data/test_bag.jpg"
-    result = analyze_coffee_bag(test_image)
-
-    if result:
-        print("\n🎉 SUCCESSFUL EXTRACTION! Result:")
-        print(json.dumps(result, indent=4, ensure_ascii=False))

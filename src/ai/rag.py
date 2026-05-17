@@ -1,4 +1,3 @@
-# import os
 from datetime import date, datetime
 import re
 from statistics import median
@@ -6,10 +5,10 @@ from typing import Any, Dict, Sequence, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
-from ai.model_selection import is_transient_model_error, resolve_model_candidates
+from ai.model_selection import GEMINI_MODEL_CANDIDATES, try_model_candidates
 from core.optional_deps import require_genai
 from database.database import SessionLocal
-from database.models import Bean, DialInLog, Equipment
+from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
 
 
 type SimilarLogRow = tuple[DialInLog, Bean, Equipment, Equipment]
@@ -80,6 +79,88 @@ def _build_db_context(similar_logs: Sequence[SimilarLogRow]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _to_normalized(value: str) -> str:
+    return value.strip().lower()
+
+
+def _get_active_setup_equipment(
+    db: Session,
+) -> tuple[Equipment | None, Equipment | None]:
+    active_setup_id: int | None = None
+    active_setting = db.scalars(
+        select(AppSetting).where(AppSetting.key == "active_setup_id").limit(1)
+    ).first()
+    if active_setting:
+        try:
+            active_setup_id = int(active_setting.value)
+        except (TypeError, ValueError):
+            active_setup_id = None
+
+    active_setup: BrewSetup | None = None
+    if active_setup_id is not None:
+        active_setup = db.scalars(
+            select(BrewSetup).where(BrewSetup.id == active_setup_id).limit(1)
+        ).first()
+
+    if active_setup is None:
+        active_setup = db.scalars(
+            select(BrewSetup).order_by(BrewSetup.id.asc())
+        ).first()
+
+    if active_setup is None:
+        return None, None
+
+    grinder = db.scalars(
+        select(Equipment).where(Equipment.id == active_setup.grinder_id).limit(1)
+    ).first()
+    machine = db.scalars(
+        select(Equipment).where(Equipment.id == active_setup.machine_id).limit(1)
+    ).first()
+    return grinder, machine
+
+
+def _rank_similar_logs_for_active_setup(
+    similar_logs: Sequence[SimilarLogRow],
+    grinder: Equipment | None,
+    machine: Equipment | None,
+    limit: int = 12,
+) -> list[SimilarLogRow]:
+    if not similar_logs:
+        return []
+
+    grinder_brand = _to_normalized(grinder.brand) if grinder else None
+    grinder_model = _to_normalized(grinder.model) if grinder else None
+    machine_brand = _to_normalized(machine.brand) if machine else None
+    machine_model = _to_normalized(machine.model) if machine else None
+
+    def equipment_score(row: SimilarLogRow) -> int:
+        _, _, row_grinder, row_machine = row
+        score = 0
+
+        if grinder_brand and grinder_model:
+            if (
+                _to_normalized(row_grinder.brand) == grinder_brand
+                and _to_normalized(row_grinder.model) == grinder_model
+            ):
+                score += 2
+
+        if machine_brand and machine_model:
+            if (
+                _to_normalized(row_machine.brand) == machine_brand
+                and _to_normalized(row_machine.model) == machine_model
+            ):
+                score += 2
+
+        return score
+
+    ranked = sorted(
+        similar_logs,
+        key=lambda row: (equipment_score(row), row[0].created_at),
+        reverse=True,
+    )
+    return ranked[:limit]
 
 
 def _normalize_coffee_profile(coffee_json: Dict[str, Any]) -> CoffeeProfile:
@@ -368,53 +449,41 @@ def _build_prompt(
         """
 
 
-def _generate_recommendation_with_grounding(genai: Any, prompt: str) -> str:
+def _generate_recommendation_with_grounding(genai: Any, types: Any, prompt: str) -> str:
     client = genai.Client()
-    models = resolve_model_candidates(
-        [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-flash-lite-latest",
-            "gemini-2.0-flash-lite",
-            "gemini-3.1-flash-lite-preview",
-        ]
-    )
     try:
-        _, types = require_genai()
-        last_error: Exception | None = None
 
-        for model_name in models:
-            try:
-                grounded_response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        tools=[types.Tool(google_search=types.GoogleSearch())],
-                    ),
-                )
-                if grounded_response.text:
-                    return grounded_response.text
-            except Exception as exc:
-                last_error = exc
-                print(f"Grounded model '{model_name}' failed: {exc}")
-                if not is_transient_model_error(exc):
-                    break
+        def evaluate_text(response: Any) -> tuple[bool, str | None]:
+            if getattr(response, "text", None):
+                return True, None
+            return False, "empty response"
 
-        for model_name in models:
-            try:
-                plain_response = client.models.generate_content(
-                    model=model_name, contents=prompt
-                )
-                if plain_response.text:
-                    return plain_response.text
-            except Exception as exc:
-                last_error = exc
-                print(f"Plain model '{model_name}' failed: {exc}")
-                if not is_transient_model_error(exc):
-                    break
+        grounded_result, grounded_error = try_model_candidates(
+            GEMINI_MODEL_CANDIDATES,
+            call_model=lambda model_name: client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())],
+                ),
+            ),
+            evaluate_result=evaluate_text,
+        )
+        if grounded_result is not None and grounded_result.text:
+            return grounded_result.text
 
-        return f"Error: {last_error or 'Empty response received from AI Barista.'}"
+        plain_result, plain_error = try_model_candidates(
+            GEMINI_MODEL_CANDIDATES,
+            call_model=lambda model_name: client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            ),
+            evaluate_result=evaluate_text,
+        )
+        if plain_result is not None and plain_result.text:
+            return plain_result.text
+
+        return f"Error: {plain_error or grounded_error or 'Empty response received from AI Barista.'}"
     finally:
         client.close()
 
@@ -424,7 +493,7 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
     Retrieves own data, then calls the LLM to synthesize the final recommendation.
     """
     try:
-        genai, _ = require_genai()
+        genai, types = require_genai()
     except RuntimeError as exc:
         return f"Error occurred during LLM augmentation: {exc}"
 
@@ -433,8 +502,6 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         profile = _normalize_coffee_profile(coffee_json)
         origin = profile["origin"]
         process = profile["process"]
-
-        print(f"\n🔍 2/A. Searching in own Postgres database ({origin}, {process})...")
 
         # 1. RETRIEVAL: Database query
         grinder_alias = aliased(Equipment)
@@ -451,31 +518,28 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
             db.execute(similar_logs_stmt).tuples().all()
         )
 
-        # Get current equipment
-        grinder = db.scalars(
-            select(Equipment).where(Equipment.type == "grinder")
-        ).first()
-        machine = db.scalars(
-            select(Equipment).where(Equipment.type == "espresso_machine")
-        ).first()
+        # Use active setup equipment, not "first equipment in DB".
+        grinder, machine = _get_active_setup_equipment(db)
         equipment_info = _describe_equipment(grinder, machine)
         latest_successful_click = _get_latest_successful_click(db, grinder)
+        ranked_similar_logs = _rank_similar_logs_for_active_setup(
+            similar_logs,
+            grinder,
+            machine,
+        )
 
         # 2. BUILDING CONTEXT FOR THE LLM
-        db_context = _build_db_context(similar_logs)
+        db_context = _build_db_context(ranked_similar_logs)
         grind_guardrail, click_bounds, _ = _build_grind_guardrails(
-            similar_logs,
+            ranked_similar_logs,
             grinder,
             latest_successful_click,
         )
 
         # 3. GENERATION: LLM call for synthesis
-        print("🧠 2/B. Calling LLM Barista to supplement the data...")
-
-        # The "System Prompt" that guides the AI's behavior
         prompt = _build_prompt(profile, equipment_info, db_context, grind_guardrail)
 
-        raw_text = _generate_recommendation_with_grounding(genai, prompt)
+        raw_text = _generate_recommendation_with_grounding(genai, types, prompt)
         offset_text = _apply_grind_offset(
             raw_text,
             profile["preferred_grind_offset_clicks"],
@@ -487,15 +551,3 @@ def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
         return f"Error occurred during LLM augmentation: {e}"
     finally:
         db.close()
-
-
-if __name__ == "__main__":
-    # Test run
-    test_json: Dict[str, Any] = {
-        "roaster": "Sample",
-        "name": "Unknown Colombian",
-        "origin": "Colombia",
-        "process": "Anaerobic",
-        "roast_level": "Light",
-    }
-    print(get_best_grind_setting(test_json))
