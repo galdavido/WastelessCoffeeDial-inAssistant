@@ -35,7 +35,9 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
 /* ── Scan flow ──────────────────────────────────────────────────────────── */
 const installHint = $('install-hint');
-if (installHint && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+const isIos = /iP(ad|hone|od)/.test(navigator.userAgent);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+if (installHint && (isIos || window.location.protocol !== 'https:') && !isStandalone) {
   installHint.hidden = false;
 }
 

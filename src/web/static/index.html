@@ -6,16 +6,16 @@
   <title>Barista AI</title>
   <meta name="description" content="AI-powered espresso dial-in assistant" />
   <meta name="theme-color" content="#0f0a06" />
-  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="manifest" href="/static/manifest.json?v=20260517" />
 
   <!-- iOS PWA -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Barista AI" />
-  <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png?v=20260517" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png?v=20260517" />
 
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=20260517" />
 </head>
 <body>
   <div id="app">
@@ -58,7 +58,7 @@
           <input type="file" id="file-input" accept="image/*" capture="environment" class="file-input-hidden" />
 
           <div class="install-hint" id="install-hint" hidden>
-            <strong>iPhone install tip:</strong> use Safari over HTTPS to see “Add to Home Screen”.
+            <strong>iPhone install tip:</strong> in Safari, tap Share then Add to Home Screen.
           </div>
         </div>
 
@@ -226,6 +226,6 @@
   <!-- Toast notification -->
   <div class="toast hidden" id="toast"></div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=20260517"></script>
 </body>
 </html>
