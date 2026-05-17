@@ -17,7 +17,7 @@ from ai.vision import analyze_coffee_bag, get_last_vision_error
 from ai.rag import get_best_grind_setting
 from core.optional_deps import load_dotenv_if_available
 from database.database import Base, SessionLocal, engine
-from database.models import AppSetting, Bean, DialInLog, Equipment
+from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
 
 load_dotenv_if_available()
 
@@ -234,10 +234,9 @@ def _save_dial_in_log(
             db.commit()
             db.refresh(bean)
 
-        grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
-        machine = (
-            db.query(Equipment).filter(Equipment.type == "espresso_machine").first()
-        )
+        active_setup = get_active_setup(db)
+        grinder = active_setup.grinder if active_setup else None
+        machine = active_setup.machine if active_setup else None
         if not grinder or not machine:
             return
 
@@ -412,6 +411,22 @@ class GrindOffsetUpdate(BaseModel):
     offset_clicks: float
 
 
+class SetupInput(BaseModel):
+    name: str
+    grinder_id: int
+    machine_id: int
+
+
+class SetupSelectInput(BaseModel):
+    setup_id: int
+
+
+class EquipmentLibraryCreateInput(BaseModel):
+    type: str
+    brand: str
+    model: str
+
+
 class LogDetailsInput(BaseModel):
     grind_setting: str | None = None
     dose_g: float | None = None
@@ -484,10 +499,9 @@ async def save_feedback(body: FeedbackRequest) -> dict[str, str]:
 async def get_equipment() -> dict[str, Any]:
     db = SessionLocal()
     try:
-        grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
-        machine = (
-            db.query(Equipment).filter(Equipment.type == "espresso_machine").first()
-        )
+        setup = get_active_setup(db)
+        grinder = setup.grinder
+        machine = setup.machine
         return {
             "grinder": {"brand": grinder.brand, "model": grinder.model}
             if grinder
@@ -504,12 +518,10 @@ async def get_equipment() -> dict[str, Any]:
 async def update_grinder(body: EquipmentUpdate) -> dict[str, str]:
     db = SessionLocal()
     try:
-        grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
-        if grinder:
-            grinder.brand = body.brand
-            grinder.model = body.model
-        else:
-            db.add(Equipment(type="grinder", brand=body.brand, model=body.model))
+        setup = get_active_setup(db)
+        grinder = setup.grinder
+        grinder.brand = body.brand
+        grinder.model = body.model
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -523,16 +535,10 @@ async def update_grinder(body: EquipmentUpdate) -> dict[str, str]:
 async def update_machine(body: EquipmentUpdate) -> dict[str, str]:
     db = SessionLocal()
     try:
-        machine = (
-            db.query(Equipment).filter(Equipment.type == "espresso_machine").first()
-        )
-        if machine:
-            machine.brand = body.brand
-            machine.model = body.model
-        else:
-            db.add(
-                Equipment(type="espresso_machine", brand=body.brand, model=body.model)
-            )
+        setup = get_active_setup(db)
+        machine = setup.machine
+        machine.brand = body.brand
+        machine.model = body.model
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -602,9 +608,187 @@ async def get_logs(limit: int = 20) -> dict[str, list[dict[str, Any]]]:
         db.close()
 
 
+@app.get("/api/equipment/library")
+async def get_equipment_library() -> dict[str, list[dict[str, Any]]]:
+    db = SessionLocal()
+    try:
+        items = (
+            db.query(Equipment)
+            .order_by(
+                Equipment.type.asc(), Equipment.brand.asc(), Equipment.model.asc()
+            )
+            .all()
+        )
+        grinders = [
+            _serialize_equipment(item) for item in items if item.type == "grinder"
+        ]
+        machines = [
+            _serialize_equipment(item) for item in items if item.type != "grinder"
+        ]
+        return {"grinders": grinders, "machines": machines}
+    finally:
+        db.close()
+
+
+@app.post("/api/equipment/library")
+async def create_equipment_library_item(
+    body: EquipmentLibraryCreateInput,
+) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        eq_type = _as_non_empty_text(body.type).lower()
+        if eq_type not in {"grinder", "espresso_machine", "filter", "other"}:
+            raise HTTPException(status_code=400, detail="Invalid equipment type")
+
+        item = Equipment(
+            type=eq_type,
+            brand=_as_non_empty_text(body.brand),
+            model=_as_non_empty_text(body.model),
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return {"status": "created", "equipment": _serialize_equipment(item)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.get("/api/setups")
+async def get_setups() -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        active = get_active_setup(db)
+        setups = (
+            db.query(BrewSetup).order_by(BrewSetup.name.asc(), BrewSetup.id.asc()).all()
+        )
+        return {
+            "active_setup_id": active.id,
+            "setups": [_serialize_setup(item) for item in setups],
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/setups")
+async def create_setup(body: SetupInput) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        grinder = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
+            .first()
+        )
+        machine = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
+            .first()
+        )
+        if not grinder or not machine:
+            raise HTTPException(status_code=400, detail="Selected equipment not found")
+
+        setup = BrewSetup(
+            name=_as_non_empty_text(body.name),
+            grinder_id=grinder.id,
+            machine_id=machine.id,
+        )
+        db.add(setup)
+        db.commit()
+        db.refresh(setup)
+        return {"status": "created", "setup": _serialize_setup(setup)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.put("/api/setups/{setup_id}")
+async def update_setup(setup_id: int, body: SetupInput) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+
+        grinder = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
+            .first()
+        )
+        machine = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
+            .first()
+        )
+        if not grinder or not machine:
+            raise HTTPException(status_code=400, detail="Selected equipment not found")
+
+        setup.name = _as_non_empty_text(body.name)
+        setup.grinder_id = grinder.id
+        setup.machine_id = machine.id
+        db.commit()
+        db.refresh(setup)
+        return {"status": "updated", "setup": _serialize_setup(setup)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
+@app.put("/api/setups/select")
+async def select_setup(body: SetupSelectInput) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        setup = db.query(BrewSetup).filter(BrewSetup.id == body.setup_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+        _set_setting(db, "active_setup_id", str(setup.id))
+        return {"status": "selected", "setup_id": setup.id}
+    finally:
+        db.close()
+
+
+@app.delete("/api/setups/{setup_id}")
+async def delete_setup(setup_id: int) -> dict[str, str]:
+    db = SessionLocal()
+    try:
+        setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+        if db.query(BrewSetup).count() <= 1:
+            raise HTTPException(
+                status_code=400, detail="At least one setup must remain"
+            )
+
+        db.delete(setup)
+        db.commit()
+
+        next_setup = db.query(BrewSetup).order_by(BrewSetup.id.asc()).first()
+        if next_setup:
+            _set_setting(db, "active_setup_id", str(next_setup.id))
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        db.close()
+
+
 def _ensure_default_equipment(db: Any) -> tuple[Any, Any]:
     grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
-    machine = db.query(Equipment).filter(Equipment.type == "espresso_machine").first()
+    machine = db.query(Equipment).filter(Equipment.type != "grinder").first()
     if not grinder:
         grinder = Equipment(type="grinder", brand="Unknown", model="Unknown")
         db.add(grinder)
@@ -615,6 +799,68 @@ def _ensure_default_equipment(db: Any) -> tuple[Any, Any]:
     db.refresh(grinder)
     db.refresh(machine)
     return grinder, machine
+
+
+def _serialize_equipment(item: Equipment) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "type": item.type,
+        "brand": item.brand,
+        "model": item.model,
+    }
+
+
+def _get_setting(db: Any, key: str) -> str | None:
+    setting = db.query(AppSetting).filter(AppSetting.key == key).first()
+    return setting.value if setting else None
+
+
+def _set_setting(db: Any, key: str, value: str) -> None:
+    setting = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if setting:
+        setting.value = value
+    else:
+        db.add(AppSetting(key=key, value=value))
+    db.commit()
+
+
+def _ensure_default_setup(db: Any) -> BrewSetup:
+    setup = db.query(BrewSetup).order_by(BrewSetup.id.asc()).first()
+    if setup:
+        return setup
+
+    grinder, machine = _ensure_default_equipment(db)
+    setup = BrewSetup(
+        name="Default Setup", grinder_id=grinder.id, machine_id=machine.id
+    )
+    db.add(setup)
+    db.commit()
+    db.refresh(setup)
+    return setup
+
+
+def get_active_setup(db: Any) -> BrewSetup:
+    fallback = _ensure_default_setup(db)
+    setting_value = _get_setting(db, "active_setup_id")
+    if setting_value:
+        try:
+            setup_id = int(setting_value)
+            existing = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+            if existing:
+                return existing
+        except ValueError:
+            pass
+    _set_setting(db, "active_setup_id", str(fallback.id))
+    return fallback
+
+
+def _serialize_setup(setup: BrewSetup) -> dict[str, Any]:
+    return {
+        "id": setup.id,
+        "name": setup.name,
+        "grinder": _serialize_equipment(setup.grinder),
+        "machine": _serialize_equipment(setup.machine),
+    }
 
 
 def _resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
@@ -662,7 +908,8 @@ async def create_manual_log(body: BeanRecordInput) -> dict[str, Any]:
         db.commit()
         db.refresh(bean)
 
-        grinder, machine = _ensure_default_equipment(db)
+        active_setup = get_active_setup(db)
+        grinder, machine = active_setup.grinder, active_setup.machine
         values = _resolve_log_values(body.log, db)
         db.add(
             DialInLog(
@@ -706,7 +953,8 @@ async def update_log_record(bean_id: int, body: BeanRecordInput) -> dict[str, An
 
         values = _resolve_log_values(body.log, db)
         if latest_log is None:
-            grinder, machine = _ensure_default_equipment(db)
+            active_setup = get_active_setup(db)
+            grinder, machine = active_setup.grinder, active_setup.machine
             db.add(
                 DialInLog(
                     bean_id=bean.id,

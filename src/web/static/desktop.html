@@ -209,15 +209,37 @@
       <div id="setup-manager-list" class="setup-list"></div>
       <div class="form-grid">
         <input class="input" id="setup-form-name" placeholder="Setup name (e.g. Work, Home Espresso, Home V60)" />
-        <input class="input" id="setup-form-grinder-brand" placeholder="Grinder brand" />
-        <input class="input" id="setup-form-grinder-model" placeholder="Grinder model" />
-        <input class="input" id="setup-form-machine-brand" placeholder="Machine/brewer brand" />
-        <input class="input" id="setup-form-machine-model" placeholder="Machine/brewer model" />
-        <input class="input" id="setup-form-machine-type" placeholder="Machine type (espresso_machine or filter)" />
+        <label class="setting-card-label">Saved Grinder</label>
+        <select class="input" id="setup-form-grinder-id"></select>
+        <label class="setting-card-label">Saved Machine/Brewer</label>
+        <select class="input" id="setup-form-machine-id"></select>
       </div>
       <div class="dialog-actions">
+        <button class="btn btn-ghost" id="btn-manage-equipment">Manage Equipment</button>
         <button class="btn btn-primary" id="btn-save-setup">Save Setup</button>
         <button class="btn btn-ghost" id="btn-cancel-setup">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dialog-overlay hidden" id="equipment-manager-dialog">
+    <div class="dialog-card dialog-card-form">
+      <h3 class="dialog-title">Manage Equipment</h3>
+      <p class="dialog-sub">Select existing gear in setups or save new items here.</p>
+      <div class="setup-list" id="equipment-list"></div>
+      <div class="form-grid">
+        <select class="input" id="equipment-form-type">
+          <option value="grinder">Grinder</option>
+          <option value="espresso_machine">Espresso Machine</option>
+          <option value="filter">Filter Brewer</option>
+          <option value="other">Other</option>
+        </select>
+        <input class="input" id="equipment-form-brand" placeholder="Brand" />
+        <input class="input" id="equipment-form-model" placeholder="Model" />
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-primary" id="btn-save-equipment">Save Equipment</button>
+        <button class="btn btn-ghost" id="btn-close-equipment">Close</button>
       </div>
     </div>
   </div>

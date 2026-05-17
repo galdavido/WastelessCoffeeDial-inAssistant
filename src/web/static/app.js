@@ -4,6 +4,7 @@ let currentRecommendation = null;
 let editingBeanId = null;
 let setupEditingId = null;
 let cachedSetups = [];
+let cachedEquipmentLibrary = { grinders: [], machines: [] };
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
@@ -113,6 +114,9 @@ $('setup-select').addEventListener('change', (event) => selectSetup(event.target
 $('btn-manage-setups').addEventListener('click', () => openSetupManager());
 $('btn-save-setup').addEventListener('click', () => saveSetupFromForm());
 $('btn-cancel-setup').addEventListener('click', () => closeSetupManager());
+$('btn-manage-equipment').addEventListener('click', () => openEquipmentManager());
+$('btn-save-equipment').addEventListener('click', () => saveEquipmentFromForm());
+$('btn-close-equipment').addEventListener('click', () => closeEquipmentManager());
 
 async function loadLogs() {
   const list = $('logs-list');
@@ -359,6 +363,88 @@ async function loadSetups() {
   }
 }
 
+async function loadEquipmentLibrary() {
+  try {
+    const res = await fetch('/api/equipment/library');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not load equipment');
+
+    cachedEquipmentLibrary = {
+      grinders: Array.isArray(data.grinders) ? data.grinders : [],
+      machines: Array.isArray(data.machines) ? data.machines : [],
+    };
+
+    renderEquipmentSelects();
+    renderEquipmentList();
+  } catch (err) {
+    showToast('⚠️ ' + (err.message || 'Could not load equipment'));
+  }
+}
+
+function renderEquipmentSelects() {
+  const grinderSelect = $('setup-form-grinder-id');
+  const machineSelect = $('setup-form-machine-id');
+  if (!grinderSelect || !machineSelect) return;
+
+  grinderSelect.innerHTML = '';
+  machineSelect.innerHTML = '';
+
+  if (!cachedEquipmentLibrary.grinders.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No grinders saved yet';
+    grinderSelect.appendChild(option);
+  } else {
+    cachedEquipmentLibrary.grinders.forEach(item => {
+      const option = document.createElement('option');
+      option.value = String(item.id);
+      option.textContent = `${item.brand} ${item.model}`;
+      grinderSelect.appendChild(option);
+    });
+  }
+
+  if (!cachedEquipmentLibrary.machines.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No machines/brewers saved yet';
+    machineSelect.appendChild(option);
+  } else {
+    cachedEquipmentLibrary.machines.forEach(item => {
+      const option = document.createElement('option');
+      option.value = String(item.id);
+      option.textContent = `${item.brand} ${item.model} (${item.type})`;
+      machineSelect.appendChild(option);
+    });
+  }
+}
+
+function renderEquipmentList() {
+  const list = $('equipment-list');
+  if (!list) return;
+
+  const items = [
+    ...cachedEquipmentLibrary.grinders,
+    ...cachedEquipmentLibrary.machines,
+  ];
+  if (!items.length) {
+    list.innerHTML = '<div class="logs-empty logs-empty-compact">No equipment saved yet.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'setup-item';
+    row.innerHTML = `
+      <div class="setup-item-main">
+        <div class="setup-item-name">${escapeHtml(item.brand)} ${escapeHtml(item.model)}</div>
+        <div class="setup-item-meta">${escapeHtml(item.type)}</div>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+}
+
 function renderSetupManagerList(activeId = null) {
   const list = $('setup-manager-list');
   if (!list) return;
@@ -416,6 +502,7 @@ function openSetupManager() {
   $('setup-manager-dialog').classList.remove('hidden');
   const currentActive = Number($('setup-select').value || 0);
   renderSetupManagerList(currentActive || null);
+  loadEquipmentLibrary();
 }
 
 function closeSetupManager() {
@@ -423,38 +510,40 @@ function closeSetupManager() {
   setupEditingId = null;
 }
 
+function openEquipmentManager() {
+  $('equipment-manager-dialog').classList.remove('hidden');
+  renderEquipmentList();
+}
+
+function closeEquipmentManager() {
+  $('equipment-manager-dialog').classList.add('hidden');
+}
+
 function clearSetupForm() {
   $('setup-form-name').value = '';
-  $('setup-form-grinder-brand').value = '';
-  $('setup-form-grinder-model').value = '';
-  $('setup-form-machine-brand').value = '';
-  $('setup-form-machine-model').value = '';
-  $('setup-form-machine-type').value = 'espresso_machine';
+  const grinderSelect = $('setup-form-grinder-id');
+  const machineSelect = $('setup-form-machine-id');
+  if (grinderSelect) grinderSelect.value = grinderSelect.options[0]?.value || '';
+  if (machineSelect) machineSelect.value = machineSelect.options[0]?.value || '';
 }
 
 function populateSetupForm(setup) {
   setupEditingId = Number(setup.id);
   $('setup-manager-title').textContent = `Edit Setup: ${setup.name}`;
   $('setup-form-name').value = setup.name || '';
-  $('setup-form-grinder-brand').value = setup.grinder?.brand || '';
-  $('setup-form-grinder-model').value = setup.grinder?.model || '';
-  $('setup-form-machine-brand').value = setup.machine?.brand || '';
-  $('setup-form-machine-model').value = setup.machine?.model || '';
-  $('setup-form-machine-type').value = setup.machine?.type || 'espresso_machine';
+  $('setup-form-grinder-id').value = String(setup.grinder?.id || '');
+  $('setup-form-machine-id').value = String(setup.machine?.id || '');
 }
 
 async function saveSetupFromForm() {
   const payload = {
     name: $('setup-form-name').value.trim(),
-    grinder_brand: $('setup-form-grinder-brand').value.trim(),
-    grinder_model: $('setup-form-grinder-model').value.trim(),
-    machine_brand: $('setup-form-machine-brand').value.trim(),
-    machine_model: $('setup-form-machine-model').value.trim(),
-    machine_type: $('setup-form-machine-type').value.trim() || 'espresso_machine',
+    grinder_id: Number($('setup-form-grinder-id').value),
+    machine_id: Number($('setup-form-machine-id').value),
   };
 
-  if (!payload.name || !payload.grinder_brand || !payload.grinder_model || !payload.machine_brand || !payload.machine_model) {
-    showToast('Please fill all setup fields');
+  if (!payload.name || !payload.grinder_id || !payload.machine_id) {
+    showToast('Pick a name, grinder, and machine');
     return;
   }
 
@@ -476,6 +565,36 @@ async function saveSetupFromForm() {
     showToast('✅ Setup saved');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save setup'));
+  }
+}
+
+async function saveEquipmentFromForm() {
+  const payload = {
+    type: $('equipment-form-type').value,
+    brand: $('equipment-form-brand').value.trim(),
+    model: $('equipment-form-model').value.trim(),
+  };
+
+  if (!payload.brand || !payload.model) {
+    showToast('Enter brand and model');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/equipment/library', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not save equipment');
+
+    $('equipment-form-brand').value = '';
+    $('equipment-form-model').value = '';
+    await loadEquipmentLibrary();
+    showToast('✅ Equipment saved');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not save equipment'));
   }
 }
 
