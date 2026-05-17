@@ -33,6 +33,18 @@ class Equipment(Base):
     model: Mapped[str] = mapped_column(String)
 
 
+class BrewSetup(Base):
+    __tablename__ = "brew_setups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    grinder_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
+    machine_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
+
+    grinder: Mapped[Equipment] = relationship(foreign_keys=[grinder_id])
+    machine: Mapped[Equipment] = relationship(foreign_keys=[machine_id])
+
+
 # 3. The "Shot" logs table (This connects the coffee and equipment)
 class DialInLog(Base):
     __tablename__ = "dial_in_logs"

@@ -138,6 +138,18 @@
         <div class="settings-scroll">
 
           <div class="settings-group">
+            <h2 class="settings-heading">Setups</h2>
+
+            <div class="setting-card setting-card-row">
+              <div class="setting-card-label">Active Setup</div>
+              <div class="setting-inline setting-inline-wide">
+                <select class="input" id="setup-select"></select>
+                <button class="btn btn-sm btn-ghost" id="btn-manage-setups">Manage</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <h2 class="settings-heading">Equipment</h2>
 
             <div class="setting-card">
@@ -271,6 +283,26 @@
       <div class="dialog-actions">
         <button class="btn btn-primary" id="btn-save-record">Save</button>
         <button class="btn btn-ghost" id="btn-cancel-record">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dialog-overlay hidden" id="setup-manager-dialog">
+    <div class="dialog-card dialog-card-form">
+      <h3 class="dialog-title" id="setup-manager-title">Manage Setups</h3>
+      <p class="dialog-sub">Create, edit, and switch grinder + machine presets.</p>
+      <div id="setup-manager-list" class="setup-list"></div>
+      <div class="form-grid">
+        <input class="input" id="setup-form-name" placeholder="Setup name (e.g. Work, Home Espresso, Home V60)" />
+        <input class="input" id="setup-form-grinder-brand" placeholder="Grinder brand" />
+        <input class="input" id="setup-form-grinder-model" placeholder="Grinder model" />
+        <input class="input" id="setup-form-machine-brand" placeholder="Machine/brewer brand" />
+        <input class="input" id="setup-form-machine-model" placeholder="Machine/brewer model" />
+        <input class="input" id="setup-form-machine-type" placeholder="Machine type (espresso_machine or filter)" />
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-primary" id="btn-save-setup">Save Setup</button>
+        <button class="btn btn-ghost" id="btn-cancel-setup">Close</button>
       </div>
     </div>
   </div>

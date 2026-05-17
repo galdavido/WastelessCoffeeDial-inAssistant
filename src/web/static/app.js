@@ -2,6 +2,8 @@
 let currentCoffeeData = null;
 let currentRecommendation = null;
 let editingBeanId = null;
+let setupEditingId = null;
+let cachedSetups = [];
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
@@ -30,7 +32,10 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(tabId).classList.add('active');
-    if (tabId === 'tab-settings') loadSettings();
+    if (tabId === 'tab-settings') {
+      loadSetups();
+      loadSettings();
+    }
     if (tabId === 'tab-logs') loadLogs();
   });
 });
@@ -104,6 +109,10 @@ $('btn-refresh-logs').addEventListener('click', () => loadLogs());
 $('btn-add-log').addEventListener('click', () => openRecordEditor());
 $('btn-save-record').addEventListener('click', () => saveRecordFromForm());
 $('btn-cancel-record').addEventListener('click', () => closeRecordEditor());
+$('setup-select').addEventListener('change', (event) => selectSetup(event.target.value));
+$('btn-manage-setups').addEventListener('click', () => openSetupManager());
+$('btn-save-setup').addEventListener('click', () => saveSetupFromForm());
+$('btn-cancel-setup').addEventListener('click', () => closeSetupManager());
 
 async function loadLogs() {
   const list = $('logs-list');
@@ -323,6 +332,169 @@ async function loadSettings() {
   }
 }
 
+async function loadSetups() {
+  const select = $('setup-select');
+  if (!select) return;
+
+  try {
+    const res = await fetch('/api/setups');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not load setups');
+
+    const activeId = Number(data.active_setup_id);
+    cachedSetups = Array.isArray(data.setups) ? data.setups : [];
+
+    select.innerHTML = '';
+    cachedSetups.forEach(setup => {
+      const option = document.createElement('option');
+      option.value = String(setup.id);
+      option.textContent = setup.name;
+      option.selected = Number(setup.id) === activeId;
+      select.appendChild(option);
+    });
+
+    renderSetupManagerList(activeId);
+  } catch (err) {
+    showToast('⚠️ ' + (err.message || 'Could not load setups'));
+  }
+}
+
+function renderSetupManagerList(activeId = null) {
+  const list = $('setup-manager-list');
+  if (!list) return;
+
+  if (!cachedSetups.length) {
+    list.innerHTML = '<div class="logs-empty logs-empty-compact">No setups yet.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  cachedSetups.forEach(setup => {
+    const item = document.createElement('div');
+    item.className = 'setup-item';
+    const isActive = activeId !== null ? Number(setup.id) === Number(activeId) : false;
+    item.innerHTML = `
+      <div class="setup-item-main">
+        <div class="setup-item-name">${escapeHtml(setup.name)} ${isActive ? '<span class="setup-active-pill">Active</span>' : ''}</div>
+        <div class="setup-item-meta">${escapeHtml(setup.machine.brand)} ${escapeHtml(setup.machine.model)} • ${escapeHtml(setup.grinder.brand)} ${escapeHtml(setup.grinder.model)}</div>
+      </div>
+      <div class="setup-item-actions">
+        <button class="btn btn-sm btn-ghost js-setup-edit">Edit</button>
+        <button class="btn btn-sm btn-ghost js-setup-delete">Delete</button>
+      </div>
+    `;
+    item.querySelector('.js-setup-edit')?.addEventListener('click', () => populateSetupForm(setup));
+    item.querySelector('.js-setup-delete')?.addEventListener('click', () => deleteSetup(setup));
+    list.appendChild(item);
+  });
+}
+
+async function selectSetup(setupId) {
+  const parsed = Number(setupId);
+  if (!parsed) return;
+
+  try {
+    const res = await fetch('/api/setups/select', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setup_id: parsed }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not switch setup');
+
+    await Promise.all([loadSetups(), loadSettings()]);
+    showToast('✅ Setup switched');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not switch setup'));
+  }
+}
+
+function openSetupManager() {
+  setupEditingId = null;
+  clearSetupForm();
+  $('setup-manager-title').textContent = 'Manage Setups';
+  $('setup-manager-dialog').classList.remove('hidden');
+  const currentActive = Number($('setup-select').value || 0);
+  renderSetupManagerList(currentActive || null);
+}
+
+function closeSetupManager() {
+  $('setup-manager-dialog').classList.add('hidden');
+  setupEditingId = null;
+}
+
+function clearSetupForm() {
+  $('setup-form-name').value = '';
+  $('setup-form-grinder-brand').value = '';
+  $('setup-form-grinder-model').value = '';
+  $('setup-form-machine-brand').value = '';
+  $('setup-form-machine-model').value = '';
+  $('setup-form-machine-type').value = 'espresso_machine';
+}
+
+function populateSetupForm(setup) {
+  setupEditingId = Number(setup.id);
+  $('setup-manager-title').textContent = `Edit Setup: ${setup.name}`;
+  $('setup-form-name').value = setup.name || '';
+  $('setup-form-grinder-brand').value = setup.grinder?.brand || '';
+  $('setup-form-grinder-model').value = setup.grinder?.model || '';
+  $('setup-form-machine-brand').value = setup.machine?.brand || '';
+  $('setup-form-machine-model').value = setup.machine?.model || '';
+  $('setup-form-machine-type').value = setup.machine?.type || 'espresso_machine';
+}
+
+async function saveSetupFromForm() {
+  const payload = {
+    name: $('setup-form-name').value.trim(),
+    grinder_brand: $('setup-form-grinder-brand').value.trim(),
+    grinder_model: $('setup-form-grinder-model').value.trim(),
+    machine_brand: $('setup-form-machine-brand').value.trim(),
+    machine_model: $('setup-form-machine-model').value.trim(),
+    machine_type: $('setup-form-machine-type').value.trim() || 'espresso_machine',
+  };
+
+  if (!payload.name || !payload.grinder_brand || !payload.grinder_model || !payload.machine_brand || !payload.machine_model) {
+    showToast('Please fill all setup fields');
+    return;
+  }
+
+  try {
+    const url = setupEditingId ? `/api/setups/${setupEditingId}` : '/api/setups';
+    const method = setupEditingId ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not save setup');
+
+    setupEditingId = null;
+    clearSetupForm();
+    $('setup-manager-title').textContent = 'Manage Setups';
+    await Promise.all([loadSetups(), loadSettings()]);
+    showToast('✅ Setup saved');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not save setup'));
+  }
+}
+
+async function deleteSetup(setup) {
+  if (!setup || !setup.id) return;
+  if (!window.confirm(`Delete setup "${setup.name}"?`)) return;
+
+  try {
+    const res = await fetch(`/api/setups/${setup.id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not delete setup');
+
+    await Promise.all([loadSetups(), loadSettings()]);
+    showToast('✅ Setup deleted');
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not delete setup'));
+  }
+}
+
 $('btn-save-grinder').addEventListener('click', async () => {
   const brand = $('grinder-brand').value.trim();
   const model = $('grinder-model').value.trim();
@@ -383,3 +555,5 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
   });
 }
+
+loadSetups();
