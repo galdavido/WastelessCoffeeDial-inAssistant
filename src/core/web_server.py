@@ -418,7 +418,8 @@ class SetupInput(BaseModel):
 
 
 class SetupSelectInput(BaseModel):
-    setup_id: int
+    setup_id: int | None = None
+    active_setup_id: int | None = None
 
 
 class EquipmentLibraryCreateInput(BaseModel):
@@ -749,7 +750,11 @@ async def update_setup(setup_id: int, body: SetupInput) -> dict[str, Any]:
 async def select_setup(body: SetupSelectInput) -> dict[str, Any]:
     db = SessionLocal()
     try:
-        setup = db.query(BrewSetup).filter(BrewSetup.id == body.setup_id).first()
+        selected_id = body.setup_id or body.active_setup_id
+        if not selected_id:
+            raise HTTPException(status_code=422, detail="setup_id is required")
+
+        setup = db.query(BrewSetup).filter(BrewSetup.id == selected_id).first()
         if not setup:
             raise HTTPException(status_code=404, detail="Setup not found")
         _set_setting(db, "active_setup_id", str(setup.id))

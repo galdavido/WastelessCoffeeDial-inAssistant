@@ -25,6 +25,36 @@ function showToast(msg, duration = 2800) {
   _toastTimer = setTimeout(() => t.classList.add('hidden'), duration);
 }
 
+function getApiErrorMessage(payload, fallback) {
+  if (!payload) return fallback;
+
+  const detail = payload.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+
+  if (Array.isArray(detail)) {
+    const joined = detail
+      .map(item => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          if (typeof item.msg === 'string') return item.msg;
+          if (typeof item.message === 'string') return item.message;
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .join('; ');
+    if (joined) return joined;
+  }
+
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.msg === 'string') return detail.msg;
+    if (typeof detail.message === 'string') return detail.message;
+  }
+
+  if (typeof payload.message === 'string' && payload.message.trim()) return payload.message;
+  return fallback;
+}
+
 /* ── Tab navigation ─────────────────────────────────────────────────────── */
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -483,10 +513,10 @@ async function selectSetup(setupId) {
     const res = await fetch('/api/setups/select', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ setup_id: parsed }),
+      body: JSON.stringify({ setup_id: parsed, active_setup_id: parsed }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not switch setup');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not switch setup'));
 
     await Promise.all([loadSetups(), loadSettings()]);
     showToast('✅ Setup switched');
