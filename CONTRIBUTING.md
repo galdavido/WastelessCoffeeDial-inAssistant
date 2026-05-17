@@ -16,7 +16,7 @@ Thanks for your interest in contributing! We welcome bug reports, feature reques
 - Run formatting and linting: `pre-commit run --all-files`
 - Run syntax check: `python -m compileall -q src`
 - Run tests: `PYTHONPATH=src python -m unittest discover -s tests -v`
-- Test Discord bot: `python src/core/discord_bot.py` (requires `.env` and Postgres)
+- Run web server locally: `python src/core/web_server.py` (requires `.env` and Postgres)
 
 ## Submitting Changes
 

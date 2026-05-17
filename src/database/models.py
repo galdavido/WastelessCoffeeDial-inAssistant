@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pgvector.sqlalchemy import Vector  # type: ignore
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
@@ -70,27 +69,7 @@ class DialInLog(Base):
     machine: Mapped[Equipment] = relationship(foreign_keys=[machine_id])
 
 
-# 4. Equipment scraped from the web (Vector database table)
-class ScrapedEquipment(Base):
-    __tablename__ = "scraped_equipment"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    brand: Mapped[str] = mapped_column(String)
-    model: Mapped[str] = mapped_column(String)
-    equipment_type: Mapped[str] = mapped_column(String)
-    burr_size_mm: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    burr_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    boiler_type: Mapped[str | None] = mapped_column(String, nullable=True)
-
-    # Here we save the properties extracted by AI as a single text
-    features_text: Mapped[str] = mapped_column(Text)
-
-    # THIS IS THE ESSENCE! Here come the mathematical vectors.
-    # The Gemini embedding model (text-embedding-004) returns exactly 768-dimensional numbers.
-    embedding: Mapped[list[float]] = mapped_column(Vector(768))  # type: ignore[arg-type]
-
-
-# 5. Simple key-value settings table for bot/app preferences
+# 4. Simple key-value settings table for app preferences
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

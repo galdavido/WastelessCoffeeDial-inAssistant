@@ -12,18 +12,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  wcda-bot:
-    build: .
-    container_name: wcda_discord_bot
-    restart: always
-    environment:
-      DATABASE_URL: postgresql://barista:supersecret@db:5432/barista_db
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      DISCORD_TOKEN: ${DISCORD_TOKEN}
-    depends_on:
-      - db
-    command: python src/core/discord_bot.py
-
   wcda-web:
     build: .
     container_name: wcda_web

@@ -14,7 +14,6 @@ class TestProjectConventions(unittest.TestCase):
             "POSTGRES_DB",
             "DATABASE_URL",
             "GEMINI_API_KEY",
-            "DISCORD_TOKEN",
         }
 
         for key in required_keys:
