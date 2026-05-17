@@ -115,6 +115,21 @@
 
       </section>
 
+      <!-- Logs Tab -->
+      <section class="tab-panel" id="tab-logs">
+        <div class="tab-header-row">
+          <div>
+            <h2 class="tab-title">Bean Logs</h2>
+            <p class="tab-subtitle">Your recent saved dial-in entries</p>
+          </div>
+          <button class="btn btn-sm btn-ghost" id="btn-refresh-logs">Refresh</button>
+        </div>
+
+        <div id="logs-list" class="logs-list">
+          <div class="logs-empty">Loading recent logs…</div>
+        </div>
+      </section>
+
       <!-- Settings Tab -->
       <section class="tab-panel" id="tab-settings">
         <div class="settings-scroll">
@@ -205,6 +220,13 @@
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
         <span class="nav-label">Settings</span>
+      </button>
+      <button class="nav-item" data-tab="tab-logs">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 7h8M8 11h8M8 15h5"/>
+          <path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
+        </svg>
+        <span class="nav-label">Logs</span>
       </button>
     </nav>
 

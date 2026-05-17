@@ -30,6 +30,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(tabId).classList.add('active');
     if (tabId === 'tab-settings') loadSettings();
+    if (tabId === 'tab-logs') loadLogs();
   });
 });
 
@@ -96,6 +97,62 @@ $('btn-scan-again').addEventListener('click', () => {
 });
 
 $('btn-new-scan').addEventListener('click', () => showPanel('scan-idle'));
+
+/* ── Logs ──────────────────────────────────────────────────────────────── */
+$('btn-refresh-logs').addEventListener('click', () => loadLogs());
+
+async function loadLogs() {
+  const list = $('logs-list');
+  list.innerHTML = '<div class="logs-empty">Loading recent logs…</div>';
+
+  try {
+    const response = await fetch('/api/logs?limit=20');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Failed to load logs');
+
+    const logs = data.logs || [];
+    if (!logs.length) {
+      list.innerHTML = '<div class="logs-empty">No logs yet. Scan a bag and save a setting to populate this view.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    logs.forEach(log => {
+      const card = document.createElement('article');
+      card.className = 'log-card';
+
+      const date = new Date(log.created_at);
+      const dateLabel = Number.isNaN(date.getTime())
+        ? log.created_at
+        : date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+      card.innerHTML = `
+        <div class="log-card-head">
+          <div>
+            <h3 class="log-title">${escapeHtml(log.roaster)} ${escapeHtml(log.bean_name)}</h3>
+            <p class="log-meta">${escapeHtml(log.origin)} • ${escapeHtml(log.process)} • ${escapeHtml(log.roast_level)}</p>
+          </div>
+          <span class="log-rating">${escapeHtml(String(log.rating))}/5</span>
+        </div>
+        <div class="log-grid">
+          <div><span class="log-label">Grind</span><span class="log-value">${escapeHtml(log.grind_setting)}</span></div>
+          <div><span class="log-label">Dose</span><span class="log-value">${escapeHtml(String(log.dose_g))}g</span></div>
+          <div><span class="log-label">Yield</span><span class="log-value">${escapeHtml(String(log.yield_g))}g</span></div>
+          <div><span class="log-label">Time</span><span class="log-value">${escapeHtml(String(log.time_s))}s</span></div>
+        </div>
+        <div class="log-foot">
+          <span>${escapeHtml(log.grinder)}</span>
+          <span>${escapeHtml(log.machine)}</span>
+          <span>${escapeHtml(dateLabel)}</span>
+        </div>
+        ${log.tasting_notes ? `<p class="log-notes">${escapeHtml(log.tasting_notes)}</p>` : ''}
+      `;
+      list.appendChild(card);
+    });
+  } catch (err) {
+    list.innerHTML = `<div class="logs-empty">${escapeHtml(err.message || 'Could not load logs')}</div>`;
+  }
+}
 
 /* ── Feedback: "It worked!" ─────────────────────────────────────────────── */
 $('btn-worked').addEventListener('click', () => {
@@ -199,6 +256,15 @@ async function putJson(url, body, successMsg) {
   } catch (err) {
     showToast('❌ ' + (err.message || 'Request failed'));
   }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 /* ── Service worker registration ────────────────────────────────────────── */
