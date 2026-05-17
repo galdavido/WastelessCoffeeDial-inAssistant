@@ -1,0 +1,134 @@
+.desktop-app {
+  max-width: 1280px;
+  margin: 0 auto;
+  height: 100dvh;
+  padding: 0 20px 20px;
+}
+
+.desktop-header {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.desktop-brand {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+
+.desktop-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.desktop-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 14px;
+}
+
+.desktop-tabs .nav-item {
+  width: auto;
+  min-width: 110px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--text-2);
+  padding: 10px 14px;
+}
+
+.desktop-tabs .nav-item.active {
+  color: #fff;
+  border-color: rgba(200, 134, 10, 0.45);
+  background: linear-gradient(180deg, #c8860a, #9b6605);
+}
+
+.desktop-tabs .nav-icon {
+  display: none;
+}
+
+.desktop-tabs .nav-label {
+  font-size: 14px;
+}
+
+.desktop-main {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  height: calc(100dvh - 132px);
+}
+
+.desktop-main .tab-panel {
+  padding: 10px 0 16px;
+}
+
+#tab-scan.tab-panel.active {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(420px, 1fr);
+  gap: 16px;
+  align-content: start;
+}
+
+#tab-scan #scan-idle,
+#tab-scan #scan-loading,
+#tab-scan #scan-success {
+  grid-column: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+#tab-scan #scan-results {
+  grid-column: 2;
+}
+
+#tab-scan .coffee-card,
+#tab-scan .recommendation-card,
+#tab-scan .feedback-bar {
+  margin-bottom: 12px;
+}
+
+#tab-settings.tab-panel.active {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+#tab-settings .settings-scroll {
+  display: contents;
+}
+
+#tab-settings .settings-group {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+#tab-logs .logs-list {
+  max-width: 920px;
+}
+
+.bottom-nav {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .desktop-app {
+    padding: 0 14px 14px;
+  }
+
+  .desktop-main {
+    height: calc(100dvh - 126px);
+  }
+
+  #tab-scan.tab-panel.active,
+  #tab-settings.tab-panel.active {
+    display: block;
+  }
+}

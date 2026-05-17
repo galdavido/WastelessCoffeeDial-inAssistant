@@ -1,7 +1,8 @@
-const CACHE = 'barista-ai-v2';
+const CACHE = 'barista-ai-v3';
 const PRECACHE = [
   '/',
   '/static/style.css?v=20260517',
+  '/static/desktop.css?v=20260517',
   '/static/app.js?v=20260517',
   '/static/manifest.json?v=20260517',
 ];

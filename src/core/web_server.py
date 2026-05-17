@@ -6,7 +6,7 @@ import unicodedata
 from difflib import SequenceMatcher
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -361,8 +361,23 @@ app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 @app.get("/")
-async def root() -> FileResponse:
+async def root(request: Request) -> FileResponse:
+    user_agent = request.headers.get("user-agent", "").lower()
+    is_mobile = any(
+        token in user_agent for token in ("iphone", "android", "mobile", "ipad", "ipod")
+    )
+    target = "index.html" if is_mobile else "desktop.html"
+    return FileResponse(os.path.join(_static_dir, target))
+
+
+@app.get("/mobile")
+async def mobile_ui() -> FileResponse:
     return FileResponse(os.path.join(_static_dir, "index.html"))
+
+
+@app.get("/desktop")
+async def desktop_ui() -> FileResponse:
+    return FileResponse(os.path.join(_static_dir, "desktop.html"))
 
 
 @app.get("/sw.js")
