@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from pydantic import BaseModel
+from ai.model_selection import is_transient_model_error, resolve_model_candidates
 from core.optional_deps import (
     load_dotenv_if_available,
     require_genai,
@@ -58,13 +59,17 @@ def _build_prompt() -> str:
 
 
 def _vision_models() -> list[str]:
-    # Ordered by preference, with stable fallbacks for account/API differences.
-    return [
-        "gemini-3.1-flash-lite-preview",
-        "gemini-flash-lite-latest",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash-lite",
-    ]
+    # Prefer stable, generally available models first; keep preview models last.
+    return resolve_model_candidates(
+        [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-2.0-flash-lite",
+            "gemini-3.1-flash-lite-preview",
+        ]
+    )
 
 
 def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
@@ -111,6 +116,8 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
             except Exception as e:
                 last_error = f"{model_name}: {e}"
                 print(f"Vision model '{model_name}' failed: {e}")
+                if is_transient_model_error(e):
+                    continue
 
         _set_last_vision_error(last_error)
         return None

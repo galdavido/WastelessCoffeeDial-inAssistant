@@ -6,6 +6,7 @@ from typing import Any, Dict, Sequence, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
+from ai.model_selection import is_transient_model_error, resolve_model_candidates
 from core.optional_deps import require_genai
 from database.database import SessionLocal
 from database.models import Bean, DialInLog, Equipment
@@ -369,29 +370,51 @@ def _build_prompt(
 
 def _generate_recommendation_with_grounding(genai: Any, prompt: str) -> str:
     client = genai.Client()
+    models = resolve_model_candidates(
+        [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-2.0-flash-lite",
+            "gemini-3.1-flash-lite-preview",
+        ]
+    )
     try:
-        # Try grounded generation first (Google Search tool).
-        try:
-            _, types = require_genai()
-            grounded_response = client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())],
-                ),
-            )
-            return (
-                grounded_response.text
-                or "Error: Empty response received from AI Barista."
-            )
-        except Exception:
-            # Fallback to normal generation if grounding is unsupported/unavailable.
-            plain_response = client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview", contents=prompt
-            )
-            return (
-                plain_response.text or "Error: Empty response received from AI Barista."
-            )
+        _, types = require_genai()
+        last_error: Exception | None = None
+
+        for model_name in models:
+            try:
+                grounded_response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                    ),
+                )
+                if grounded_response.text:
+                    return grounded_response.text
+            except Exception as exc:
+                last_error = exc
+                print(f"Grounded model '{model_name}' failed: {exc}")
+                if not is_transient_model_error(exc):
+                    break
+
+        for model_name in models:
+            try:
+                plain_response = client.models.generate_content(
+                    model=model_name, contents=prompt
+                )
+                if plain_response.text:
+                    return plain_response.text
+            except Exception as exc:
+                last_error = exc
+                print(f"Plain model '{model_name}' failed: {exc}")
+                if not is_transient_model_error(exc):
+                    break
+
+        return f"Error: {last_error or 'Empty response received from AI Barista.'}"
     finally:
         client.close()
 

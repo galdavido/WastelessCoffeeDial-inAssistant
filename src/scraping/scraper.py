@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from typing import Any
 
 from pydantic import BaseModel, Field
+from ai.model_selection import is_transient_model_error, resolve_model_candidates
 from core.optional_deps import load_dotenv_if_available, require_genai
 
 load_dotenv_if_available()
@@ -83,25 +84,45 @@ def scrape_equipment_data(url: str) -> dict[str, Any] | None:
 
     client = genai.Client()
     prompt = _build_prompt(page_text)
+    models = resolve_model_candidates(
+        [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-2.0-flash-lite",
+            "gemini-3.1-flash-lite-preview",
+        ]
+    )
 
     try:
-        # Make LLM call with enforced Pydantic schema
-        ai_response = client.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=EquipmentData,
-                temperature=0.1,
-            ),
-        )
+        last_error: Exception | None = None
+        for model_name in models:
+            try:
+                ai_response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=EquipmentData,
+                        temperature=0.1,
+                    ),
+                )
 
-        # Safety check (for Pylance)
-        if not ai_response.text:
-            print("❌ Empty response received from AI.")
-            return None
+                if not ai_response.text:
+                    print("❌ Empty response received from AI.")
+                    continue
 
-        return json.loads(ai_response.text)
+                return json.loads(ai_response.text)
+            except Exception as exc:
+                last_error = exc
+                print(f"❌ Model '{model_name}' failed: {exc}")
+                if not is_transient_model_error(exc):
+                    break
+
+        if last_error is not None:
+            print(f"❌ Error during AI processing: {last_error}")
+        return None
 
     except Exception as e:
         print(f"❌ Error during AI processing: {e}")
