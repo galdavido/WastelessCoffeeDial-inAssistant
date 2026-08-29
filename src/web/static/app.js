@@ -296,7 +296,7 @@ async function loadLogs() {
         : '<div class="logs-empty logs-empty-compact">No dial-in log saved yet for this bean.</div>';
 
       card.innerHTML = `
-        ${originArtwork(entry.origin)}
+        ${logMedia(entry.origin, hasLatest ? latest.image_url : null)}
         <div class="log-card-head">
           <div>
             <h3 class="log-title">${escapeHtml(entry.roaster)} ${escapeHtml(entry.bean_name)}</h3>
@@ -312,6 +312,7 @@ async function loadLogs() {
       `;
       card.querySelector('.js-edit-record')?.addEventListener('click', () => openRecordEditor(entry));
       card.querySelector('.js-delete-record')?.addEventListener('click', () => deleteRecord(entry));
+      wireLogMedia(card);
       list.appendChild(card);
     });
   } catch (err) {
@@ -502,6 +503,61 @@ function originArtwork(origin) {
       </div>
     </div>
   `;
+}
+
+/* Media strip for a log card: slide 1 is the generated origin scene, slide 2
+   the bag photo the user took (when there is one). Swiping is native CSS
+   scroll-snap; the dots just mirror and drive the scroll position. */
+function logMedia(origin, imageUrl) {
+  const slides = [`<div class="log-media-slide">${originArtwork(origin)}</div>`];
+  if (imageUrl) {
+    slides.push(
+      `<div class="log-media-slide">
+         <img class="log-photo" src="${escapeHtml(imageUrl)}" alt="Photo of the coffee bag" loading="lazy">
+       </div>`
+    );
+  }
+
+  const dots = slides.length > 1
+    ? `<div class="log-media-dots">${slides
+        .map((_, i) => `<button class="log-dot${i === 0 ? ' active' : ''}" type="button"
+             aria-label="Show image ${i + 1} of ${slides.length}"></button>`)
+        .join('')}</div>`
+    : '';
+
+  return `<div class="log-media">
+            <div class="log-media-track">${slides.join('')}</div>
+            ${dots}
+          </div>`;
+}
+
+function wireLogMedia(card) {
+  const track = card.querySelector('.log-media-track');
+  const dots = [...card.querySelectorAll('.log-dot')];
+  if (!track || dots.length < 2) return;
+
+  const currentIndex = () =>
+    track.clientWidth ? Math.round(track.scrollLeft / track.clientWidth) : 0;
+
+  const sync = () => {
+    const index = currentIndex();
+    dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
+  };
+
+  let frame = 0;
+  track.addEventListener('scroll', () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      sync();
+    });
+  }, { passive: true });
+
+  dots.forEach((dot, i) => {
+    dot.addEventListener('click', () => {
+      track.scrollTo({ left: i * track.clientWidth, behavior: 'smooth' });
+    });
+  });
 }
 
 function parseNullableNumber(value) {

@@ -1,5 +1,5 @@
 // Bump CACHE to ship new static assets; the old cache is purged on activate.
-const CACHE = 'wcda-v12';
+const CACHE = 'wcda-v13';
 const PRECACHE = [
   '/',
   '/static/style.css',

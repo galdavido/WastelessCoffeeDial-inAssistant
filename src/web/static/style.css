@@ -157,13 +157,55 @@ body.modal-open .tab-panel { overflow: hidden; }
   overflow: hidden;
 }
 
-/* Generated origin scene, full-bleed across the top of the card. The negative
+/* Swipeable media strip, full-bleed across the top of the card. The negative
    margins cancel the card padding so it meets the rounded border. */
-.origin-art {
+.log-media {
   position: relative;
   margin: calc(-1 * var(--log-pad)) calc(-1 * var(--log-pad)) 12px;
   height: 104px;
   border-bottom: 1px solid var(--border);
+}
+.log-media-track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.log-media-track::-webkit-scrollbar { display: none; }
+.log-media-slide {
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+.log-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.log-media-dots {
+  position: absolute; right: 10px; bottom: 9px;
+  display: flex; gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .38);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.log-dot {
+  width: 7px; height: 7px; padding: 0;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, .45);
+  cursor: pointer;
+  transition: background .2s, transform .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.log-dot.active { background: #fff; transform: scale(1.25); }
+
+.origin-art {
+  position: relative;
+  width: 100%; height: 100%;
 }
 .origin-art svg { display: block; width: 100%; height: 100%; }
 .origin-art-label {
@@ -670,7 +712,7 @@ select.input { background-image: none; }
 
   /* Keep the full-bleed artwork aligned with the tighter card padding. */
   .log-card { --log-pad: 12px; }
-  .origin-art { height: 92px; }
+  .log-media { height: 92px; }
 
   .setting-card-row {
     gap: 10px;
