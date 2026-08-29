@@ -13,6 +13,11 @@ class FeedbackRequest(BaseModel):
     image_name: str | None = None
 
 
+class RecommendationRequest(BaseModel):
+    coffee_data: dict[str, Any]
+    dose_g: float | None = None
+
+
 class EquipmentUpdate(BaseModel):
     brand: str
     model: str

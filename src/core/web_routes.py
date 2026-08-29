@@ -36,6 +36,7 @@ from .web_schemas import (
     EquipmentUpdate,
     FeedbackRequest,
     GrindOffsetUpdate,
+    RecommendationRequest,
     SetupInput,
     SetupSelectInput,
 )
@@ -167,6 +168,32 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
         recommendation = get_best_grind_setting(coffee_data)
         return {"coffee_data": coffee_data, "recommendation": recommendation}
+
+    @app.post("/api/recommendation")
+    def refresh_recommendation(
+        body: RecommendationRequest, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
+        """Regenerate the dial-in recommendation for an already-scanned bag.
+
+        Used when the user changes the per-shot dose on the results screen
+        (e.g. a lighter roast that packs more grams into the same basket).
+        """
+        if body.dose_g is not None and body.dose_g <= 0:
+            raise HTTPException(status_code=400, detail="Dose must be positive.")
+
+        coffee_data = dict(body.coffee_data or {})
+        if body.dose_g is not None:
+            coffee_data["preferred_dose_g"] = body.dose_g
+        else:
+            coffee_data.setdefault("preferred_dose_g", get_default_dose_g(db))
+        # Grind offset is a server-side preference, never trusted from the client.
+        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
+
+        try:
+            recommendation = get_best_grind_setting(coffee_data)
+        except Exception as exc:
+            raise _server_error(exc, "refresh recommendation") from exc
+        return {"recommendation": recommendation}
 
     @app.post("/api/feedback")
     def save_feedback(body: FeedbackRequest) -> dict[str, str]:
@@ -460,6 +487,22 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             raise _server_error(exc, "create setup") from exc
         return {"status": "created", "setup": serialize_setup(setup)}
 
+    @app.put("/api/setups/active")
+    def select_setup(
+        body: SetupSelectInput, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
+        # Declared before "/api/setups/{setup_id}" so the literal "active" path
+        # is not captured as an integer setup_id path parameter.
+        selected_id = body.setup_id or body.active_setup_id
+        if not selected_id:
+            raise HTTPException(status_code=422, detail="setup_id is required")
+
+        setup = db.query(BrewSetup).filter(BrewSetup.id == selected_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+        set_setting(db, "active_setup_id", str(setup.id))
+        return {"status": "selected", "setup_id": setup.id}
+
     @app.put("/api/setups/{setup_id}")
     def update_setup(
         setup_id: int, body: SetupInput, db: Session = Depends(get_db)
@@ -491,20 +534,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.rollback()
             raise _server_error(exc, "update setup") from exc
         return {"status": "updated", "setup": serialize_setup(setup)}
-
-    @app.put("/api/setups/active")
-    def select_setup(
-        body: SetupSelectInput, db: Session = Depends(get_db)
-    ) -> dict[str, Any]:
-        selected_id = body.setup_id or body.active_setup_id
-        if not selected_id:
-            raise HTTPException(status_code=422, detail="setup_id is required")
-
-        setup = db.query(BrewSetup).filter(BrewSetup.id == selected_id).first()
-        if not setup:
-            raise HTTPException(status_code=404, detail="Setup not found")
-        set_setting(db, "active_setup_id", str(setup.id))
-        return {"status": "selected", "setup_id": setup.id}
 
     @app.delete("/api/setups/{setup_id}")
     def delete_setup(setup_id: int, db: Session = Depends(get_db)) -> dict[str, str]:

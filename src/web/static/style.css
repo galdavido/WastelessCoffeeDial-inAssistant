@@ -24,6 +24,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
 #app { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 
 .hidden { display: none !important; }
+[hidden] { display: none !important; }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .header {
@@ -55,6 +56,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   display: none;
 }
 .tab-panel.active { display: block; }
+
+/* Freeze the page behind an open dialog so it doesn't scroll under the modal. */
+body.modal-open .tab-panel { overflow: hidden; }
 
 .tab-header-row {
   display: flex;
@@ -280,6 +284,18 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   white-space: pre-wrap; word-break: break-word;
 }
 
+/* ── Scan – per-shot dose adjust ─────────────────────────────────────────── */
+.dose-adjust {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.dose-adjust-label { font-size: 14px; font-weight: 700; color: var(--text-1); }
+.dose-adjust-row { display: flex; align-items: center; gap: 8px; }
+.dose-adjust-row .input-number { flex: 0 0 84px; width: 84px; }
+.dose-adjust-row .btn { margin-left: auto; }
+.dose-adjust-hint { font-size: 12px; color: var(--text-2); line-height: 1.45; }
+
 /* ── Feedback bar ────────────────────────────────────────────────────────── */
 .feedback-bar {
   background: var(--bg-card); border: 1px solid var(--border);
@@ -316,20 +332,58 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   font-size: 14px; font-weight: 600; color: var(--text-1);
 }
 .setting-card-label svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
-.setting-inputs { display: flex; gap: 8px; }
+.setting-card-note { font-size: 12px; color: var(--text-2); line-height: 1.45; }
 .setting-inline { display: flex; align-items: center; gap: 8px; }
 .setting-inline-wide { width: 100%; }
 .unit-label { font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.btn-block { width: 100%; }
+
+/* Active-setup gear read-out */
+.gear-summary {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .02);
+}
+.gear-row { display: flex; align-items: center; gap: 12px; }
+.gear-icon { width: 20px; height: 20px; color: var(--accent); flex-shrink: 0; }
+.gear-row > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.gear-role {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-3);
+}
+.gear-name { font-size: 14px; font-weight: 600; color: var(--text-1); word-break: break-word; }
+
+/* Equipment list on the Settings tab */
+.gear-list { display: flex; flex-direction: column; gap: 8px; }
+.gear-list-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .02);
+}
+.gear-list-name { font-size: 14px; font-weight: 600; color: var(--text-1); min-width: 0; word-break: break-word; }
+.gear-list-badge {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 600; letter-spacing: .3px; text-transform: capitalize;
+  color: var(--text-2);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 8px;
+}
+.gear-list-empty { font-size: 13px; color: var(--text-2); }
 
 /* ── Inputs ──────────────────────────────────────────────────────────────── */
 .input {
-  flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+  flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border);
   border-radius: 8px; padding: 9px 12px; font-size: 14px; color: var(--text-1);
   outline: none; -webkit-appearance: none; appearance: none;
   transition: border-color .2s;
 }
-.input:focus { border-color: var(--accent); }
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(200, 134, 10, .14);
+}
 .input::placeholder { color: var(--text-3); }
+select.input { background-image: none; }
+.input[readonly] { color: var(--text-2); cursor: default; }
 .input-number { width: 80px; flex: 0 0 80px; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
@@ -364,6 +418,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   display: flex; align-items: flex-start;
 }
 .nav-item {
+  position: relative;
   flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 3px; padding-top: 10px;
   background: none; border: none; cursor: pointer;
@@ -372,15 +427,34 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   font-family: inherit;
 }
 .nav-item.active { color: var(--accent); }
+.nav-item.active::after {
+  content: "";
+  position: absolute; top: 0; left: 50%;
+  width: 26px; height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent);
+  transform: translateX(-50%);
+}
 .nav-icon { width: 20px; height: 20px; }
 .nav-label { font-size: 11px; font-weight: 500; }
 
 /* ── Dialog ──────────────────────────────────────────────────────────────── */
 .dialog-overlay {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(0,0,0,.75);
+  background: rgba(0, 0, 0, .6);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   display: flex; align-items: flex-end; justify-content: center;
-  padding: 0 0 env(safe-area-inset-bottom, 16px);
+  opacity: 1;
+  transition: opacity .22s ease;
+}
+/* Fade/slide the overlay out instead of snapping straight to display:none. */
+.dialog-overlay.hidden {
+  display: flex !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .22s ease, visibility 0s linear .22s;
 }
 
 #setup-manager-dialog,
@@ -388,41 +462,77 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   align-items: center;
   padding: 16px;
 }
-
 #setup-manager-dialog .dialog-card,
 #equipment-manager-dialog .dialog-card {
   border-radius: var(--radius);
-  width: min(720px, 100%);
-  max-height: min(86dvh, 900px);
+  width: min(560px, 100%);
 }
+
 .dialog-card {
-  background: var(--bg-card); border: 1px solid var(--border);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius) var(--radius) 0 0;
-  padding: 24px 20px; width: 100%; max-width: 480px;
-  display: flex; flex-direction: column; gap: 12px;
+  width: 100%; max-width: 520px;
+  max-height: 92dvh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -10px 44px rgba(0, 0, 0, .5);
+  transform: translateY(0);
+  transition: transform .26s cubic-bezier(.32, .72, 0, 1);
 }
-.dialog-card-form {
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+.dialog-overlay.hidden .dialog-card { transform: translateY(24px); }
+#setup-manager-dialog.hidden .dialog-card,
+#equipment-manager-dialog.hidden .dialog-card { transform: scale(.96); }
+
+/* Pinned header, scrollable body, pinned footer — the body is the only part
+   that scrolls, so the title and the Save/Cancel buttons are always reachable. */
+.dialog-head {
+  flex-shrink: 0;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--border);
 }
 .dialog-title { font-size: 18px; font-weight: 700; color: var(--text-1); }
-.dialog-sub { font-size: 13px; color: var(--text-2); }
-.dialog-actions { display: flex; gap: 10px; }
-.form-grid {
-  display: grid;
-  gap: 10px;
+.dialog-sub { font-size: 13px; color: var(--text-2); margin-top: 4px; line-height: 1.45; }
+
+.dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 18px;
 }
-.form-grid textarea.input {
-  min-height: 72px;
-  resize: vertical;
+
+.dialog-actions {
+  flex-shrink: 0;
+  display: flex; flex-wrap: wrap; gap: 10px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
 }
+.dialog-actions .btn { flex: 1 1 auto; min-width: 120px; min-height: 46px; }
+
+/* ── Form fields (labelled) ──────────────────────────────────────────────── */
+.form-section { display: flex; flex-direction: column; gap: 10px; }
+.form-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .7px; color: var(--text-3);
+}
+.form-grid { display: grid; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label {
+  font-size: 12px; font-weight: 600; color: var(--text-2); letter-spacing: .2px;
+}
+.field .input { width: 100%; flex: none; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid textarea.input { min-height: 76px; resize: vertical; }
 .setup-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 8px;
 }
+.setup-list:empty { display: none; }
 .setup-item {
   display: flex;
   justify-content: space-between;
@@ -476,13 +586,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   transform: translateX(-50%);
   background: #2a2420; border: 1px solid var(--border);
   color: var(--text-1); font-size: 14px; font-weight: 500;
-  padding: 10px 20px; border-radius: 24px;
+  padding: 10px 20px; border-radius: 14px;
   box-shadow: var(--shadow); z-index: 200;
-  white-space: nowrap; pointer-events: none;
+  max-width: min(92vw, 360px); text-align: center; line-height: 1.4;
+  pointer-events: none;
   animation: toast-in .25s ease;
 }
 
-@media (max-width: 390px) {
+@media (max-width: 480px) {
   :root {
     --header-h: calc(46px + env(safe-area-inset-top, 0px));
     --nav-h: calc(54px + env(safe-area-inset-bottom, 0px));
@@ -632,6 +743,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   }
   .bottom-nav .nav-icon { width: 18px; height: 18px; }
   .bottom-nav .nav-label { font-size: 14px; }
+  .bottom-nav .nav-item.active::after { display: none; }
 
   /* Two-column scan view: capture panel on the left, results on the right. */
   #tab-scan.tab-panel.active {

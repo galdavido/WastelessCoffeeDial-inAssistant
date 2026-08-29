@@ -46,6 +46,24 @@ class TestWebAppWiring(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_recommendation_requires_coffee_data(self) -> None:
+        response = client.post("/api/recommendation", json={})
+        self.assertEqual(response.status_code, 422)
+
+    def test_recommendation_rejects_non_positive_dose(self) -> None:
+        response = client.post(
+            "/api/recommendation",
+            json={"coffee_data": {"name": "Test"}, "dose_g": 0},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_setups_active_route_is_not_shadowed(self) -> None:
+        # PUT /api/setups/active must reach select_setup, not be captured by
+        # /api/setups/{setup_id} (which would parse "active" as an int).
+        response = client.put("/api/setups/active", json={})
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("setup_id is required", response.text)
+
 
 if __name__ == "__main__":
     unittest.main()

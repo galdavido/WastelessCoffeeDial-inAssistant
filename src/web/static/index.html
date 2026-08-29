@@ -86,6 +86,17 @@
             <div class="coffee-chips" id="coffee-chips"></div>
           </div>
 
+          <div class="dose-adjust">
+            <label class="dose-adjust-label" for="scan-dose-input">Dose for this shot</label>
+            <div class="dose-adjust-row">
+              <input class="input input-number" type="number" id="scan-dose-input"
+                     step="0.5" min="1" max="30" inputmode="decimal" />
+              <span class="unit-label">g</span>
+              <button class="btn btn-sm btn-ghost" id="btn-recalc" type="button">Update recipe</button>
+            </div>
+            <p class="dose-adjust-hint" id="dose-adjust-hint"></p>
+          </div>
+
           <div class="recommendation-card">
             <div class="rec-header">
               <span class="rec-icon">💡</span>
@@ -139,14 +150,38 @@
         <div class="settings-scroll">
 
           <div class="settings-group">
-            <h2 class="settings-heading">Setups</h2>
+            <h2 class="settings-heading">Active Setup</h2>
 
-            <div class="setting-card setting-card-row">
-              <div class="setting-card-label">Active Setup</div>
-              <div class="setting-inline setting-inline-wide">
+            <div class="setting-card">
+              <label class="field">
+                <span class="field-label">Current setup</span>
                 <select class="input" id="setup-select"></select>
-                <button class="btn btn-sm btn-ghost" id="btn-manage-setups">Manage</button>
+              </label>
+
+              <div class="gear-summary">
+                <div class="gear-row">
+                  <svg class="gear-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                  </svg>
+                  <div>
+                    <span class="gear-role">Grinder</span>
+                    <span class="gear-name" id="active-grinder-name">—</span>
+                  </div>
+                </div>
+                <div class="gear-row">
+                  <svg class="gear-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+                    <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+                    <line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
+                  </svg>
+                  <div>
+                    <span class="gear-role">Machine / brewer</span>
+                    <span class="gear-name" id="active-machine-name">—</span>
+                  </div>
+                </div>
               </div>
+
+              <button class="btn btn-sm btn-ghost btn-block" id="btn-manage-setups">Manage setups</button>
             </div>
           </div>
 
@@ -154,33 +189,9 @@
             <h2 class="settings-heading">Equipment</h2>
 
             <div class="setting-card">
-              <div class="setting-card-label">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
-                </svg>
-                Grinder
-              </div>
-              <div class="setting-inputs">
-                <input class="input" type="text" id="grinder-brand" placeholder="Brand" readonly />
-                <input class="input" type="text" id="grinder-model" placeholder="Model" readonly />
-              </div>
-              <button class="btn btn-sm btn-primary" id="btn-save-grinder">Manage Library</button>
-            </div>
-
-            <div class="setting-card">
-              <div class="setting-card-label">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
-                  <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
-                  <line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
-                </svg>
-                Espresso Machine
-              </div>
-              <div class="setting-inputs">
-                <input class="input" type="text" id="machine-brand" placeholder="Brand" readonly />
-                <input class="input" type="text" id="machine-model" placeholder="Model" readonly />
-              </div>
-              <button class="btn btn-sm btn-primary" id="btn-save-machine">Manage Library</button>
+              <p class="setting-card-note">Grinders and machines your setups can use.</p>
+              <div class="gear-list" id="equipment-summary-list"></div>
+              <button class="btn btn-sm btn-ghost btn-block" id="btn-open-equipment-manager">Manage equipment</button>
             </div>
           </div>
 
@@ -248,15 +259,26 @@
 
   </div><!-- #app -->
 
-  <!-- Grind setting dialog -->
+  <!-- "It worked!" dialog: log the dose + grind that dialled the coffee in -->
   <div class="dialog-overlay hidden" id="grind-dialog">
     <div class="dialog-card">
-      <h3 class="dialog-title">Grind setting used?</h3>
-      <p class="dialog-sub">Enter the setting you dialled in (optional)</p>
-      <input class="input" type="text" id="grind-input" placeholder="e.g. 36 clicks, fine…" />
+      <div class="dialog-head">
+        <h3 class="dialog-title">Log what worked</h3>
+        <p class="dialog-sub">Save the dose and grind that dialled this coffee in. Pre-filled from your recipe — tweak if you changed anything.</p>
+      </div>
+      <div class="dialog-body">
+        <label class="field">
+          <span class="field-label">Dose used (g)</span>
+          <input class="input" type="number" id="worked-dose-input" step="0.1" min="1" max="40" inputmode="decimal" placeholder="18" />
+        </label>
+        <label class="field">
+          <span class="field-label">Grind setting used</span>
+          <input class="input" type="text" id="grind-input" placeholder="e.g. 33 clicks" />
+        </label>
+      </div>
       <div class="dialog-actions">
-        <button class="btn btn-primary" id="btn-save-grind">Save</button>
-        <button class="btn btn-ghost" id="btn-skip-grind">Skip</button>
+        <button class="btn btn-primary" id="btn-save-grind">Save to logs</button>
+        <button class="btn btn-ghost" id="btn-skip-grind">Cancel</button>
       </div>
     </div>
   </div>
@@ -265,21 +287,48 @@
   <div class="toast hidden" id="toast"></div>
 
   <div class="dialog-overlay hidden" id="log-editor-dialog">
-    <div class="dialog-card dialog-card-form">
-      <h3 class="dialog-title" id="log-editor-title">Add Record</h3>
-      <p class="dialog-sub">Create or edit a bean record and its latest log.</p>
-      <div class="form-grid">
-        <input class="input" id="form-roaster" placeholder="Roaster" />
-        <input class="input" id="form-name" placeholder="Bean name" />
-        <input class="input" id="form-origin" placeholder="Origin" />
-        <input class="input" id="form-process" placeholder="Process" />
-        <input class="input" id="form-roast-level" placeholder="Roast level" />
-        <input class="input" id="form-grind-setting" placeholder="Grind setting (e.g. 34 clicks)" />
-        <input class="input input-number" type="number" id="form-dose" placeholder="Dose g" step="0.1" min="1" />
-        <input class="input input-number" type="number" id="form-yield" placeholder="Yield g" step="0.1" min="1" />
-        <input class="input input-number" type="number" id="form-time" placeholder="Time s" step="1" min="1" />
-        <input class="input input-number" type="number" id="form-rating" placeholder="Rating 1-5" step="1" min="1" max="5" />
-        <textarea class="input" id="form-notes" placeholder="Tasting notes" rows="3"></textarea>
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h3 class="dialog-title" id="log-editor-title">Add Record</h3>
+        <p class="dialog-sub">Create or edit a bean and its most recent dial-in log.</p>
+      </div>
+      <div class="dialog-body">
+        <div class="form-section">
+          <div class="form-section-title">Bean</div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Roaster</span>
+              <input class="input" id="form-roaster" placeholder="e.g. AVX" /></label>
+            <label class="field"><span class="field-label">Bean name</span>
+              <input class="input" id="form-name" placeholder="e.g. Brazil Santos" /></label>
+            <label class="field"><span class="field-label">Origin</span>
+              <input class="input" id="form-origin" placeholder="e.g. Brazil" /></label>
+            <label class="field"><span class="field-label">Process</span>
+              <input class="input" id="form-process" placeholder="e.g. Natural" /></label>
+            <label class="field"><span class="field-label">Roast level</span>
+              <input class="input" id="form-roast-level" placeholder="e.g. Medium-Dark" /></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">Latest dial-in</div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Grind setting</span>
+              <input class="input" id="form-grind-setting" placeholder="e.g. 34 clicks" /></label>
+            <div class="field-row">
+              <label class="field"><span class="field-label">Dose (g)</span>
+                <input class="input" type="number" id="form-dose" placeholder="18" step="0.1" min="1" inputmode="decimal" /></label>
+              <label class="field"><span class="field-label">Yield (g)</span>
+                <input class="input" type="number" id="form-yield" placeholder="36" step="0.1" min="1" inputmode="decimal" /></label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span class="field-label">Shot time (s)</span>
+                <input class="input" type="number" id="form-time" placeholder="28" step="1" min="1" inputmode="numeric" /></label>
+              <label class="field"><span class="field-label">Rating (1–5)</span>
+                <input class="input" type="number" id="form-rating" placeholder="5" step="1" min="1" max="5" inputmode="numeric" /></label>
+            </div>
+            <label class="field"><span class="field-label">Tasting notes</span>
+              <textarea class="input" id="form-notes" placeholder="Balanced, chocolatey, gentle acidity…" rows="3"></textarea></label>
+          </div>
+        </div>
       </div>
       <div class="dialog-actions">
         <button class="btn btn-primary" id="btn-save-record">Save</button>
@@ -289,44 +338,61 @@
   </div>
 
   <div class="dialog-overlay hidden" id="setup-manager-dialog">
-    <div class="dialog-card dialog-card-form">
-      <h3 class="dialog-title" id="setup-manager-title">Manage Setups</h3>
-      <p class="dialog-sub">Create, edit, and switch grinder + machine presets.</p>
-      <div id="setup-manager-list" class="setup-list"></div>
-      <div class="form-grid">
-        <input class="input" id="setup-form-name" placeholder="Setup name (e.g. Work, Home Espresso, Home V60)" />
-        <label class="setting-card-label">Saved Grinder</label>
-        <select class="input" id="setup-form-grinder-id"></select>
-        <label class="setting-card-label">Saved Machine/Brewer</label>
-        <select class="input" id="setup-form-machine-id"></select>
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h3 class="dialog-title" id="setup-manager-title">Manage setups</h3>
+        <p class="dialog-sub">Create, edit, and switch grinder + machine presets.</p>
+      </div>
+      <div class="dialog-body">
+        <div id="setup-manager-list" class="setup-list"></div>
+        <div class="form-section">
+          <div class="form-section-title">Add / edit setup</div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Setup name</span>
+              <input class="input" id="setup-form-name" placeholder="e.g. Home espresso, Work, V60" /></label>
+            <label class="field"><span class="field-label">Grinder</span>
+              <select class="input" id="setup-form-grinder-id"></select></label>
+            <label class="field"><span class="field-label">Machine / brewer</span>
+              <select class="input" id="setup-form-machine-id"></select></label>
+          </div>
+        </div>
       </div>
       <div class="dialog-actions">
-        <button class="btn btn-ghost" id="btn-manage-equipment">Manage Equipment</button>
-        <button class="btn btn-primary" id="btn-save-setup">Save Setup</button>
+        <button class="btn btn-ghost" id="btn-manage-equipment">Equipment…</button>
+        <button class="btn btn-primary" id="btn-save-setup">Save setup</button>
         <button class="btn btn-ghost" id="btn-cancel-setup">Close</button>
       </div>
     </div>
   </div>
 
   <div class="dialog-overlay hidden" id="equipment-manager-dialog">
-    <div class="dialog-card dialog-card-form">
-      <h3 class="dialog-title">Manage Equipment</h3>
-      <p class="dialog-sub">Add, edit, or delete equipment. Setups only link to saved equipment.</p>
-      <div class="setup-list" id="equipment-list"></div>
-      <div class="form-grid">
-        <div class="settings-heading" id="equipment-form-title">Add Equipment</div>
-        <select class="input" id="equipment-form-type">
-          <option value="grinder">Grinder</option>
-          <option value="espresso_machine">Espresso Machine</option>
-          <option value="filter">Filter Brewer</option>
-          <option value="other">Other</option>
-        </select>
-        <input class="input" id="equipment-form-brand" placeholder="Brand" />
-        <input class="input" id="equipment-form-model" placeholder="Model" />
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h3 class="dialog-title">Manage Equipment</h3>
+        <p class="dialog-sub">Add, edit, or delete equipment. Setups only link to saved equipment.</p>
+      </div>
+      <div class="dialog-body">
+        <div class="setup-list" id="equipment-list"></div>
+        <div class="form-section">
+          <div class="form-section-title" id="equipment-form-title">Add Equipment</div>
+          <div class="form-grid">
+            <label class="field"><span class="field-label">Type</span>
+              <select class="input" id="equipment-form-type">
+                <option value="grinder">Grinder</option>
+                <option value="espresso_machine">Espresso Machine</option>
+                <option value="filter">Filter Brewer</option>
+                <option value="other">Other</option>
+              </select></label>
+            <label class="field"><span class="field-label">Brand</span>
+              <input class="input" id="equipment-form-brand" placeholder="e.g. Kingrinder" /></label>
+            <label class="field"><span class="field-label">Model</span>
+              <input class="input" id="equipment-form-model" placeholder="e.g. K6" /></label>
+          </div>
+        </div>
       </div>
       <div class="dialog-actions">
-        <button class="btn btn-ghost" id="btn-cancel-equipment-edit">Cancel Edit</button>
-        <button class="btn btn-primary" id="btn-save-equipment">Save Equipment</button>
+        <button class="btn btn-ghost" id="btn-cancel-equipment-edit" hidden>Cancel edit</button>
+        <button class="btn btn-primary" id="btn-save-equipment">Save equipment</button>
         <button class="btn btn-ghost" id="btn-close-equipment">Close</button>
       </div>
     </div>

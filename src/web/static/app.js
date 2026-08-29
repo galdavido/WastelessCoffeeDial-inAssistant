@@ -10,11 +10,69 @@ let cachedEquipmentLibrary = { grinders: [], machines: [] };
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
 
+/* Basket capacity shifts with roast: a dense dark roast packs less mass into the
+   same basket than a fluffy light roast. These are the midpoints of the ranges
+   that fit the user's basket (dark ~16-17 g, light ~18-19 g). Order matters —
+   the more specific "medium-dark" test must come before the bare "dark" test. */
+const DOSE_BY_ROAST = [
+  { test: /medium[-\s]?dark/i, dose: 17 },
+  { test: /dark|french|italian|vienna/i, dose: 16.5 },
+  { test: /light|blonde|blond|cinnamon|nordic|scandinav/i, dose: 18.5 },
+  { test: /medium/i, dose: 17.5 },
+];
+
+function suggestedDoseForRoast(roastLevel, fallback) {
+  const text = String(roastLevel || '').trim();
+  if (text) {
+    for (const rule of DOSE_BY_ROAST) {
+      if (rule.test.test(text)) return rule.dose;
+    }
+  }
+  return fallback;
+}
+
+function setScanDose(value, { fromRoast = false, roastLevel = '' } = {}) {
+  const rounded = Math.round(value * 2) / 2;
+  $('scan-dose-input').value = String(rounded);
+  if (currentCoffeeData) currentCoffeeData.preferred_dose_g = rounded;
+  $('dose-adjust-hint').textContent = fromRoast && roastLevel
+    ? `Auto-set to ${rounded} g for a ${String(roastLevel).toLowerCase()} roast. `
+      + 'Adjust to what fits your basket, then tap "Update recipe".'
+    : 'Adjust to what fits your basket, then tap "Update recipe".';
+}
+
+function currentScanDose() {
+  const v = parseFloat($('scan-dose-input').value);
+  return v > 0 ? v : null;
+}
+
 function showPanel(id) {
   ['scan-idle', 'scan-loading', 'scan-results', 'scan-success'].forEach(p => {
     const el = $(p);
     el && el.classList.toggle('hidden', p !== id);
   });
+}
+
+/* ── Dialogs ────────────────────────────────────────────────────────────── */
+function syncModalScrollLock() {
+  const anyOpen = document.querySelector('.dialog-overlay:not(.hidden)') !== null;
+  document.body.classList.toggle('modal-open', anyOpen);
+}
+
+function openDialog(id) {
+  const overlay = $(id);
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  const body = overlay.querySelector('.dialog-body');
+  if (body) body.scrollTop = 0;
+  syncModalScrollLock();
+}
+
+function closeDialog(id) {
+  const overlay = $(id);
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  syncModalScrollLock();
 }
 
 let _toastTimer = null;
@@ -67,6 +125,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     if (tabId === 'tab-settings') {
       loadSetups();
       loadSettings();
+      loadEquipmentLibrary();
     }
     if (tabId === 'tab-logs') loadLogs();
   });
@@ -121,6 +180,15 @@ $('file-input').addEventListener('change', async (e) => {
 
     $('recommendation-text').textContent = currentRecommendation || '—';
 
+    // Pre-fill the per-shot dose with a roast-aware guess; the user can override
+    // it and hit "Update recipe" to regenerate the recommendation.
+    const baseDose = Number(currentCoffeeData.preferred_dose_g) || 16;
+    const guessDose = suggestedDoseForRoast(currentCoffeeData.roast_level, baseDose);
+    setScanDose(guessDose, {
+      fromRoast: guessDose !== baseDose,
+      roastLevel: currentCoffeeData.roast_level,
+    });
+
     showPanel('scan-results');
   } catch (err) {
     showPanel('scan-idle');
@@ -132,6 +200,42 @@ $('btn-scan-again').addEventListener('click', () => {
   currentCoffeeData = null;
   currentRecommendation = null;
   showPanel('scan-idle');
+});
+
+$('scan-dose-input').addEventListener('input', () => {
+  const dose = currentScanDose();
+  if (currentCoffeeData && dose !== null) currentCoffeeData.preferred_dose_g = dose;
+});
+
+$('btn-recalc').addEventListener('click', async () => {
+  if (!currentCoffeeData) return;
+  const dose = currentScanDose();
+  if (dose === null) { showToast('Enter a valid dose'); return; }
+
+  const btn = $('btn-recalc');
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Updating…';
+  try {
+    const res = await fetch('/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coffee_data: currentCoffeeData, dose_g: dose }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not update recipe'));
+
+    currentRecommendation = data.recommendation;
+    currentCoffeeData.preferred_dose_g = dose;
+    $('recommendation-text').textContent = currentRecommendation || '—';
+    $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
+    showToast(`✅ Recipe updated for ${dose} g`);
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not update recipe'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
 });
 
 $('btn-new-scan').addEventListener('click', () => showPanel('scan-idle'));
@@ -231,12 +335,12 @@ function openRecordEditor(entry = null) {
   $('form-rating').value = entry?.latest_log?.rating ?? '';
   $('form-notes').value = entry?.latest_log?.tasting_notes || '';
 
-  $('log-editor-dialog').classList.remove('hidden');
+  openDialog('log-editor-dialog');
 }
 
 function closeRecordEditor() {
   editingBeanId = null;
-  $('log-editor-dialog').classList.add('hidden');
+  closeDialog('log-editor-dialog');
 }
 
 async function saveRecordFromForm() {
@@ -311,17 +415,33 @@ function parseNullableInt(value) {
 }
 
 /* ── Feedback: "It worked!" ─────────────────────────────────────────────── */
+function suggestedGrindFromRecommendation(text) {
+  // Pull the number out of e.g. "**Suggested Grind Setting:** 33 clicks".
+  const match = /Suggested Grind Setting:\**\s*([0-9]+(?:\.[0-9]+)?)/i.exec(String(text || ''));
+  return match ? match[1] : '';
+}
+
 $('btn-worked').addEventListener('click', () => {
-  $('grind-input').value = '';
-  $('grind-dialog').classList.remove('hidden');
+  const dose = currentScanDose() ?? currentCoffeeData?.preferred_dose_g ?? '';
+  $('worked-dose-input').value = dose === '' ? '' : String(dose);
+  $('grind-input').value = suggestedGrindFromRecommendation(currentRecommendation);
+  openDialog('grind-dialog');
 });
 
-$('btn-save-grind').addEventListener('click', () => saveFeedback($('grind-input').value.trim()));
-$('btn-skip-grind').addEventListener('click', () => saveFeedback(null));
+$('btn-save-grind').addEventListener('click', () => saveFeedback({
+  grind: $('grind-input').value.trim(),
+  dose: parseFloat($('worked-dose-input').value),
+}));
+$('btn-skip-grind').addEventListener('click', () => closeDialog('grind-dialog'));
 
-async function saveFeedback(actualGrind) {
-  $('grind-dialog').classList.add('hidden');
+async function saveFeedback(worked) {
+  closeDialog('grind-dialog');
   if (!currentCoffeeData || !currentRecommendation) return;
+
+  const actualGrind = worked && worked.grind ? worked.grind : null;
+  const doseUsed = worked && worked.dose > 0
+    ? worked.dose
+    : (currentScanDose() ?? currentCoffeeData.preferred_dose_g ?? null);
 
   try {
     const res = await fetch('/api/feedback', {
@@ -330,8 +450,8 @@ async function saveFeedback(actualGrind) {
       body: JSON.stringify({
         coffee_data:    currentCoffeeData,
         recommendation: currentRecommendation,
-        actual_grind:   actualGrind || null,
-        dose_g:         currentCoffeeData.preferred_dose_g ?? null,
+        actual_grind:   actualGrind,
+        dose_g:         doseUsed,
         image_name:     currentCoffeeData.image_name ?? null,
       }),
     });
@@ -355,14 +475,11 @@ async function loadSettings() {
     const eq  = await eqRes.json();
     const set = await setRes.json();
 
-    if (eq.grinder) {
-      $('grinder-brand').value = eq.grinder.brand || '';
-      $('grinder-model').value = eq.grinder.model || '';
-    }
-    if (eq.machine) {
-      $('machine-brand').value = eq.machine.brand || '';
-      $('machine-model').value = eq.machine.model || '';
-    }
+    const gearName = item =>
+      item ? `${item.brand ?? ''} ${item.model ?? ''}`.trim() || 'Not set' : 'Not set';
+    $('active-grinder-name').textContent = gearName(eq.grinder);
+    $('active-machine-name').textContent = gearName(eq.machine);
+
     $('dose-input').value   = set.dose_g            ?? '';
     $('offset-input').value = set.grind_offset_clicks ?? '';
   } catch {
@@ -397,6 +514,16 @@ async function loadSetups() {
   }
 }
 
+const EQUIPMENT_TYPE_LABELS = {
+  grinder: 'grinder',
+  espresso_machine: 'espresso machine',
+  filter: 'filter brewer',
+  other: 'other',
+};
+function labelForType(type) {
+  return EQUIPMENT_TYPE_LABELS[type] || type || 'equipment';
+}
+
 async function loadEquipmentLibrary() {
   try {
     const res = await fetch('/api/equipment/library');
@@ -410,9 +537,35 @@ async function loadEquipmentLibrary() {
 
     renderEquipmentSelects();
     renderEquipmentList();
+    renderEquipmentSummary();
   } catch (err) {
     showToast('⚠️ ' + (err.message || 'Could not load equipment'));
   }
+}
+
+function renderEquipmentSummary() {
+  const list = $('equipment-summary-list');
+  if (!list) return;
+
+  const items = [
+    ...cachedEquipmentLibrary.grinders,
+    ...cachedEquipmentLibrary.machines,
+  ];
+  if (!items.length) {
+    list.innerHTML = '<div class="gear-list-empty">No equipment saved yet — add some from “Manage equipment”.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'gear-list-item';
+    row.innerHTML = `
+      <span class="gear-list-name">${escapeHtml(item.brand)} ${escapeHtml(item.model)}</span>
+      <span class="gear-list-badge">${escapeHtml(labelForType(item.type))}</span>
+    `;
+    list.appendChild(row);
+  });
 }
 
 function renderEquipmentSelects() {
@@ -446,7 +599,7 @@ function renderEquipmentSelects() {
     cachedEquipmentLibrary.machines.forEach(item => {
       const option = document.createElement('option');
       option.value = String(item.id);
-      option.textContent = `${item.brand} ${item.model} (${item.type})`;
+      option.textContent = `${item.brand} ${item.model} · ${labelForType(item.type)}`;
       machineSelect.appendChild(option);
     });
   }
@@ -482,10 +635,10 @@ function renderEquipmentList() {
       <div class="setup-item-main">
         <div class="setup-item-name">
           ${escapeHtml(item.brand)} ${escapeHtml(item.model)}
-          ${isActive ? '<span class="setup-active-pill">Active Setup</span>' : ''}
+          ${isActive ? '<span class="setup-active-pill">In active setup</span>' : ''}
           ${usageCount > 0 ? `<span class="setup-active-pill">Used by ${usageCount} setup${usageCount === 1 ? '' : 's'}</span>` : ''}
         </div>
-        <div class="setup-item-meta">${escapeHtml(item.type)}</div>
+        <div class="setup-item-meta">${escapeHtml(labelForType(item.type))}</div>
       </div>
       <div class="setup-item-actions">
         <button class="btn btn-sm btn-ghost js-equipment-edit">Edit</button>
@@ -515,7 +668,7 @@ function renderSetupManagerList(activeId = null) {
     item.innerHTML = `
       <div class="setup-item-main">
         <div class="setup-item-name">${escapeHtml(setup.name)} ${isActive ? '<span class="setup-active-pill">Active</span>' : ''}</div>
-        <div class="setup-item-meta">${escapeHtml(setup.machine.brand)} ${escapeHtml(setup.machine.model)} • ${escapeHtml(setup.grinder.brand)} ${escapeHtml(setup.grinder.model)}</div>
+        <div class="setup-item-meta">⚙ ${escapeHtml(setup.grinder.brand)} ${escapeHtml(setup.grinder.model)} &nbsp;·&nbsp; ☕ ${escapeHtml(setup.machine.brand)} ${escapeHtml(setup.machine.model)}</div>
       </div>
       <div class="setup-item-actions">
         <button class="btn btn-sm btn-ghost js-setup-edit">Edit</button>
@@ -551,43 +704,46 @@ async function selectSetup(setupId) {
 function openSetupManager() {
   setupEditingId = null;
   clearSetupForm();
-  $('setup-manager-title').textContent = 'Manage Setups';
-  $('setup-manager-dialog').classList.remove('hidden');
+  $('setup-manager-title').textContent = 'Manage setups';
+  openDialog('setup-manager-dialog');
   const currentActive = Number($('setup-select').value || 0);
   renderSetupManagerList(currentActive || null);
   loadEquipmentLibrary();
 }
 
 function closeSetupManager() {
-  $('setup-manager-dialog').classList.add('hidden');
+  closeDialog('setup-manager-dialog');
   setupEditingId = null;
 }
 
 function openEquipmentManager() {
-  $('equipment-manager-dialog').classList.remove('hidden');
+  openDialog('equipment-manager-dialog');
   clearEquipmentForm();
   renderEquipmentList();
   loadEquipmentLibrary();
 }
 
 function closeEquipmentManager() {
-  $('equipment-manager-dialog').classList.add('hidden');
+  closeDialog('equipment-manager-dialog');
 }
 
 function clearEquipmentForm() {
   equipmentEditingId = null;
-  $('equipment-form-title').textContent = 'Add Equipment';
+  $('equipment-form-title').textContent = 'Add equipment';
   $('equipment-form-type').value = 'grinder';
   $('equipment-form-brand').value = '';
   $('equipment-form-model').value = '';
+  $('btn-cancel-equipment-edit').hidden = true;
 }
 
 function populateEquipmentForm(item) {
   equipmentEditingId = Number(item.id);
-  $('equipment-form-title').textContent = `Edit Equipment #${item.id}`;
+  $('equipment-form-title').textContent = `Edit ${item.brand} ${item.model}`;
   $('equipment-form-type').value = item.type || 'grinder';
   $('equipment-form-brand').value = item.brand || '';
   $('equipment-form-model').value = item.model || '';
+  $('btn-cancel-equipment-edit').hidden = false;
+  $('equipment-form-title').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 function clearSetupForm() {
@@ -600,7 +756,7 @@ function clearSetupForm() {
 
 function populateSetupForm(setup) {
   setupEditingId = Number(setup.id);
-  $('setup-manager-title').textContent = `Edit Setup: ${setup.name}`;
+  $('setup-manager-title').textContent = `Editing setup: ${setup.name}`;
   $('setup-form-name').value = setup.name || '';
   $('setup-form-grinder-id').value = String(setup.grinder?.id || '');
   $('setup-form-machine-id').value = String(setup.machine?.id || '');
@@ -631,7 +787,7 @@ async function saveSetupFromForm() {
 
     setupEditingId = null;
     clearSetupForm();
-    $('setup-manager-title').textContent = 'Manage Setups';
+    $('setup-manager-title').textContent = 'Manage setups';
     await Promise.all([loadSetups(), loadSettings()]);
     showToast('✅ Setup saved');
   } catch (err) {
@@ -706,13 +862,7 @@ async function deleteSetup(setup) {
   }
 }
 
-$('btn-save-grinder').addEventListener('click', async () => {
-  openEquipmentManager();
-});
-
-$('btn-save-machine').addEventListener('click', async () => {
-  openEquipmentManager();
-});
+$('btn-open-equipment-manager').addEventListener('click', () => openEquipmentManager());
 
 $('btn-save-dose').addEventListener('click', async () => {
   const val = parseFloat($('dose-input').value);
@@ -753,6 +903,30 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 }
+
+/* ── Dismiss dialogs: tap the backdrop or press Escape ─────────────────── */
+const DIALOG_DISMISS = {
+  'grind-dialog': () => closeDialog('grind-dialog'),
+  'log-editor-dialog': () => closeRecordEditor(),
+  'setup-manager-dialog': () => closeSetupManager(),
+  'equipment-manager-dialog': () => closeEquipmentManager(),
+};
+
+function dismissDialog(id) {
+  (DIALOG_DISMISS[id] || (() => closeDialog(id)))();
+}
+
+document.querySelectorAll('.dialog-overlay').forEach(overlay => {
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) dismissDialog(overlay.id);
+  });
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const open = document.querySelector('.dialog-overlay:not(.hidden)');
+  if (open) dismissDialog(open.id);
+});
 
 /* ── Service worker registration ────────────────────────────────────────── */
 if ('serviceWorker' in navigator) {

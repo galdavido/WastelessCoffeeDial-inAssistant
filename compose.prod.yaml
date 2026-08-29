@@ -4,7 +4,8 @@ name: wcda-prod
 
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector image: the schema uses the `vector` extension (scraped_equipment.embedding).
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-barista}
@@ -44,9 +45,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Publish on loopback only; terminate TLS / auth in a reverse proxy in front.
+    # Published on all host interfaces so phones / other LAN devices can reach it
+    # directly at http://<host-ip>:8081. Note: plain HTTP on a bare IP is not a
+    # "secure context", so the service worker / offline PWA cache will not run
+    # (Add-to-Home-Screen still works). Put a TLS reverse proxy in front for that.
     ports:
-      - "127.0.0.1:8081:8080"
+      - "8081:8080"
     read_only: true
     volumes:
       - log_images:/app/data/log_images

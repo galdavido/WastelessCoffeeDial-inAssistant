@@ -47,3 +47,6 @@ data/log_images/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local DB dumps / backups (contain real data)
+backups/
