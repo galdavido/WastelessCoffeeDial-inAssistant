@@ -9,7 +9,11 @@ from typing import Any, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
-from ai.model_selection import GEMINI_MODEL_CANDIDATES, try_model_candidates
+from ai.model_selection import (
+    GEMINI_MODEL_CANDIDATES,
+    thinking_level_for,
+    try_model_candidates,
+)
 from core.optional_deps import require_genai
 from database.database import SessionLocal
 from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
@@ -463,14 +467,23 @@ def _generate_recommendation_with_grounding(genai: Any, types: Any, prompt: str)
                 return True, None
             return False, "empty response"
 
+        def build_config(model_name: str, *, grounded: bool) -> Any:
+            kwargs: dict[str, Any] = {}
+            if grounded:
+                kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+            # The grind recommendation is the reasoning-heavy step: default to
+            # extended ("high") thinking on Gemini 3.x.
+            level = thinking_level_for(model_name, default="high")
+            if level:
+                kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=level)
+            return types.GenerateContentConfig(**kwargs)
+
         grounded_result, grounded_error = try_model_candidates(
             GEMINI_MODEL_CANDIDATES,
             call_model=lambda model_name: client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())],
-                ),
+                config=build_config(model_name, grounded=True),
             ),
             evaluate_result=evaluate_text,
         )
@@ -482,6 +495,7 @@ def _generate_recommendation_with_grounding(genai: Any, types: Any, prompt: str)
             call_model=lambda model_name: client.models.generate_content(
                 model=model_name,
                 contents=prompt,
+                config=build_config(model_name, grounded=False),
             ),
             evaluate_result=evaluate_text,
         )
