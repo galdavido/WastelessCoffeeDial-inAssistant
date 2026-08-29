@@ -531,7 +531,32 @@ function logMedia(origin, imageUrl) {
           </div>`;
 }
 
+/* Full-screen photo viewer. Shows the photo at its own aspect ratio; the
+   overlay is a .dialog-overlay so Escape / backdrop-tap / scroll-lock all
+   come from the shared dialog handling. */
+function openPhotoViewer(src, alt) {
+  const img = $('photo-viewer-img');
+  img.src = src;
+  img.alt = alt || 'Coffee bag photo';
+  openDialog('photo-viewer');
+}
+
+function closePhotoViewer() {
+  closeDialog('photo-viewer');
+  // Drop the decoded image so a big JPEG is not held in memory while closed.
+  setTimeout(() => {
+    if ($('photo-viewer').classList.contains('hidden')) $('photo-viewer-img').removeAttribute('src');
+  }, 250);
+}
+
+$('btn-close-photo').addEventListener('click', () => closePhotoViewer());
+
 function wireLogMedia(card) {
+  const photo = card.querySelector('.log-photo');
+  if (photo) {
+    photo.addEventListener('click', () => openPhotoViewer(photo.src, photo.alt));
+  }
+
   const track = card.querySelector('.log-media-track');
   const dots = [...card.querySelectorAll('.log-dot')];
   if (!track || dots.length < 2) return;
@@ -1066,6 +1091,7 @@ function escapeHtml(value) {
 
 /* ── Dismiss dialogs: tap the backdrop or press Escape ─────────────────── */
 const DIALOG_DISMISS = {
+  'photo-viewer': () => closePhotoViewer(),
   'grind-dialog': () => closeDialog('grind-dialog'),
   'log-editor-dialog': () => closeRecordEditor(),
   'setup-manager-dialog': () => closeSetupManager(),

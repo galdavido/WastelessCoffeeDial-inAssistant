@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=14" />
+  <link rel="stylesheet" href="/static/style.css?v=15" />
 </head>
 <body>
   <div id="app">
@@ -285,6 +285,12 @@
     </div>
   </div>
 
+  <!-- Full-screen photo viewer (tap a bag photo on a log card) -->
+  <div class="dialog-overlay lightbox hidden" id="photo-viewer">
+    <button class="lightbox-close" id="btn-close-photo" type="button" aria-label="Close photo">&times;</button>
+    <img class="lightbox-img" id="photo-viewer-img" src="" alt="Coffee bag photo" />
+  </div>
+
   <!-- Toast notification -->
   <div class="toast hidden" id="toast"></div>
 
@@ -400,6 +406,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=14"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>

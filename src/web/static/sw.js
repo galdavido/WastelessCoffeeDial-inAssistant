@@ -3,7 +3,7 @@
 // CSS and JS are NOT precached by bare path: they are versioned URLs, and
 // precaching the unversioned path is what previously let a stale app.js pair
 // up with a fresh style.css. They are cached on first fetch instead.
-const CACHE = 'wcda-v14';
+const CACHE = 'wcda-v15';
 const PRECACHE = [
   '/',
   '/static/manifest.json',

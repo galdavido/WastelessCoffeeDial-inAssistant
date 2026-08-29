@@ -643,6 +643,46 @@ select.input { background-image: none; }
   opacity: 0.9;
 }
 
+/* ── Photo viewer (lightbox) ─────────────────────────────────────────────── */
+/* Reuses .dialog-overlay so it inherits the fade, the Escape handler, the
+   backdrop-tap dismissal and the background scroll lock. */
+.lightbox {
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .93);
+  padding: max(16px, env(safe-area-inset-top, 0px))
+           max(16px, env(safe-area-inset-right, 0px))
+           max(16px, env(safe-area-inset-bottom, 0px))
+           max(16px, env(safe-area-inset-left, 0px));
+}
+.lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  /* contain: the photo keeps its own aspect ratio, never cropped. */
+  object-fit: contain;
+  border-radius: 8px;
+  transform: scale(1);
+  transition: transform .22s cubic-bezier(.32, .72, 0, 1);
+}
+.lightbox.hidden .lightbox-img { transform: scale(.94); }
+.lightbox-close {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; line-height: 1;
+  color: #fff;
+  background: rgba(255, 255, 255, .14);
+  border: none; border-radius: 50%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lightbox-close:active { background: rgba(255, 255, 255, .26); }
+
+/* The bag photo on a card is tappable. */
+.log-photo { cursor: zoom-in; }
+
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 .toast {
   position: fixed; bottom: calc(var(--nav-h) + 12px); left: 50%;
