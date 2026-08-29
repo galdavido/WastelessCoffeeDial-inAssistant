@@ -1,9 +1,11 @@
 // Bump CACHE to ship new static assets; the old cache is purged on activate.
-const CACHE = 'wcda-v13';
+// Keep this in step with the ?v= query on the CSS/JS tags in index.html.
+// CSS and JS are NOT precached by bare path: they are versioned URLs, and
+// precaching the unversioned path is what previously let a stale app.js pair
+// up with a fresh style.css. They are cached on first fetch instead.
+const CACHE = 'wcda-v14';
 const PRECACHE = [
   '/',
-  '/static/style.css',
-  '/static/app.js',
   '/static/manifest.json',
 ];
 
@@ -42,8 +44,11 @@ self.addEventListener('fetch', event => {
     url.pathname.startsWith('/static/');
 
   if (isAppShell) {
+    // cache: 'reload' skips the browser's own HTTP cache, so "network-first"
+    // really means the network rather than a stale heuristic cache entry.
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'reload' })
+        .catch(() => fetch(request))
         .then(response => {
           const copy = response.clone();
           caches.open(CACHE).then(cache => cache.put(request, copy)).catch(() => {});

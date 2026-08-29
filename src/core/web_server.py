@@ -46,11 +46,25 @@ _SECURITY_HEADERS = {
 }
 
 
+# Paths whose responses must be revalidated on every load. Without this the
+# browser applies heuristic caching to /static/*, which can hand the service
+# worker a stale app.js while style.css is fresh - a torn cache that renders
+# the app incorrectly. "no-cache" still stores the file; the ETag makes the
+# revalidation a cheap 304.
+_REVALIDATE_PATHS = ("/", "/mobile", "/desktop")
+
+
+def _must_revalidate(path: str) -> bool:
+    return path in _REVALIDATE_PATHS or path.startswith("/static/")
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)
+        if _must_revalidate(request.url.path):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
 

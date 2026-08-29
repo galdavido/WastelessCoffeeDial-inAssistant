@@ -57,6 +57,20 @@ class TestWebAppWiring(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_app_shell_is_revalidated(self) -> None:
+        # Without no-cache the browser may serve a stale app.js alongside a
+        # fresh style.css, which renders the log cards incorrectly.
+        for path in ("/", "/static/app.js", "/static/style.css"):
+            response = client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertEqual(response.headers.get("Cache-Control"), "no-cache", path)
+
+    def test_static_assets_are_version_pinned(self) -> None:
+        # The ?v= query must be present so a redeploy cannot reuse a cached URL.
+        body = client.get("/").text
+        self.assertRegex(body, r'href="/static/style\.css\?v=\d+"')
+        self.assertRegex(body, r'src="/static/app\.js\?v=\d+"')
+
     def test_setups_active_route_is_not_shadowed(self) -> None:
         # PUT /api/setups/active must reach select_setup, not be captured by
         # /api/setups/{setup_id} (which would parse "active" as an int).

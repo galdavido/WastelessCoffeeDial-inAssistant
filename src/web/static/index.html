@@ -16,7 +16,9 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
-  <link rel="stylesheet" href="/static/style.css" />
+  <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
+       from a stale cache entry, so CSS and JS can never fall out of sync. -->
+  <link rel="stylesheet" href="/static/style.css?v=14" />
 </head>
 <body>
   <div id="app">
@@ -398,6 +400,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>
