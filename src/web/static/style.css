@@ -149,10 +149,33 @@ body.modal-open .tab-panel { overflow: hidden; }
   padding: 14px;
 }
 .log-card {
+  --log-pad: 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: var(--log-pad);
+  overflow: hidden;
+}
+
+/* Generated origin scene, full-bleed across the top of the card. The negative
+   margins cancel the card padding so it meets the rounded border. */
+.origin-art {
+  position: relative;
+  margin: calc(-1 * var(--log-pad)) calc(-1 * var(--log-pad)) 12px;
+  height: 104px;
+  border-bottom: 1px solid var(--border);
+}
+.origin-art svg { display: block; width: 100%; height: 100%; }
+.origin-art-label {
+  position: absolute; left: 12px; bottom: 9px; right: 12px;
+  display: flex; align-items: center; gap: 8px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .75);
+}
+.origin-art-flag { font-size: 20px; line-height: 1; flex-shrink: 0; }
+.origin-art-name {
+  font-size: 14px; font-weight: 700; color: #fff;
+  letter-spacing: .2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .log-card-head {
   display: flex;
@@ -185,14 +208,6 @@ body.modal-open .tab-panel { overflow: hidden; }
 .log-actions {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
-}
-.log-photo {
-  width: 100%;
-  max-height: 220px;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid var(--border);
   margin-bottom: 12px;
 }
 .log-grid {
@@ -652,6 +667,10 @@ select.input { background-image: none; }
   .log-card {
     padding: 12px;
   }
+
+  /* Keep the full-bleed artwork aligned with the tighter card padding. */
+  .log-card { --log-pad: 12px; }
+  .origin-art { height: 92px; }
 
   .setting-card-row {
     gap: 10px;

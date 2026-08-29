@@ -280,7 +280,6 @@ async function loadLogs() {
 
       const latestHtml = hasLatest
         ? `
-          ${latest.image_url ? `<img class="log-photo" src="${escapeHtml(latest.image_url)}" alt="Coffee bag" loading="lazy">` : ''}
           <div class="log-grid">
             <div><span class="log-label">Grind</span><span class="log-value">${escapeHtml(latest.grind_setting)}</span></div>
             <div><span class="log-label">Dose</span><span class="log-value">${escapeHtml(String(latest.dose_g))}g</span></div>
@@ -297,6 +296,7 @@ async function loadLogs() {
         : '<div class="logs-empty logs-empty-compact">No dial-in log saved yet for this bean.</div>';
 
       card.innerHTML = `
+        ${originArtwork(entry.origin)}
         <div class="log-card-head">
           <div>
             <h3 class="log-title">${escapeHtml(entry.roaster)} ${escapeHtml(entry.bean_name)}</h3>
@@ -398,6 +398,110 @@ async function deleteRecord(entry) {
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not delete record'));
   }
+}
+
+/* ── Origin artwork ─────────────────────────────────────────────────────────
+   Coffee-bag photos are kept in the database but not shown in the log list.
+   Instead each bean gets a stylised highland scene generated from its origin.
+   The drawing is a pure function of the origin string, so the same country
+   always renders identically - no fetching, no caching, works offline. */
+
+// Coffee-growing origins -> flag emoji. Regions map to their country so
+// "Ethiopia Yirgacheffe" and "Yirgacheffe" both resolve.
+const ORIGIN_FLAGS = [
+  ['ethiopia', '🇪🇹'], ['yirgacheffe', '🇪🇹'], ['sidamo', '🇪🇹'], ['guji', '🇪🇹'],
+  ['kenya', '🇰🇪'], ['tanzania', '🇹🇿'], ['rwanda', '🇷🇼'], ['burundi', '🇧🇮'],
+  ['uganda', '🇺🇬'], ['congo', '🇨🇩'], ['malawi', '🇲🇼'], ['zambia', '🇿🇲'],
+  ['colombia', '🇨🇴'], ['huila', '🇨🇴'], ['nariño', '🇨🇴'], ['narino', '🇨🇴'],
+  ['brazil', '🇧🇷'], ['brasil', '🇧🇷'], ['cerrado', '🇧🇷'], ['mogiana', '🇧🇷'],
+  ['peru', '🇵🇪'], ['bolivia', '🇧🇴'], ['ecuador', '🇪🇨'], ['venezuela', '🇻🇪'],
+  ['guatemala', '🇬🇹'], ['antigua', '🇬🇹'], ['huehuetenango', '🇬🇹'],
+  ['costa rica', '🇨🇷'], ['tarrazu', '🇨🇷'], ['tarrazú', '🇨🇷'],
+  ['nicaragua', '🇳🇮'], ['honduras', '🇭🇳'], ['el salvador', '🇸🇻'],
+  ['panama', '🇵🇦'], ['panamá', '🇵🇦'], ['mexico', '🇲🇽'], ['méxico', '🇲🇽'],
+  ['chiapas', '🇲🇽'], ['jamaica', '🇯🇲'], ['cuba', '🇨🇺'], ['haiti', '🇭🇹'],
+  ['dominican', '🇩🇴'], ['indonesia', '🇮🇩'], ['sumatra', '🇮🇩'],
+  ['java', '🇮🇩'], ['sulawesi', '🇮🇩'], ['bali', '🇮🇩'], ['flores', '🇮🇩'],
+  ['papua', '🇵🇬'], ['new guinea', '🇵🇬'], ['timor', '🇹🇱'],
+  ['vietnam', '🇻🇳'], ['viet nam', '🇻🇳'], ['india', '🇮🇳'], ['mysore', '🇮🇳'],
+  ['thailand', '🇹🇭'], ['laos', '🇱🇦'], ['china', '🇨🇳'], ['yunnan', '🇨🇳'],
+  ['philippines', '🇵🇭'], ['yemen', '🇾🇪'], ['hawaii', '🇺🇸'], ['kona', '🇺🇸'],
+];
+
+function flagForOrigin(origin) {
+  const text = String(origin || '').toLowerCase();
+  for (const [needle, flag] of ORIGIN_FLAGS) {
+    if (text.includes(needle)) return flag;
+  }
+  return '🌍';
+}
+
+// FNV-1a: small, stable, and well spread for short strings.
+function hashString(value) {
+  let h = 2166136261;
+  const text = String(value || '').toLowerCase().trim();
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function originArtwork(origin) {
+  const label = String(origin || '').trim() || 'Unknown origin';
+  const h = hashString(label);
+
+  // A wide viewBox close to the banner's real aspect ratio, so the non-uniform
+  // stretch is negligible. The sun is a soft radial glow rather than a hard
+  // circle - a glow still reads correctly if it is stretched slightly.
+  const W = 400;
+  const H = 120;
+
+  // Derive every varying quantity from a different slice of the hash.
+  const hue = h % 360;
+  const hue2 = (hue + 25 + ((h >> 9) % 40)) % 360;
+  const sunX = 250 + ((h >> 5) % 110);        // right-hand side
+  const sunY = 26 + ((h >> 11) % 16);
+  const seed = ((h >> 3) % 1000) / 100;
+
+  // Ridge lines: two sine components so the skyline is irregular, not a wave.
+  const ridge = (base, amp, phase) => {
+    const y = (x) =>
+      base - amp * (0.62 * Math.sin((x / W) * 5.2 + phase) +
+                    0.38 * Math.sin((x / W) * 11.3 + phase * 1.9));
+    const pts = [];
+    for (let x = 0; x <= W; x += 10) pts.push(`${x},${y(x).toFixed(1)}`);
+    return `M0,${H} L0,${y(0).toFixed(1)} L${pts.join(' L')} L${W},${H} Z`;
+  };
+
+  const uid = `oa${h.toString(36)}`;
+
+  return `
+    <div class="origin-art" role="img" aria-label="Illustration for ${escapeHtml(label)}">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="${uid}s" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="hsl(${hue} 58% 30%)"/>
+            <stop offset="100%" stop-color="hsl(${hue2} 48% 13%)"/>
+          </linearGradient>
+          <radialGradient id="${uid}g">
+            <stop offset="0%" stop-color="hsl(${(hue + 45) % 360} 90% 78%)" stop-opacity=".95"/>
+            <stop offset="45%" stop-color="hsl(${(hue + 45) % 360} 88% 66%)" stop-opacity=".45"/>
+            <stop offset="100%" stop-color="hsl(${(hue + 45) % 360} 85% 60%)" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="${W}" height="${H}" fill="url(#${uid}s)"/>
+        <circle cx="${sunX}" cy="${sunY}" r="46" fill="url(#${uid}g)"/>
+        <path d="${ridge(70, 26, seed * 1.3)}"       fill="hsl(${hue} 42% 21%)"/>
+        <path d="${ridge(88, 21, seed * 2.1 + 2)}"   fill="hsl(${hue} 47% 14%)"/>
+        <path d="${ridge(106, 15, seed * 1.7 + 4)}"  fill="hsl(${hue} 52% 8%)"/>
+      </svg>
+      <div class="origin-art-label">
+        <span class="origin-art-flag">${flagForOrigin(label)}</span>
+        <span class="origin-art-name">${escapeHtml(label)}</span>
+      </div>
+    </div>
+  `;
 }
 
 function parseNullableNumber(value) {
