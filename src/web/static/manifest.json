@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "Barista AI",
   "short_name": "Barista AI",
   "description": "AI-powered espresso dial-in assistant",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f0a06",
   "theme_color": "#0f0a06",

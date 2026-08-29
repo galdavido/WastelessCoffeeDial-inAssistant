@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from types import SimpleNamespace
 import unittest
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from ai.model_selection import try_model_candidates
 from ai.rag import _rank_similar_logs_for_active_setup
@@ -54,7 +54,7 @@ class TestAiRefactors(unittest.TestCase):
         self.assertEqual(attempts, ["m1"])
 
     def test_rank_similar_logs_prefers_active_setup_equipment(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         active_grinder = SimpleNamespace(brand="Kingrinder", model="K6")
         active_machine = SimpleNamespace(brand="AVX", model="Hero Plus 2024")
 

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, Iterable, TypeVar
-
+from collections.abc import Callable, Iterable
 
 GEMINI_MODEL_CANDIDATES: tuple[str, ...] = (
     "gemini-2.5-flash",
@@ -12,9 +11,6 @@ GEMINI_MODEL_CANDIDATES: tuple[str, ...] = (
     "gemini-2.0-flash-lite",
     "gemini-3.1-flash-lite-preview",
 )
-
-
-_ResultT = TypeVar("_ResultT")
 
 
 def resolve_model_candidates(default_models: Iterable[str]) -> list[str]:
@@ -42,11 +38,11 @@ def is_transient_model_error(error: Exception) -> bool:
     )
 
 
-def try_model_candidates(
+def try_model_candidates[ResultT](
     default_models: Iterable[str],
-    call_model: Callable[[str], _ResultT],
-    evaluate_result: Callable[[_ResultT], tuple[bool, str | None]],
-) -> tuple[_ResultT | None, str | None]:
+    call_model: Callable[[str], ResultT],
+    evaluate_result: Callable[[ResultT], tuple[bool, str | None]],
+) -> tuple[ResultT | None, str | None]:
     """Try candidate models in order and return first successful result."""
 
     last_error: str | None = None

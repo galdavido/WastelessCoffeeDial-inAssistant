@@ -1,100 +1,93 @@
-# Barista AI
+# Wasteless Coffee Dial-in Assistant (WCDA)
 
-Web-based coffee dial-in assistant powered by FastAPI + Gemini. Upload or scan coffee bag photos, get grind recommendations, and track bean logs with setup-aware equipment management.
+Web app that turns a photo of a coffee bag into an espresso starting recipe.
+Upload or scan a bag, Gemini extracts the roast details, and a small
+retrieval step over your own dial-in logs produces a grind recommendation.
+Built with FastAPI + SQLAlchemy + PostgreSQL, with a vanilla-JS PWA front end.
 
-## What This Project Includes
+## Features
 
-- Web server and UI (mobile + desktop templates)
-- AI image analysis and recommendation pipeline
-- PostgreSQL-backed bean logs and settings
-- Equipment library + setup management (active setup aware)
+- Coffee-bag image analysis and recipe recommendation
+- PostgreSQL-backed bean logs, equipment library and brew setups
+- Active-setup awareness (which grinder/machine a new log is attached to)
+- Installable PWA, responsive from phone to desktop
 
-## What Was Removed
+## Requirements
 
-This repository no longer includes:
+- Python 3.12+ (CI runs 3.14)
+- PostgreSQL 16 (a `docker compose` service is provided)
+- A Google Gemini API key
 
-- Discord bot runtime
-- Web scraping pipeline for equipment ingestion
-- Vector-search utility for scraped equipment
+## Configuration
 
-## Project Structure
-
-```text
-src/
-  ai/
-    rag.py
-    vision.py
-    model_selection.py
-  core/
-    web_server.py
-    web_routes.py
-    web_helpers.py
-    web_schemas.py
-    main.py
-  database/
-    database.py
-    models.py
-    init_db.py
-    seed.py
-  web/
-    static/
-      index.html
-      desktop.html
-      app.js
-      style.css
+```bash
+cp .env.example .env
+# then edit .env - set a strong POSTGRES_PASSWORD and your GEMINI_API_KEY
 ```
 
-## Environment
+`.env` is git-ignored and excluded from the Docker build context. Key variables:
 
-Create `.env` in project root:
-
-```env
-POSTGRES_USER=barista
-POSTGRES_PASSWORD=supersecret
-POSTGRES_DB=barista_db
-DATABASE_URL=postgresql://barista:supersecret@localhost:5434/barista_db
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-Inside the dev container / compose network, use:
-
-```env
-DATABASE_URL=postgresql://barista:supersecret@db:5432/barista_db
-```
+| Variable         | Purpose                                             | Default        |
+| ---------------- | -------------------------------------------------- | -------------- |
+| `DATABASE_URL`   | SQLAlchemy/Alembic connection string               | -              |
+| `GEMINI_API_KEY` | Google Gemini key                                  | -              |
+| `WCDA_HOST`      | Interface to bind when run directly                | `127.0.0.1`    |
+| `WEB_PORT`       | Listen port                                        | `8080`         |
+| `LOG_IMAGES_DIR` | Where uploaded bag photos are stored               | `./data/log_images` |
 
 ## Run with Docker Compose
 
 ```bash
-docker-compose up --build -d
+docker compose up --build          # local dev  -> http://127.0.0.1:8081
+docker compose -f compose.prod.yaml up -d --build   # hardened production stack
 ```
 
-Services:
+Both stacks bind Postgres and the web app to `127.0.0.1` only. Put a reverse
+proxy (TLS, and auth if you need it) in front for anything internet-facing.
 
-- `db` on `5434`
-- `wcda-web` on `8081`
-
-## Run Locally
+## Run locally
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export PYTHONPATH=src:$PYTHONPATH
-python -m core.web_server
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[dev]'
+
+# start Postgres however you like, then point DATABASE_URL at it, e.g.
+export DATABASE_URL=postgresql+psycopg2://barista:pw@localhost:5434/barista_db
+
+alembic upgrade head       # apply migrations
+python -m core.web_server  # http://127.0.0.1:8080
 ```
 
-App URL: `http://localhost:8080` (or `http://localhost:8081` when running via compose port mapping).
+The CLI (`wcda path/to/bag.jpg`) runs a single analysis in the terminal.
 
-When working inside a VS Code dev container, open the forwarded `8081` port in the host browser from the **Ports** panel.
+## Database migrations
 
-## Tests
+Schema is managed with Alembic (`migrations/`). The app also runs
+`alembic upgrade head` automatically on startup; a database created by an
+older build is detected and stamped rather than recreated.
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+alembic revision --autogenerate -m "describe change"
+alembic upgrade head
 ```
 
-## Notes
+## Tests & checks
 
-- The web app uses active setup selection to decide which grinder/machine are attached to new logs.
-- Equipment CRUD is managed through the equipment library UI.
-- Setup CRUD links existing equipment only.
+```bash
+pytest                 # unit + smoke tests (DB tests need a live Postgres)
+ruff check . && ruff format --check .
+mypy src
+pip-audit
+```
+
+## Project layout
+
+```text
+src/
+  ai/          vision (Gemini), rag (recommendation), model_selection
+  core/        web_server, web_routes, web_helpers, web_schemas, db_session,
+               db_bootstrap, main (CLI)
+  database/    database (engine/session), models
+  web/static/  index.html, app.js, style.css, sw.js, manifest.json
+migrations/    Alembic environment + versions
+```

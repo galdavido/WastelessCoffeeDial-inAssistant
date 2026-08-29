@@ -1,47 +1,44 @@
-FROM python:3.14.3-slim-bookworm
+# syntax=docker/dockerfile:1
+
+# ---------- builder: resolve dependencies into an isolated venv ----------
+FROM python:3.14-slim-bookworm AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ---------- runtime ----------
+FROM python:3.14-slim-bookworm AS runtime
 
-COPY . .
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    PATH="/opt/venv/bin:$PATH" \
+    WCDA_HOST=0.0.0.0 \
+    WEB_PORT=8080
 
-# Set Python path to include src directory
-ENV PYTHONPATH=/app/src:$PYTHONPATH
+# Non-root runtime user.
+RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app
 
-# Pre-generate PWA icons at build time so the container can run read-only
-RUN python - <<'PYEOF'
-import os
-try:
-    from PIL import Image, ImageDraw
-    icons_dir = 'src/web/static/icons'
-    os.makedirs(icons_dir, exist_ok=True)
-    bg, accent = (15, 10, 6), (200, 134, 10)
-    for size in (180, 192, 512):
-        path = os.path.join(icons_dir, f'icon-{size}.png')
-        img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle([0, 0, size, size], radius=size // 5, fill=bg)
-        pad = size // 6
-        draw.ellipse([pad, pad, size - pad, size - pad], fill=accent)
-        cx, cy, cw, ch = size // 2, size // 2, size // 3, int(size * 0.28)
-        cx0 = cx - cw // 2
-        cy0 = cy - ch // 2 + size // 20
-        draw.rectangle([cx0, cy0, cx0 + cw, cy0 + ch], fill='white')
-        hw = size // 12
-        draw.arc([cx0 + cw - hw // 2, cy0 + ch // 4, cx0 + cw + hw, cy0 + ch - ch // 4],
-                 start=-90, end=90, fill='white', width=max(2, size // 40))
-        sp = size // 5
-        sh = max(3, size // 40)
-        draw.rectangle([sp, cy0 + ch + size // 20, size - sp, cy0 + ch + size // 20 + sh], fill='white')
-        img.save(path, 'PNG')
-        print(f'Generated {path}')
-except Exception as e:
-    print(f'Icon generation skipped: {e}')
-PYEOF
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY src ./src
+COPY data/test_bag.jpg ./data/test_bag.jpg
 
-# Ne futtassuk az init_db.py-t build időben, mert a DB még nem fut
-# Helyette egy entrypoint script fogja kezelni
+RUN mkdir -p /app/data/log_images && chown -R app:app /app
+USER app
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"
 
 CMD ["python", "-m", "core.web_server"]

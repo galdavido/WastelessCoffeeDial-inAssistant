@@ -1,0 +1,47 @@
+# Local development stack. Reads credentials from .env (see .env.example).
+#   docker compose up --build
+name: wcda
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-barista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-barista_db}
+    # Bound to localhost only - not reachable from the network.
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-barista} -d ${POSTGRES_DB:-barista_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-barista}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-barista_db}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+      WEB_PORT: "8080"
+      LOG_IMAGES_DIR: /app/data/log_images
+    depends_on:
+      db:
+        condition: service_healthy
+    # Bound to localhost only; put a reverse proxy in front to expose it.
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - log_images:/app/data/log_images
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+  log_images:

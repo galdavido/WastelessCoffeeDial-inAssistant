@@ -591,3 +591,80 @@ html, body { height: 100%; background: var(--bg); color: var(--text-1); font-fam
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ── Wide screens (tablet landscape / desktop) ───────────────────────────── */
+@media (min-width: 900px) {
+  #app {
+    max-width: 1180px;
+    margin: 0 auto;
+    border-inline: 1px solid var(--border);
+  }
+
+  .header { height: auto; }
+  .header-inner { padding: 16px 28px; }
+  .header-title { font-size: 22px; }
+
+  .tab-panel { padding: 24px 28px 32px; }
+
+  /* Bottom nav turns into a row of pills under the header. */
+  .bottom-nav {
+    height: auto;
+    padding: 16px 28px 0;
+    background: var(--bg);
+    border-top: none;
+    gap: 8px;
+  }
+  .bottom-nav .nav-item {
+    flex: 0 0 auto;
+    min-width: 122px;
+    flex-direction: row;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    color: var(--text-2);
+  }
+  .bottom-nav .nav-item.active {
+    color: #fff;
+    border-color: rgba(200, 134, 10, .45);
+    background: linear-gradient(180deg, #c8860a, #9b6605);
+  }
+  .bottom-nav .nav-icon { width: 18px; height: 18px; }
+  .bottom-nav .nav-label { font-size: 14px; }
+
+  /* Two-column scan view: capture panel on the left, results on the right. */
+  #tab-scan.tab-panel.active {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(400px, 1fr);
+    gap: 20px;
+    align-content: start;
+  }
+  #tab-scan #scan-idle,
+  #tab-scan #scan-loading,
+  #tab-scan #scan-success {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 26px 20px;
+  }
+  #tab-scan #scan-results { align-self: start; }
+
+  /* Two-column settings. */
+  #tab-settings .settings-scroll {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  #tab-settings .settings-group {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  #tab-logs .logs-list { max-width: 860px; }
+
+  .toast { bottom: 24px; }
+}

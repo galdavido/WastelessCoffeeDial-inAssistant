@@ -1,9 +1,18 @@
+# Secrets / local environment
 .env
+.env.*
+!.env.example
 
 # Python bytecode/cache
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Build artifacts / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
 
 # Virtual environments
 .venv/
@@ -26,7 +35,7 @@ nosetests.xml
 
 # Logs and local runtime files
 *.log
-src/web/static/icons/
+data/log_images/
 
 # IDE/editor files
 .vscode/

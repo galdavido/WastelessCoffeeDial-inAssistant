@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
 from ai.rag import get_best_grind_setting
 from ai.vision import analyze_coffee_bag, get_last_vision_error
-from database.database import SessionLocal
 from database.models import Bean, BrewSetup, DialInLog, Equipment
 
+from .db_session import get_db
 from .web_helpers import (
     as_non_empty_text,
     get_active_setup,
@@ -38,6 +40,26 @@ from .web_schemas import (
     SetupSelectInput,
 )
 
+logger = logging.getLogger("wcda.routes")
+
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+_ALLOWED_IMAGE_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+}
+_ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+
+_EQUIPMENT_TYPES = {"grinder", "espresso_machine", "filter", "other"}
+
+
+def _server_error(exc: Exception, action: str) -> HTTPException:
+    """Log the real error server-side, return a generic message to the client."""
+    logger.exception("Error while %s: %s", action, exc)
+    return HTTPException(status_code=500, detail=f"Could not {action}.")
+
 
 def register_routes(app: FastAPI, static_dir: str) -> None:
     uploads_dir = os.getenv(
@@ -49,33 +71,35 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     try:
         os.makedirs(uploads_dir, exist_ok=True)
     except OSError:
-        fallback_dir = "/tmp/log_images"
+        fallback_dir = os.path.join(tempfile.gettempdir(), "wcda_log_images")
         try:
             os.makedirs(fallback_dir, exist_ok=True)
             uploads_dir = fallback_dir
         except OSError:
             uploads_dir = ""
 
-    @app.get("/")
-    async def root(request: Request) -> FileResponse:
-        user_agent = request.headers.get("user-agent", "").lower()
-        is_mobile = any(
-            token in user_agent
-            for token in ("iphone", "android", "mobile", "ipad", "ipod")
-        )
-        target = "index.html" if is_mobile else "desktop.html"
-        return FileResponse(os.path.join(static_dir, target))
-
-    @app.get("/mobile")
-    async def mobile_ui() -> FileResponse:
+    def _index() -> FileResponse:
         return FileResponse(os.path.join(static_dir, "index.html"))
 
-    @app.get("/desktop")
-    async def desktop_ui() -> FileResponse:
-        return FileResponse(os.path.join(static_dir, "desktop.html"))
+    @app.get("/", include_in_schema=False)
+    def root() -> FileResponse:
+        return _index()
 
-    @app.get("/sw.js")
-    async def service_worker() -> FileResponse:
+    # Legacy paths kept for bookmarks / the service-worker precache.
+    @app.get("/mobile", include_in_schema=False)
+    def mobile_ui() -> FileResponse:
+        return _index()
+
+    @app.get("/desktop", include_in_schema=False)
+    def desktop_ui() -> FileResponse:
+        return _index()
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/sw.js", include_in_schema=False)
+    def service_worker() -> FileResponse:
         return FileResponse(
             os.path.join(static_dir, "sw.js"),
             media_type="application/javascript",
@@ -86,15 +110,31 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         )
 
     @app.post("/api/analyze")
-    async def analyze_image(file: UploadFile = File(...)) -> dict[str, Any]:
-        if not file.content_type or not file.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="File must be an image.")
+    def analyze_image(
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+    ) -> dict[str, Any]:
+        content_type = (file.content_type or "").lower()
+        if content_type not in _ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="File must be a JPEG, PNG, WebP or HEIC image.",
+            )
 
         suffix = ".jpg"
         if file.filename and "." in file.filename:
-            suffix = os.path.splitext(file.filename)[1] or ".jpg"
+            candidate = os.path.splitext(file.filename)[1].lower()
+            if candidate in _ALLOWED_IMAGE_EXTS:
+                suffix = candidate
 
-        content = await file.read()
+        content = file.file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+            )
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content)
@@ -111,28 +151,25 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
         image_name: str | None = None
         if uploads_dir:
-            image_name = f"{uuid.uuid4().hex}{suffix.lower()}"
+            image_name = f"{uuid.uuid4().hex}{suffix}"
             saved_image_path = os.path.join(uploads_dir, image_name)
             try:
                 with open(saved_image_path, "wb") as image_file:
                     image_file.write(content)
             except OSError:
+                logger.warning("Could not persist uploaded image to %s", uploads_dir)
                 image_name = None
 
-        db = SessionLocal()
-        try:
-            coffee_data["preferred_dose_g"] = get_default_dose_g(db)
-            coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
-            if image_name:
-                coffee_data["image_name"] = image_name
-        finally:
-            db.close()
+        coffee_data["preferred_dose_g"] = get_default_dose_g(db)
+        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
+        if image_name:
+            coffee_data["image_name"] = image_name
 
         recommendation = get_best_grind_setting(coffee_data)
         return {"coffee_data": coffee_data, "recommendation": recommendation}
 
     @app.post("/api/feedback")
-    async def save_feedback(body: FeedbackRequest) -> dict[str, str]:
+    def save_feedback(body: FeedbackRequest) -> dict[str, str]:
         try:
             save_dial_in_log(
                 body.coffee_data,
@@ -142,11 +179,11 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 image_name=body.image_name,
             )
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+            raise _server_error(exc, "save feedback") from exc
         return {"status": "saved"}
 
     @app.get("/api/log-images/{image_name}")
-    async def get_log_image(image_name: str) -> FileResponse:
+    def get_log_image(image_name: str) -> FileResponse:
         if not uploads_dir:
             raise HTTPException(status_code=404, detail="Image storage is unavailable")
 
@@ -160,148 +197,131 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return FileResponse(file_path)
 
     @app.get("/api/equipment")
-    async def get_equipment() -> dict[str, Any]:
-        db = SessionLocal()
-        try:
-            setup = get_active_setup(db)
-            grinder = setup.grinder
-            machine = setup.machine
-            return {
-                "grinder": {"brand": grinder.brand, "model": grinder.model}
-                if grinder
-                else None,
-                "machine": {"brand": machine.brand, "model": machine.model}
-                if machine
-                else None,
-            }
-        finally:
-            db.close()
+    def get_equipment(db: Session = Depends(get_db)) -> dict[str, Any]:
+        setup = get_active_setup(db)
+        grinder = setup.grinder
+        machine = setup.machine
+        return {
+            "grinder": {"brand": grinder.brand, "model": grinder.model}
+            if grinder
+            else None,
+            "machine": {"brand": machine.brand, "model": machine.model}
+            if machine
+            else None,
+        }
 
     @app.put("/api/equipment/grinder")
-    async def update_grinder(body: EquipmentUpdate) -> dict[str, str]:
-        db = SessionLocal()
+    def update_grinder(
+        body: EquipmentUpdate, db: Session = Depends(get_db)
+    ) -> dict[str, str]:
         try:
             setup = get_active_setup(db)
-            grinder = setup.grinder
-            grinder.brand = body.brand
-            grinder.model = body.model
+            setup.grinder.brand = body.brand
+            setup.grinder.model = body.model
             db.commit()
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "update grinder") from exc
         return {"status": "updated"}
 
     @app.put("/api/equipment/machine")
-    async def update_machine(body: EquipmentUpdate) -> dict[str, str]:
-        db = SessionLocal()
+    def update_machine(
+        body: EquipmentUpdate, db: Session = Depends(get_db)
+    ) -> dict[str, str]:
         try:
             setup = get_active_setup(db)
-            machine = setup.machine
-            machine.brand = body.brand
-            machine.model = body.model
+            setup.machine.brand = body.brand
+            setup.machine.model = body.model
             db.commit()
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "update machine") from exc
         return {"status": "updated"}
 
     @app.get("/api/settings")
-    async def get_settings() -> dict[str, float]:
-        db = SessionLocal()
-        try:
-            return {
-                "dose_g": get_default_dose_g(db),
-                "grind_offset_clicks": get_grind_offset_clicks(db),
-            }
-        finally:
-            db.close()
+    def get_settings(db: Session = Depends(get_db)) -> dict[str, float]:
+        return {
+            "dose_g": get_default_dose_g(db),
+            "grind_offset_clicks": get_grind_offset_clicks(db),
+        }
 
     @app.get("/api/logs")
-    async def get_logs(limit: int = 20) -> dict[str, list[dict[str, Any]]]:
-        db = SessionLocal()
-        try:
-            safe_limit = max(1, min(limit, 50))
-            beans = db.query(Bean).order_by(Bean.id.desc()).limit(safe_limit).all()
+    def get_logs(
+        limit: int = 20, db: Session = Depends(get_db)
+    ) -> dict[str, list[dict[str, Any]]]:
+        safe_limit = max(1, min(limit, 50))
+        beans = db.query(Bean).order_by(Bean.id.desc()).limit(safe_limit).all()
 
-            entries: list[dict[str, Any]] = []
-            for bean in beans:
-                latest_log = None
-                if bean.logs:
-                    latest_log = max(bean.logs, key=lambda log: log.created_at)
+        entries: list[dict[str, Any]] = []
+        for bean in beans:
+            latest_log = None
+            if bean.logs:
+                latest_log = max(bean.logs, key=lambda log: log.created_at)
 
-                entries.append(
-                    {
-                        "bean_id": bean.id,
-                        "bean_name": bean.name,
-                        "roaster": bean.roaster,
-                        "origin": bean.origin,
-                        "process": bean.process,
-                        "roast_level": bean.roast_level,
-                        "logs_count": len(bean.logs),
-                        "latest_log": {
-                            "id": latest_log.id,
-                            "created_at": latest_log.created_at.isoformat(),
-                            "grinder": latest_log.grinder.brand
-                            + " "
-                            + latest_log.grinder.model,
-                            "machine": latest_log.machine.brand
-                            + " "
-                            + latest_log.machine.model,
-                            "grind_setting": latest_log.grind_setting,
-                            "dose_g": latest_log.dose_g,
-                            "yield_g": latest_log.yield_g,
-                            "time_s": latest_log.time_s,
-                            "rating": latest_log.rating,
-                            "tasting_notes": latest_log.tasting_notes,
-                            "image_name": latest_log.image_path,
-                            "image_url": f"/api/log-images/{latest_log.image_path}"
-                            if latest_log.image_path
-                            else None,
-                        }
-                        if latest_log
+            entries.append(
+                {
+                    "bean_id": bean.id,
+                    "bean_name": bean.name,
+                    "roaster": bean.roaster,
+                    "origin": bean.origin,
+                    "process": bean.process,
+                    "roast_level": bean.roast_level,
+                    "logs_count": len(bean.logs),
+                    "latest_log": {
+                        "id": latest_log.id,
+                        "created_at": latest_log.created_at.isoformat(),
+                        "grinder": latest_log.grinder.brand
+                        + " "
+                        + latest_log.grinder.model,
+                        "machine": latest_log.machine.brand
+                        + " "
+                        + latest_log.machine.model,
+                        "grind_setting": latest_log.grind_setting,
+                        "dose_g": latest_log.dose_g,
+                        "yield_g": latest_log.yield_g,
+                        "time_s": latest_log.time_s,
+                        "rating": latest_log.rating,
+                        "tasting_notes": latest_log.tasting_notes,
+                        "image_name": latest_log.image_path,
+                        "image_url": f"/api/log-images/{latest_log.image_path}"
+                        if latest_log.image_path
                         else None,
                     }
-                )
+                    if latest_log
+                    else None,
+                }
+            )
 
-            return {"entries": entries}
-        finally:
-            db.close()
+        return {"entries": entries}
 
     @app.get("/api/equipment/library")
-    async def get_equipment_library() -> dict[str, list[dict[str, Any]]]:
-        db = SessionLocal()
-        try:
-            items = (
-                db.query(Equipment)
-                .order_by(
-                    Equipment.type.asc(), Equipment.brand.asc(), Equipment.model.asc()
-                )
-                .all()
+    def get_equipment_library(
+        db: Session = Depends(get_db),
+    ) -> dict[str, list[dict[str, Any]]]:
+        items = (
+            db.query(Equipment)
+            .order_by(
+                Equipment.type.asc(), Equipment.brand.asc(), Equipment.model.asc()
             )
-            grinders = [
-                serialize_equipment(item) for item in items if item.type == "grinder"
-            ]
-            machines = [
-                serialize_equipment(item) for item in items if item.type != "grinder"
-            ]
-            return {"grinders": grinders, "machines": machines}
-        finally:
-            db.close()
+            .all()
+        )
+        grinders = [
+            serialize_equipment(item) for item in items if item.type == "grinder"
+        ]
+        machines = [
+            serialize_equipment(item) for item in items if item.type != "grinder"
+        ]
+        return {"grinders": grinders, "machines": machines}
 
     @app.post("/api/equipment/library")
-    async def create_equipment_library_item(
-        body: EquipmentLibraryCreateInput,
+    def create_equipment_library_item(
+        body: EquipmentLibraryCreateInput, db: Session = Depends(get_db)
     ) -> dict[str, Any]:
-        db = SessionLocal()
-        try:
-            eq_type = as_non_empty_text(body.type).lower()
-            if eq_type not in {"grinder", "espresso_machine", "filter", "other"}:
-                raise HTTPException(status_code=400, detail="Invalid equipment type")
+        eq_type = as_non_empty_text(body.type).lower()
+        if eq_type not in _EQUIPMENT_TYPES:
+            raise HTTPException(status_code=400, detail="Invalid equipment type")
 
+        try:
             item = Equipment(
                 type=eq_type,
                 brand=as_non_empty_text(body.brand),
@@ -310,151 +330,123 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.add(item)
             db.commit()
             db.refresh(item)
-            return {"status": "created", "equipment": serialize_equipment(item)}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "create equipment") from exc
+        return {"status": "created", "equipment": serialize_equipment(item)}
 
     @app.put("/api/equipment/library/{equipment_id}")
-    async def update_equipment_library_item(
+    def update_equipment_library_item(
         equipment_id: int,
         body: EquipmentLibraryUpdateInput,
+        db: Session = Depends(get_db),
     ) -> dict[str, Any]:
-        db = SessionLocal()
+        item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Equipment not found")
+
+        eq_type = as_non_empty_text(body.type).lower()
+        if eq_type not in _EQUIPMENT_TYPES:
+            raise HTTPException(status_code=400, detail="Invalid equipment type")
+
+        if eq_type == "grinder":
+            setup_refs = (
+                db.query(BrewSetup).filter(BrewSetup.machine_id == equipment_id).count()
+            )
+            log_refs = (
+                db.query(DialInLog).filter(DialInLog.machine_id == equipment_id).count()
+            )
+        else:
+            setup_refs = (
+                db.query(BrewSetup).filter(BrewSetup.grinder_id == equipment_id).count()
+            )
+            log_refs = (
+                db.query(DialInLog).filter(DialInLog.grinder_id == equipment_id).count()
+            )
+
+        if setup_refs > 0 or log_refs > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot change equipment category while it is referenced",
+            )
+
         try:
-            item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
-            if not item:
-                raise HTTPException(status_code=404, detail="Equipment not found")
-
-            eq_type = as_non_empty_text(body.type).lower()
-            if eq_type not in {"grinder", "espresso_machine", "filter", "other"}:
-                raise HTTPException(status_code=400, detail="Invalid equipment type")
-
-            if eq_type == "grinder":
-                setup_refs = (
-                    db.query(BrewSetup)
-                    .filter(BrewSetup.machine_id == equipment_id)
-                    .count()
-                )
-                log_refs = (
-                    db.query(DialInLog)
-                    .filter(DialInLog.machine_id == equipment_id)
-                    .count()
-                )
-            else:
-                setup_refs = (
-                    db.query(BrewSetup)
-                    .filter(BrewSetup.grinder_id == equipment_id)
-                    .count()
-                )
-                log_refs = (
-                    db.query(DialInLog)
-                    .filter(DialInLog.grinder_id == equipment_id)
-                    .count()
-                )
-
-            if setup_refs > 0 or log_refs > 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot change equipment category while it is referenced",
-                )
-
             item.type = eq_type
             item.brand = as_non_empty_text(body.brand)
             item.model = as_non_empty_text(body.model)
             db.commit()
             db.refresh(item)
-            return {"status": "updated", "equipment": serialize_equipment(item)}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "update equipment") from exc
+        return {"status": "updated", "equipment": serialize_equipment(item)}
 
     @app.delete("/api/equipment/library/{equipment_id}")
-    async def delete_equipment_library_item(equipment_id: int) -> dict[str, str]:
-        db = SessionLocal()
+    def delete_equipment_library_item(
+        equipment_id: int, db: Session = Depends(get_db)
+    ) -> dict[str, str]:
+        item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Equipment not found")
+
+        setup_refs = (
+            db.query(BrewSetup)
+            .filter(
+                (BrewSetup.grinder_id == equipment_id)
+                | (BrewSetup.machine_id == equipment_id)
+            )
+            .count()
+        )
+        log_refs = (
+            db.query(DialInLog)
+            .filter(
+                (DialInLog.grinder_id == equipment_id)
+                | (DialInLog.machine_id == equipment_id)
+            )
+            .count()
+        )
+
+        if setup_refs > 0 or log_refs > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Equipment is in use by setups/logs and cannot be deleted",
+            )
+
         try:
-            item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
-            if not item:
-                raise HTTPException(status_code=404, detail="Equipment not found")
-
-            setup_refs = (
-                db.query(BrewSetup)
-                .filter(
-                    (BrewSetup.grinder_id == equipment_id)
-                    | (BrewSetup.machine_id == equipment_id)
-                )
-                .count()
-            )
-            log_refs = (
-                db.query(DialInLog)
-                .filter(
-                    (DialInLog.grinder_id == equipment_id)
-                    | (DialInLog.machine_id == equipment_id)
-                )
-                .count()
-            )
-
-            if setup_refs > 0 or log_refs > 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Equipment is in use by setups/logs and cannot be deleted",
-                )
-
             db.delete(item)
             db.commit()
-            return {"status": "deleted"}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "delete equipment") from exc
+        return {"status": "deleted"}
 
     @app.get("/api/setups")
-    async def get_setups() -> dict[str, Any]:
-        db = SessionLocal()
-        try:
-            active = get_active_setup(db)
-            setups = (
-                db.query(BrewSetup)
-                .order_by(BrewSetup.name.asc(), BrewSetup.id.asc())
-                .all()
-            )
-            return {
-                "active_setup_id": active.id,
-                "setups": [serialize_setup(item) for item in setups],
-            }
-        finally:
-            db.close()
+    def get_setups(db: Session = Depends(get_db)) -> dict[str, Any]:
+        active = get_active_setup(db)
+        setups = (
+            db.query(BrewSetup).order_by(BrewSetup.name.asc(), BrewSetup.id.asc()).all()
+        )
+        return {
+            "active_setup_id": active.id,
+            "setups": [serialize_setup(item) for item in setups],
+        }
 
     @app.post("/api/setups")
-    async def create_setup(body: SetupInput) -> dict[str, Any]:
-        db = SessionLocal()
-        try:
-            grinder = (
-                db.query(Equipment)
-                .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
-                .first()
-            )
-            machine = (
-                db.query(Equipment)
-                .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
-                .first()
-            )
-            if not grinder or not machine:
-                raise HTTPException(
-                    status_code=400, detail="Selected equipment not found"
-                )
+    def create_setup(body: SetupInput, db: Session = Depends(get_db)) -> dict[str, Any]:
+        grinder = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
+            .first()
+        )
+        machine = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
+            .first()
+        )
+        if not grinder or not machine:
+            raise HTTPException(status_code=400, detail="Selected equipment not found")
 
+        try:
             setup = BrewSetup(
                 name=as_non_empty_text(body.name),
                 grinder_id=grinder.id,
@@ -463,98 +455,83 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.add(setup)
             db.commit()
             db.refresh(setup)
-            return {"status": "created", "setup": serialize_setup(setup)}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "create setup") from exc
+        return {"status": "created", "setup": serialize_setup(setup)}
 
     @app.put("/api/setups/{setup_id}")
-    async def update_setup(setup_id: int, body: SetupInput) -> dict[str, Any]:
-        db = SessionLocal()
+    def update_setup(
+        setup_id: int, body: SetupInput, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
+        setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+
+        grinder = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
+            .first()
+        )
+        machine = (
+            db.query(Equipment)
+            .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
+            .first()
+        )
+        if not grinder or not machine:
+            raise HTTPException(status_code=400, detail="Selected equipment not found")
+
         try:
-            setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
-            if not setup:
-                raise HTTPException(status_code=404, detail="Setup not found")
-
-            grinder = (
-                db.query(Equipment)
-                .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
-                .first()
-            )
-            machine = (
-                db.query(Equipment)
-                .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
-                .first()
-            )
-            if not grinder or not machine:
-                raise HTTPException(
-                    status_code=400, detail="Selected equipment not found"
-                )
-
             setup.name = as_non_empty_text(body.name)
             setup.grinder_id = grinder.id
             setup.machine_id = machine.id
             db.commit()
             db.refresh(setup)
-            return {"status": "updated", "setup": serialize_setup(setup)}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "update setup") from exc
+        return {"status": "updated", "setup": serialize_setup(setup)}
 
     @app.put("/api/setups/active")
-    async def select_setup(body: SetupSelectInput) -> dict[str, Any]:
-        db = SessionLocal()
-        try:
-            selected_id = body.setup_id or body.active_setup_id
-            if not selected_id:
-                raise HTTPException(status_code=422, detail="setup_id is required")
+    def select_setup(
+        body: SetupSelectInput, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
+        selected_id = body.setup_id or body.active_setup_id
+        if not selected_id:
+            raise HTTPException(status_code=422, detail="setup_id is required")
 
-            setup = db.query(BrewSetup).filter(BrewSetup.id == selected_id).first()
-            if not setup:
-                raise HTTPException(status_code=404, detail="Setup not found")
-            set_setting(db, "active_setup_id", str(setup.id))
-            return {"status": "selected", "setup_id": setup.id}
-        finally:
-            db.close()
+        setup = db.query(BrewSetup).filter(BrewSetup.id == selected_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+        set_setting(db, "active_setup_id", str(setup.id))
+        return {"status": "selected", "setup_id": setup.id}
 
     @app.delete("/api/setups/{setup_id}")
-    async def delete_setup(setup_id: int) -> dict[str, str]:
-        db = SessionLocal()
-        try:
-            setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
-            if not setup:
-                raise HTTPException(status_code=404, detail="Setup not found")
-            if db.query(BrewSetup).count() <= 1:
-                raise HTTPException(
-                    status_code=400, detail="At least one setup must remain"
-                )
+    def delete_setup(setup_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+        setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail="Setup not found")
+        if db.query(BrewSetup).count() <= 1:
+            raise HTTPException(
+                status_code=400, detail="At least one setup must remain"
+            )
 
+        try:
             db.delete(setup)
             db.commit()
 
             next_setup = db.query(BrewSetup).order_by(BrewSetup.id.asc()).first()
             if next_setup:
                 set_setting(db, "active_setup_id", str(next_setup.id))
-            return {"status": "deleted"}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "delete setup") from exc
+        return {"status": "deleted"}
 
     @app.post("/api/logs/manual")
-    async def create_manual_log(body: BeanRecordInput) -> dict[str, Any]:
-        db = SessionLocal()
+    def create_manual_log(
+        body: BeanRecordInput, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
         try:
             bean = Bean(
                 roaster=as_non_empty_text(body.roaster),
@@ -584,21 +561,20 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 )
             )
             db.commit()
-            return {"status": "created", "bean_id": bean.id}
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "create log") from exc
+        return {"status": "created", "bean_id": bean.id}
 
     @app.put("/api/logs/{bean_id}")
-    async def update_log_record(bean_id: int, body: BeanRecordInput) -> dict[str, Any]:
-        db = SessionLocal()
-        try:
-            bean = db.query(Bean).filter(Bean.id == bean_id).first()
-            if not bean:
-                raise HTTPException(status_code=404, detail="Bean not found")
+    def update_log_record(
+        bean_id: int, body: BeanRecordInput, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
+        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        if not bean:
+            raise HTTPException(status_code=404, detail="Bean not found")
 
+        try:
             bean.roaster = as_non_empty_text(body.roaster)
             bean.name = as_non_empty_text(body.name)
             bean.origin = as_non_empty_text(body.origin)
@@ -635,55 +611,46 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 latest_log.tasting_notes = values["tasting_notes"]
 
             db.commit()
-            return {"status": "updated", "bean_id": bean.id}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "update log") from exc
+        return {"status": "updated", "bean_id": bean.id}
 
     @app.delete("/api/logs/{bean_id}")
-    async def delete_log_record(bean_id: int) -> dict[str, str]:
-        db = SessionLocal()
-        try:
-            bean = db.query(Bean).filter(Bean.id == bean_id).first()
-            if not bean:
-                raise HTTPException(status_code=404, detail="Bean not found")
+    def delete_log_record(
+        bean_id: int, db: Session = Depends(get_db)
+    ) -> dict[str, str]:
+        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        if not bean:
+            raise HTTPException(status_code=404, detail="Bean not found")
 
+        try:
             db.query(DialInLog).filter(DialInLog.bean_id == bean_id).delete()
             db.delete(bean)
             db.commit()
-            return {"status": "deleted"}
-        except HTTPException:
-            raise
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            raise _server_error(exc, "delete log") from exc
+        return {"status": "deleted"}
 
     @app.put("/api/settings/dose")
-    async def update_dose(body: DoseUpdate) -> dict[str, Any]:
+    def update_dose(body: DoseUpdate, db: Session = Depends(get_db)) -> dict[str, Any]:
         if body.dose_g <= 0:
             raise HTTPException(status_code=400, detail="Dose must be positive.")
-        db = SessionLocal()
         try:
             set_default_dose_g(db, body.dose_g)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            db.rollback()
+            raise _server_error(exc, "update dose") from exc
         return {"status": "updated", "dose_g": body.dose_g}
 
     @app.put("/api/settings/grind-offset")
-    async def update_grind_offset(body: GrindOffsetUpdate) -> dict[str, Any]:
-        db = SessionLocal()
+    def update_grind_offset(
+        body: GrindOffsetUpdate, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
         try:
             set_grind_offset_clicks(db, body.offset_clicks)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
-        finally:
-            db.close()
+            db.rollback()
+            raise _server_error(exc, "update grind offset") from exc
         return {"status": "updated", "offset_clicks": body.offset_clicks}

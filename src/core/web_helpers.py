@@ -2,79 +2,18 @@ from __future__ import annotations
 
 import os
 import re
-import time
 import unicodedata
 from difflib import SequenceMatcher
 from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.exc import ProgrammingError
-
-from database.database import Base, SessionLocal, engine
+from database.database import SessionLocal
 from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
 
 from .web_schemas import LogDetailsInput
 
 
-def init_db() -> None:
-    for attempt in range(1, 6):
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-                conn.commit()
-            Base.metadata.create_all(bind=engine)
-            with engine.connect() as conn:
-                conn.execute(
-                    text(
-                        "ALTER TABLE dial_in_logs ADD COLUMN IF NOT EXISTS image_path TEXT;"
-                    )
-                )
-                conn.commit()
-            print("Database tables created.")
-            return
-        except Exception as exc:
-            print(f"DB init error (attempt {attempt}/5): {exc}")
-            if attempt < 5:
-                time.sleep(2)
-
-
-def seed_db() -> None:
-    db = SessionLocal()
-    try:
-        if not db.query(Equipment).first():
-            db.add_all(
-                [
-                    Equipment(
-                        type="espresso_machine", brand="AVX", model="Hero Plus 2024"
-                    ),
-                    Equipment(type="grinder", brand="Kingrinder", model="K6"),
-                ]
-            )
-            db.commit()
-            print("Basic equipment added.")
-    except Exception as exc:
-        print(f"Seed error: {exc}")
-    finally:
-        db.close()
-
-
-def ensure_tables() -> None:
-    Base.metadata.create_all(bind=engine)
-
-
 def get_default_dose_g(db: Any) -> float:
-    try:
-        setting = (
-            db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
-        )
-    except ProgrammingError as exc:
-        if "app_settings" not in str(exc):
-            raise
-        db.rollback()
-        ensure_tables()
-        setting = (
-            db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
-        )
+    setting = db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
     if not setting:
         return 16.0
     try:
@@ -96,22 +35,11 @@ def set_default_dose_g(db: Any, dose: float) -> None:
 
 
 def get_grind_offset_clicks(db: Any) -> float:
-    try:
-        setting = (
-            db.query(AppSetting)
-            .filter(AppSetting.key == "default_grind_offset_clicks")
-            .first()
-        )
-    except ProgrammingError as exc:
-        if "app_settings" not in str(exc):
-            raise
-        db.rollback()
-        ensure_tables()
-        setting = (
-            db.query(AppSetting)
-            .filter(AppSetting.key == "default_grind_offset_clicks")
-            .first()
-        )
+    setting = (
+        db.query(AppSetting)
+        .filter(AppSetting.key == "default_grind_offset_clicks")
+        .first()
+    )
     if not setting:
         return 0.0
     try:
@@ -381,77 +309,3 @@ def save_dial_in_log(
         raise
     finally:
         db.close()
-
-
-def generate_app_icons(static_dir: str) -> None:
-    """Generate PNG app icons from Pillow for PWA / iOS home screen.
-
-    Runs at startup; silently skipped if icons already exist or if the
-    filesystem is read-only (production containers pre-bake icons via
-    the Dockerfile RUN step instead).
-    """
-
-    try:
-        from PIL import Image, ImageDraw
-    except ImportError:
-        return
-
-    icons_dir = os.path.join(static_dir, "icons")
-    try:
-        os.makedirs(icons_dir, exist_ok=True)
-    except OSError:
-        return
-
-    bg = (15, 10, 6)
-    accent = (200, 134, 10)
-
-    for size in (180, 192, 512):
-        path = os.path.join(icons_dir, f"icon-{size}.png")
-        if os.path.exists(path):
-            continue
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        r = size // 5
-        draw.rounded_rectangle([0, 0, size, size], radius=r, fill=bg)
-
-        pad = size // 6
-        draw.ellipse([pad, pad, size - pad, size - pad], fill=accent)
-
-        cx, cy = size // 2, size // 2
-        cup_w = size // 3
-        cup_h = int(size * 0.28)
-        cup_x = cx - cup_w // 2
-        cup_y = cy - cup_h // 2 + size // 20
-        draw.rectangle([cup_x, cup_y, cup_x + cup_w, cup_y + cup_h], fill="white")
-
-        hw = size // 12
-        draw.arc(
-            [
-                cup_x + cup_w - hw // 2,
-                cup_y + cup_h // 4,
-                cup_x + cup_w + hw,
-                cup_y + cup_h - cup_h // 4,
-            ],
-            start=-90,
-            end=90,
-            fill="white",
-            width=max(2, size // 40),
-        )
-
-        s_pad = size // 5
-        s_h = max(3, size // 40)
-        draw.rectangle(
-            [
-                s_pad,
-                cup_y + cup_h + size // 20,
-                size - s_pad,
-                cup_y + cup_h + size // 20 + s_h,
-            ],
-            fill="white",
-        )
-
-        try:
-            img.save(path, "PNG")
-        except OSError:
-            return

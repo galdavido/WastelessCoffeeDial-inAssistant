@@ -1,7 +1,11 @@
-from datetime import date, datetime
+from __future__ import annotations
+
 import re
+from collections.abc import Sequence
+from datetime import date, datetime
 from statistics import median
-from typing import Any, Dict, Sequence, TypedDict
+from typing import Any, TypedDict
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
@@ -9,7 +13,6 @@ from ai.model_selection import GEMINI_MODEL_CANDIDATES, try_model_candidates
 from core.optional_deps import require_genai
 from database.database import SessionLocal
 from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
-
 
 type SimilarLogRow = tuple[DialInLog, Bean, Equipment, Equipment]
 
@@ -139,19 +142,21 @@ def _rank_similar_logs_for_active_setup(
         _, _, row_grinder, row_machine = row
         score = 0
 
-        if grinder_brand and grinder_model:
-            if (
-                _to_normalized(row_grinder.brand) == grinder_brand
-                and _to_normalized(row_grinder.model) == grinder_model
-            ):
-                score += 2
+        if (
+            grinder_brand
+            and grinder_model
+            and _to_normalized(row_grinder.brand) == grinder_brand
+            and _to_normalized(row_grinder.model) == grinder_model
+        ):
+            score += 2
 
-        if machine_brand and machine_model:
-            if (
-                _to_normalized(row_machine.brand) == machine_brand
-                and _to_normalized(row_machine.model) == machine_model
-            ):
-                score += 2
+        if (
+            machine_brand
+            and machine_model
+            and _to_normalized(row_machine.brand) == machine_brand
+            and _to_normalized(row_machine.model) == machine_model
+        ):
+            score += 2
 
         return score
 
@@ -163,7 +168,7 @@ def _rank_similar_logs_for_active_setup(
     return ranked[:limit]
 
 
-def _normalize_coffee_profile(coffee_json: Dict[str, Any]) -> CoffeeProfile:
+def _normalize_coffee_profile(coffee_json: dict[str, Any]) -> CoffeeProfile:
     roast_date_raw = str(coffee_json.get("roast_date", "")).strip()
     brew_date_raw = str(coffee_json.get("brew_date", "")).strip()
 
@@ -488,7 +493,7 @@ def _generate_recommendation_with_grounding(genai: Any, types: Any, prompt: str)
         client.close()
 
 
-def get_best_grind_setting(coffee_json: Dict[str, Any]) -> str:
+def get_best_grind_setting(coffee_json: dict[str, Any]) -> str:
     """
     Retrieves own data, then calls the LLM to synthesize the final recommendation.
     """

@@ -5,33 +5,84 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+          cache: pip
 
-      - name: Install dependencies
+      - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pre-commit
+          pip install -e '.[dev]'
 
-      - name: Run pre-commit
-        run: pre-commit run --all-files
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format
+        run: ruff format --check .
+
+      - name: Type check
+        run: mypy src
+        continue-on-error: true
+
+      - name: Dependency audit
+        run: pip-audit --strict --progress-spinner off
+        continue-on-error: true
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wcda
+          POSTGRES_PASSWORD: wcda
+          POSTGRES_DB: wcda_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wcda -d wcda_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg2://wcda:wcda@localhost:5432/wcda_test
+      GEMINI_API_KEY: test-key-not-used
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
 
       - name: Syntax smoke check
-        run: python -m compileall -q src
+        run: python -m compileall -q src migrations
 
-      - name: Run unit tests
-        env:
-          PYTHONPATH: src
-          DATABASE_URL: postgresql://localhost/test
-        run: python -m unittest discover -s tests -v
+      - name: Alembic migrations apply cleanly
+        run: alembic upgrade head
+
+      - name: Unit tests
+        run: pytest --cov=src --cov-report=term-missing
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image
+        run: docker build -t wcda:ci .

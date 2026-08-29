@@ -6,17 +6,19 @@ Thanks for your interest in contributing! We welcome bug reports, feature reques
 
 1. Fork the repository and clone your fork locally.
 2. Create a virtual environment: `python -m venv .venv && source .venv/bin/activate`
-3. Install dependencies: `pip install -r requirements.txt && pip install pre-commit`
+3. Install the project with dev tools: `pip install -e '.[dev]'`
 4. Enable pre-commit hooks: `pre-commit install`
-5. Create a feature branch: `git checkout -b feature/your-feature-name`
+5. Copy `.env.example` to `.env` and fill it in.
+6. Create a feature branch: `git checkout -b feature/your-feature-name`
 
 ## Development Workflow
 
-- Set Python path: `export PYTHONPATH=src:$PYTHONPATH`
-- Run formatting and linting: `pre-commit run --all-files`
-- Run syntax check: `python -m compileall -q src`
-- Run tests: `PYTHONPATH=src python -m unittest discover -s tests -v`
-- Run web server locally: `python src/core/web_server.py` (requires `.env` and Postgres)
+- Lint & format: `ruff check . && ruff format .`
+- Type check: `mypy src`
+- Run tests: `pytest` (database-backed tests need a running Postgres and `DATABASE_URL`)
+- Apply migrations: `alembic upgrade head`
+- Run the web server: `python -m core.web_server` (requires `.env` and Postgres)
+- Schema changes go through Alembic: `alembic revision --autogenerate -m "..."`
 
 ## Submitting Changes
 

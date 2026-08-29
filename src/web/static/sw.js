@@ -1,16 +1,14 @@
-const CACHE = 'barista-ai-v4';
+// Bump CACHE to ship new static assets; the old cache is purged on activate.
+const CACHE = 'wcda-v5';
 const PRECACHE = [
   '/',
-  '/static/style.css?v=20260517-2',
-  '/static/desktop.css?v=20260517-2',
-  '/static/app.js?v=20260517-2',
-  '/static/manifest.json?v=20260517-2',
+  '/static/style.css',
+  '/static/app.js',
+  '/static/manifest.json',
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(PRECACHE))
-  );
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)));
   self.skipWaiting();
 });
 
@@ -27,14 +25,12 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Always go network-first for API calls
+  // Always go to the network for API calls.
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(request));
     return;
   }
 
-  // Cache-first for static assets, network fallback
-  event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request))
-  );
+  // Cache-first for static assets, falling back to the network.
+  event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
 });

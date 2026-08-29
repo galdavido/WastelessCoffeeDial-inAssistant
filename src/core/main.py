@@ -1,47 +1,60 @@
+"""Command-line entry point: analyse one coffee-bag image and print a recipe."""
+
+from __future__ import annotations
+
+import argparse
 import os
-import sys
-from ai.vision import analyze_coffee_bag
+
 from ai.rag import get_best_grind_setting
+from ai.vision import analyze_coffee_bag
+
+_DEFAULT_IMAGE = os.path.join("data", "test_bag.jpg")
 
 
-def main(image_path: str) -> None:
+def run(image_path: str) -> int:
     print("\n" + "=" * 50)
-    print("☕ WASTELESS COFFEE DIAL-IN ASSISTANT (WCDA)")
+    print("WASTELESS COFFEE DIAL-IN ASSISTANT (WCDA)")
     print("=" * 50)
-    print(f"📸 Step 1: Processing image ({image_path})...")
 
-    # 1. Analyze image with Gemini Vision API
+    if not os.path.exists(image_path):
+        print(f"Error: image not found: {image_path}")
+        return 1
+
+    print(f"Step 1: analysing image ({image_path})...")
     coffee_data = analyze_coffee_bag(image_path)
-
     if not coffee_data:
-        print("❌ Error: Failed to extract data from the image.")
-        return
+        print("Error: failed to extract data from the image.")
+        return 1
 
-    print("\n✅ Coffee data successfully extracted from the packaging:")
+    print("\nExtracted coffee data:")
     for key, value in coffee_data.items():
         print(f"  - {key.capitalize()}: {value}")
 
-    # 2. RAG search in the database based on extracted JSON
-    print("\n🧠 Step 2: AI Barista searching your previous logs...")
+    print("\nStep 2: searching your previous logs for a recommendation...")
     recommendation = get_best_grind_setting(coffee_data)
 
-    # Print final result
     print("\n" + "=" * 50)
-    print("💡 FINAL RECOMMENDATION FOR THE COFFEE:")
+    print("RECOMMENDATION")
     print("=" * 50)
     print(recommendation)
     print("=" * 50 + "\n")
+    return 0
+
+
+def cli() -> None:
+    parser = argparse.ArgumentParser(
+        prog="wcda",
+        description="Analyse a coffee-bag photo and print a starting espresso recipe.",
+    )
+    parser.add_argument(
+        "image",
+        nargs="?",
+        default=_DEFAULT_IMAGE,
+        help=f"path to the coffee-bag image (default: {_DEFAULT_IMAGE})",
+    )
+    args = parser.parse_args()
+    raise SystemExit(run(args.image))
 
 
 if __name__ == "__main__":
-    # If a filename is provided at runtime, use it, otherwise default to "test_bag.jpg".
-    target_image = "test_bag.jpg"
-
-    if len(sys.argv) > 1:
-        target_image = sys.argv[1]
-
-    if not os.path.exists(target_image):
-        print(f"❌ Error: The '{target_image}' file is not found in the folder!")
-        print("Tip: Drop an image into the folder and name it test_bag.jpg!")
-    else:
-        main(target_image)
+    cli()

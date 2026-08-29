@@ -1,26 +1,26 @@
+# Production stack. Usage:
+#   docker compose -f compose.prod.yaml --env-file .env up -d --build
+name: wcda-prod
+
 services:
   db:
-    image: pgvector/pgvector:pg15
-    container_name: baristai_postgres
+    image: postgres:16-alpine
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-barista}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-barista_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Not published to the host at all - only reachable on the internal network.
+    expose:
+      - "5432"
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -h 127.0.0.1 -p 5432 -U postgres -d postgres || exit 1",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-barista} -d ${POSTGRES_DB:-barista_db}"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 60s
+      start_period: 30s
     security_opt:
       - no-new-privileges:true
     networks:
@@ -30,28 +30,23 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "127.0.0.1:5434:5432"
 
-  baristai-web:
+  web:
     build:
       context: .
-    container_name: baristai_web
+      target: runtime
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-barista}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-barista_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-barista}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-barista_db}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
       WEB_PORT: "8080"
       LOG_IMAGES_DIR: /app/data/log_images
-      PYTHONUNBUFFERED: "1"
     depends_on:
       db:
         condition: service_healthy
-    command: ["python", "-m", "core.web_server"]
+    # Publish on loopback only; terminate TLS / auth in a reverse proxy in front.
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     read_only: true
     volumes:
       - log_images:/app/data/log_images
@@ -65,6 +60,12 @@ services:
     mem_limit: 768m
     cpus: 1.5
     stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - backend
     logging:
