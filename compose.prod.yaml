@@ -78,6 +78,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Nightly pg_dump with rotation. Dumps land in ./backups/db/ on the host
+  # (gzip'd, one per run). Restore the latest with:
+  #   gunzip -c backups/db/last/<db>-latest.sql.gz \
+  #     | docker compose -f compose.prod.yaml exec -T db psql -U barista -d barista_db
+  # Trigger an off-schedule backup with:
+  #   docker compose -f compose.prod.yaml exec db-backup /backup.sh
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-barista_db}
+      POSTGRES_USER: ${POSTGRES_USER:-barista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_EXTRA_OPTS: "--no-owner --no-privileges"
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: "14"
+      BACKUP_KEEP_WEEKS: "8"
+      BACKUP_KEEP_MONTHS: "6"
+      HEALTHCHECK_PORT: "8080"
+    volumes:
+      - ./backups/db:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
   log_images:
