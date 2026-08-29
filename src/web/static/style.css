@@ -86,7 +86,9 @@ body.modal-open .tab-panel { overflow: hidden; }
 /* ── Scan – idle ─────────────────────────────────────────────────────────── */
 .scan-idle {
   display: flex; flex-direction: column; align-items: center;
-  padding-top: 22px; gap: 0;
+  justify-content: center;
+  min-height: 100%;
+  padding: 22px 0 8px; gap: 0;
 }
 .scan-hero {
   display: flex; flex-direction: column; align-items: center;
@@ -232,7 +234,9 @@ body.modal-open .tab-panel { overflow: hidden; }
 /* ── Scan – loading ──────────────────────────────────────────────────────── */
 .scan-loading {
   display: flex; flex-direction: column; align-items: center;
-  padding-top: 80px; gap: 20px;
+  justify-content: center;
+  min-height: 100%;
+  padding: 40px 0; gap: 20px;
 }
 .loader {
   position: relative; width: 80px; height: 80px;
@@ -308,7 +312,9 @@ body.modal-open .tab-panel { overflow: hidden; }
 /* ── Success state ───────────────────────────────────────────────────────── */
 .scan-success {
   display: flex; flex-direction: column; align-items: center;
-  padding-top: 80px; gap: 12px; text-align: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 40px 0; gap: 12px; text-align: center;
 }
 .success-icon { font-size: 64px; }
 .success-title { font-size: 22px; font-weight: 700; color: var(--text-1); }
@@ -759,6 +765,8 @@ select.input { background-image: none; }
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 26px 20px;
+    min-height: auto;
+    justify-content: flex-start;
   }
   #tab-scan #scan-results { align-self: start; }
 
