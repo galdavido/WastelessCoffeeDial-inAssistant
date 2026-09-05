@@ -70,6 +70,48 @@ def as_non_empty_text(value: Any, default: str = "Unknown") -> str:
     return text_value
 
 
+_LEADING_NUMBER = re.compile(r"\s*(-?\d+(?:[.,]\d+)?)")
+
+# 1 light .. 5 dark. Prod contains "Medium-light", "Medium Light" and
+# "Medium-Light" for the same roast, so match on normalised labels.
+_ROAST_ORDINALS: dict[str, int] = {
+    "light": 1,
+    "medium light": 2,
+    "light medium": 2,
+    "medium": 3,
+    "medium dark": 4,
+    "dark medium": 4,
+    "dark": 5,
+}
+
+
+def parse_grind_clicks(value: str | float | None) -> float | None:
+    """Numeric grind value from a free-text setting, or None if there isn't one.
+
+    Historic rows hold strings like "38", "33 clicks" or "Unknown". Returning
+    None for the unparseable case is deliberate -- a missing grind value must
+    not become a number.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    match = _LEADING_NUMBER.match(str(value))
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def roast_level_ordinal(label: str | None) -> int | None:
+    """Map a roast-level label onto the 1 (light) .. 5 (dark) ordinal scale."""
+    if not label:
+        return None
+    return _ROAST_ORDINALS.get(normalize_label(label))
+
+
 def normalize_label(value: str) -> str:
     lowered = value.strip().lower()
     deaccented = (
@@ -200,33 +242,78 @@ def serialize_setup(setup: BrewSetup) -> dict[str, Any]:
     }
 
 
+def classify_data_quality(
+    *,
+    grind_clicks: float | None,
+    time_s: int | None,
+    yield_g: float | None,
+    water_g: float | None,
+    rating: int | None,
+    taste_axis: str | None,
+) -> str:
+    """'measured' only when the engine has what it needs to learn from a shot.
+
+    Calibration reads 'measured' rows exclusively, so this is the gate that
+    keeps guessed or half-filled shots out of the physics.
+    """
+    has_outcome = rating is not None or taste_axis is not None
+    complete = (
+        grind_clicks is not None
+        and time_s is not None
+        and (yield_g is not None or water_g is not None)
+        and has_outcome
+    )
+    return "measured" if complete else "partial"
+
+
 def resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
-    default_dose = get_default_dose_g(db)
-    dose = default_dose
+    """Normalise a log payload without inventing measurements.
+
+    Anything the user did not supply stays None. Before this, absent values
+    were filled with yield_g = dose*2, time_s = 28 and rating = 5, and those
+    fabricated rows were later retrieved as real successful shots -- the
+    system learned from its own defaults. The dose default is retained
+    because it is a stored user preference, not a guess about an outcome.
+    """
+    dose = get_default_dose_g(db)
     if log and log.dose_g is not None and log.dose_g > 0:
         dose = float(log.dose_g)
-    yield_g = round(dose * 2.0, 1)
-    if log and log.yield_g is not None and log.yield_g > 0:
-        yield_g = float(log.yield_g)
-    time_s = 28
-    if log and log.time_s is not None and log.time_s > 0:
-        time_s = int(log.time_s)
-    rating = 5
-    if log and log.rating is not None:
-        rating = max(1, min(5, int(log.rating)))
+
+    yield_g = (
+        float(log.yield_g)
+        if log and log.yield_g is not None and log.yield_g > 0
+        else None
+    )
+    time_s = (
+        int(log.time_s) if log and log.time_s is not None and log.time_s > 0 else None
+    )
+    rating = max(1, min(5, int(log.rating))) if log and log.rating is not None else None
+
     grind_setting = "Unknown"
     if log and log.grind_setting:
         grind_setting = log.grind_setting.strip() or "Unknown"
+    grind_clicks = parse_grind_clicks(grind_setting)
+
     notes = None
     if log and log.tasting_notes:
         notes = log.tasting_notes.strip() or None
+
     return {
         "dose_g": dose,
         "yield_g": yield_g,
         "time_s": time_s,
         "rating": rating,
         "grind_setting": grind_setting,
+        "grind_clicks": grind_clicks,
         "tasting_notes": notes,
+        "data_quality": classify_data_quality(
+            grind_clicks=grind_clicks,
+            time_s=time_s,
+            yield_g=yield_g,
+            water_g=None,
+            rating=rating,
+            taste_axis=None,
+        ),
     }
 
 
@@ -270,19 +357,11 @@ def save_dial_in_log(
         if not grinder or not machine:
             return
 
-        if actual_grind:
-            grind_setting = actual_grind
-        else:
-            grind_setting = "Unknown"
-            if "Suggested Grind Setting:" in recommendation:
-                try:
-                    start = recommendation.find("Suggested Grind Setting:") + len(
-                        "Suggested Grind Setting:"
-                    )
-                    end = recommendation.find("\n", start)
-                    grind_setting = recommendation[start:end].strip()
-                except Exception:
-                    pass
+        # The grind value comes from what the user actually set. It is never
+        # recovered by parsing the LLM's prose -- that round-trip is what fed
+        # generated numbers back in as if they were measurements.
+        grind_setting = actual_grind.strip() if actual_grind else "Unknown"
+        grind_clicks = parse_grind_clicks(grind_setting)
 
         resolved_dose_g = dose_g if dose_g is not None else get_default_dose_g(db)
         resolved_image_name = image_name or coffee_data.get("image_name")
@@ -294,12 +373,20 @@ def save_dial_in_log(
                 bean_id=bean.id,
                 grinder_id=grinder.id,
                 machine_id=machine.id,
+                setup_id=active_setup.id if active_setup else None,
+                brew_method=getattr(active_setup, "method", None),
                 grind_setting=grind_setting,
+                grind_clicks=grind_clicks,
                 dose_g=resolved_dose_g,
-                yield_g=round(resolved_dose_g * 2.0, 1),
-                time_s=28,
-                rating=5,
-                tasting_notes=f"Web app: {recommendation[:100]}...",
+                # Outcome fields stay None until the user measures them.
+                yield_g=None,
+                time_s=None,
+                rating=None,
+                tasting_notes=None,
+                # LLM prose is kept, but out of the human tasting-notes field
+                # and out of anything the engine reads.
+                llm_note=recommendation,
+                data_quality="partial",
                 image_path=resolved_image_name,
             )
         )

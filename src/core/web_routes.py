@@ -581,12 +581,16 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                     bean_id=bean.id,
                     grinder_id=grinder.id,
                     machine_id=machine.id,
+                    setup_id=active_setup.id,
+                    brew_method=active_setup.method,
                     grind_setting=values["grind_setting"],
+                    grind_clicks=values["grind_clicks"],
                     dose_g=values["dose_g"],
                     yield_g=values["yield_g"],
                     time_s=values["time_s"],
                     rating=values["rating"],
                     tasting_notes=values["tasting_notes"],
+                    data_quality=values["data_quality"],
                 )
             )
             db.commit()
@@ -623,21 +627,29 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                         bean_id=bean.id,
                         grinder_id=grinder.id,
                         machine_id=machine.id,
+                        setup_id=active_setup.id,
+                        brew_method=active_setup.method,
                         grind_setting=values["grind_setting"],
+                        grind_clicks=values["grind_clicks"],
                         dose_g=values["dose_g"],
                         yield_g=values["yield_g"],
                         time_s=values["time_s"],
                         rating=values["rating"],
                         tasting_notes=values["tasting_notes"],
+                        data_quality=values["data_quality"],
                     )
                 )
             else:
                 latest_log.grind_setting = values["grind_setting"]
+                latest_log.grind_clicks = values["grind_clicks"]
                 latest_log.dose_g = values["dose_g"]
                 latest_log.yield_g = values["yield_g"]
                 latest_log.time_s = values["time_s"]
                 latest_log.rating = values["rating"]
                 latest_log.tasting_notes = values["tasting_notes"]
+                # An edit that adds the missing measurements promotes the row
+                # out of 'partial'; one that removes them demotes it again.
+                latest_log.data_quality = values["data_quality"]
 
             db.commit()
         except Exception as exc:

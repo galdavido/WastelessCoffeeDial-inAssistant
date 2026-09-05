@@ -1,8 +1,21 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -18,6 +31,9 @@ class Bean(Base):
     origin: Mapped[str] = mapped_column(String)
     process: Mapped[str] = mapped_column(String)
     roast_level: Mapped[str] = mapped_column(String)
+    roast_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # 1 light .. 5 dark; canonicalises the several spellings of "medium-light".
+    roast_level_ord: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     # Back reference to logs
     logs: Mapped[list[DialInLog]] = relationship(back_populates="bean")
@@ -32,6 +48,28 @@ class Equipment(Base):
     brand: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String)
 
+    # Hardware capability. These bound every number the engine recommends;
+    # without them the engine abstains rather than guessing a click number.
+    grind_min_clicks: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    grind_max_clicks: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    grind_step_clicks: Mapped[float | None] = mapped_column(
+        Numeric(5, 3), nullable=True
+    )
+    grind_um_per_click: Mapped[float | None] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    finer_direction: Mapped[str | None] = mapped_column(String, nullable=True)
+    burr_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    burr_size_mm: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    basket_size_g: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    temp_min_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    temp_max_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    temp_controllable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    # A capability row without a citation is a guess. Store the URL.
+    spec_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class BrewSetup(Base):
     __tablename__ = "brew_setups"
@@ -40,9 +78,41 @@ class BrewSetup(Base):
     name: Mapped[str] = mapped_column(String, index=True)
     grinder_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
     machine_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
+    # 'espresso' | 'pourover' | 'moka'. Drives target bands and which levers
+    # the correction policy is even allowed to move.
+    method: Mapped[str | None] = mapped_column(String, nullable=True)
 
     grinder: Mapped[Equipment] = relationship(foreign_keys=[grinder_id])
     machine: Mapped[Equipment] = relationship(foreign_keys=[machine_id])
+
+
+# 2b. Every engine output, persisted so proposed-vs-actual can be back-tested.
+class Recommendation(Base):
+    __tablename__ = "recommendations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+    setup_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brew_setups.id"), nullable=True
+    )
+    bean_id: Mapped[int | None] = mapped_column(ForeignKey("beans.id"), nullable=True)
+    engine_version: Mapped[str] = mapped_column(String)
+    method: Mapped[str | None] = mapped_column(String, nullable=True)
+    grind_clicks: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    dose_g: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    yield_g: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
+    water_g: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
+    brew_temp_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    target_time_s: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    basis: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    inputs_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    rationale_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 # 3. The "Shot" logs table (This connects the coffee and equipment)
@@ -53,11 +123,15 @@ class DialInLog(Base):
     bean_id: Mapped[int] = mapped_column(ForeignKey("beans.id"))
     grinder_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
     machine_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
-    grind_setting: Mapped[str] = mapped_column(String)
+    grind_setting: Mapped[str] = mapped_column(
+        String
+    )  # legacy; superseded by grind_clicks
     dose_g: Mapped[float] = mapped_column(Float)  # Input weight
-    yield_g: Mapped[float] = mapped_column(Float)  # Output weight
-    time_s: Mapped[int] = mapped_column(Integer)
-    rating: Mapped[int] = mapped_column(Integer)
+    # Nullable since 0002: an unmeasured shot is recorded as unmeasured.
+    # Never invent a value here -- calibration reads these as ground truth.
+    yield_g: Mapped[float | None] = mapped_column(Float, nullable=True)  # Output weight
+    time_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tasting_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -66,10 +140,35 @@ class DialInLog(Base):
         server_default=func.now(),
     )
 
+    # Engine columns (0002).
+    setup_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brew_setups.id"), nullable=True
+    )
+    brew_method: Mapped[str | None] = mapped_column(String, nullable=True)
+    grind_clicks: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    water_g: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
+    taste_axis: Mapped[str | None] = mapped_column(String, nullable=True)
+    astringent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    brew_temp_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    preinfusion_s: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    # Optional forever: no code path may require a refractometer.
+    tds_pct: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    # 'measured' | 'partial' | 'synthetic' | 'imported'.
+    # Only 'measured' rows may feed calibration.
+    data_quality: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="measured", default="measured"
+    )
+    # LLM prose lives here; tasting_notes is reserved for the human.
+    llm_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recommendations.id"), nullable=True
+    )
+
     # These lines tell Python what the ForeignKey IDs belong to
     bean: Mapped[Bean] = relationship(back_populates="logs")
     grinder: Mapped[Equipment] = relationship(foreign_keys=[grinder_id])
     machine: Mapped[Equipment] = relationship(foreign_keys=[machine_id])
+    setup: Mapped[BrewSetup | None] = relationship(foreign_keys=[setup_id])
 
 
 # 4. Simple key-value settings table for app preferences

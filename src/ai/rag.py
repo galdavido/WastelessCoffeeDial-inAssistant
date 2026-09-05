@@ -398,6 +398,8 @@ def _get_latest_successful_click(
         select(DialInLog)
         .where(DialInLog.grinder_id == grinder.id)
         .where(DialInLog.rating >= 4)
+        # Measured shots only -- see the note on the retrieval query above.
+        .where(DialInLog.data_quality == "measured")
         .order_by(DialInLog.created_at.desc())
         .limit(1)
     ).first()
@@ -517,6 +519,12 @@ def get_best_grind_setting(coffee_json: dict[str, Any]) -> str:
             .join(grinder_alias, DialInLog.grinder_id == grinder_alias.id)
             .join(machine_alias, DialInLog.machine_id == machine_alias.id)
             .where(DialInLog.rating >= 4)
+            # Only shots the user actually measured. Without this filter the
+            # fabricated rows written by older builds (yield = dose*2,
+            # time = 28 s, rating = 5, with the LLM's own prose in
+            # tasting_notes) are retrieved as "past successful shots" and fed
+            # back into the next prompt -- the model learning from itself.
+            .where(DialInLog.data_quality == "measured")
             .where((Bean.process == process) | (Bean.origin == origin))
         )
         similar_logs: Sequence[SimilarLogRow] = (
