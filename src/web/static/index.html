@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=18" />
+  <link rel="stylesheet" href="/static/style.css?v=19" />
 </head>
 <body>
   <div id="app">
@@ -28,6 +28,10 @@
       <div class="header-inner">
         <span class="header-logo">☕</span>
         <span class="header-title">Barista AI</span>
+        <!-- Which bundle you are actually running. Tap for detail, or to
+             pull a newer one when the server has moved on. -->
+        <button class="chip version-chip" id="version-chip" type="button"
+                title="App version">v–</button>
       </div>
     </header>
 
@@ -512,6 +516,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=18"></script>
+  <script src="/static/app.js?v=19"></script>
 </body>
 </html>

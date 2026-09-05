@@ -974,3 +974,23 @@ select.input { background-image: none; }
   border-radius: 8px; color: var(--text-2);
   font-size: 12px; padding: 9px 12px; cursor: pointer; min-height: 40px;
 }
+
+/* ── Version chip ───────────────────────────────────────────────────────── */
+/* Sits at the right of the header on every screen: the only way to tell a
+   freshly deployed bundle from a cached one without guessing. */
+.version-chip {
+  margin-left: auto;
+  min-height: 26px;
+  display: inline-flex; align-items: center;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.12);
+  color: var(--text-2);
+}
+/* Server has moved on: the chip becomes the update affordance. */
+.version-chip.is-stale {
+  background: rgba(200,134,10,.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}

@@ -1,3 +1,18 @@
+/* ── Version ────────────────────────────────────────────────────────────── */
+/* The version this bundle was loaded with, read from its own script tag.
+   Deliberately self-reported: if a stale index.html is served from the
+   service-worker cache, this reports that stale number, which is exactly
+   what makes the chip able to answer "did my deploy actually land?". */
+const BUNDLE_VERSION = (() => {
+  try {
+    return Number(new URL(document.currentScript.src).searchParams.get('v')) || null;
+  } catch {
+    return null;
+  }
+})();
+let serverAssetVersion = null;
+let engineVersion = null;
+
 /* ── State ──────────────────────────────────────────────────────────────── */
 let currentCoffeeData = null;
 let currentRecommendation = null;
@@ -1315,6 +1330,57 @@ document.addEventListener('keydown', event => {
   if (open) dismissDialog(open.id);
 });
 
+/* ── Version chip ───────────────────────────────────────────────────────── */
+/* Two numbers, because one cannot answer the question: what this bundle is,
+   and what the server is currently serving. When they differ, the deploy has
+   not reached this device yet. */
+async function loadVersion() {
+  const chip = $('version-chip');
+  if (!chip) return;
+  chip.textContent = BUNDLE_VERSION ? `v${BUNDLE_VERSION}` : 'v?';
+
+  try {
+    const res = await fetch('/api/version', { cache: 'no-store' });
+    const data = await res.json();
+    serverAssetVersion = data.asset_version ?? null;
+    engineVersion = data.engine_version ?? null;
+
+    if (serverAssetVersion && BUNDLE_VERSION && serverAssetVersion !== BUNDLE_VERSION) {
+      chip.classList.add('is-stale');
+      chip.textContent = `v${BUNDLE_VERSION} → v${serverAssetVersion}`;
+      chip.title = 'A newer version is available — tap to update';
+    } else {
+      chip.title = 'App version';
+    }
+  } catch {
+    // Offline: keep showing the honest local number rather than guessing.
+  }
+}
+
+async function updateToLatest() {
+  showToast('⏳ Fetching the new version…');
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
+    await Promise.all(regs.map((r) => r.update().catch(() => {})));
+    const keys = (await caches?.keys?.()) ?? [];
+    await Promise.all(keys.map((k) => caches.delete(k).catch(() => {})));
+  } catch {
+    // Even if clearing fails, a reload against a no-cache shell usually works.
+  }
+  location.reload();
+}
+
+$('version-chip')?.addEventListener('click', () => {
+  if (serverAssetVersion && BUNDLE_VERSION && serverAssetVersion !== BUNDLE_VERSION) {
+    // Never automatic: a reload loop against a broken deploy is worse than
+    // running a stale bundle for another minute.
+    updateToLatest();
+    return;
+  }
+  const engine = engineVersion ? ` · engine ${engineVersion}` : '';
+  showToast(`✅ Up to date (v${BUNDLE_VERSION ?? '?'})${engine}`);
+});
+
 /* ── Service worker registration ────────────────────────────────────────── */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -1323,3 +1389,4 @@ if ('serviceWorker' in navigator) {
 }
 
 loadSetups();
+loadVersion();
