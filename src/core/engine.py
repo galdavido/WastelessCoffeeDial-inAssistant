@@ -34,6 +34,7 @@ from .brewing import (
     prep_advice,
     resistance_disagreement,
     target_for,
+    temp_band_for_roast,
 )
 from .calibration import Calibration, confidence_label, fit_setup
 from .retrieval import (
@@ -170,7 +171,14 @@ def recommend(
             water_g=round(dose_g * target.ratio_aim, 1)
             if method != "espresso"
             else None,
-            brew_temp_c=None,
+            # A first shot still deserves a temperature to aim at, from the
+            # roast-level band. Suppressed by the guardrails when the machine
+            # cannot hold one.
+            brew_temp_c=(
+                round(sum(temp_band_for_roast(roast_ord)) / 2.0, 1)
+                if machine_caps.temp_controllable
+                else None
+            ),
             target_time_s=target.time_hi,
             notes=(protocol,) if protocol else (),
         )
