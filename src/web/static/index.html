@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=19" />
+  <link rel="stylesheet" href="/static/style.css?v=20" />
 </head>
 <body>
   <div id="app">
@@ -28,6 +28,13 @@
       <div class="header-inner">
         <span class="header-logo">☕</span>
         <span class="header-title">Barista AI</span>
+        <!-- Which setup a recipe belongs to, on every screen: a grind number
+             means something different on each. Tap to switch. -->
+        <button class="chip setup-chip" id="setup-chip" type="button" aria-haspopup="dialog">
+          <span id="setup-chip-name">—</span>
+          <span class="setup-chip-method" id="setup-chip-method"></span>
+          <svg class="setup-chip-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
         <!-- Which bundle you are actually running. Tap for detail, or to
              pull a newer one when the server has moved on. -->
         <button class="chip version-chip" id="version-chip" type="button"
@@ -38,11 +45,11 @@
     <!-- ── Main content ────────────────────────────────────────────────── -->
     <main class="main">
 
-      <!-- Scan Tab -->
-      <section class="tab-panel active" id="tab-scan">
+      <!-- ── Home: start a new bag, or pick up one you already have ─────── -->
+      <section class="tab-panel active" id="tab-home">
+        <div class="home-scroll">
 
-        <!-- Idle state -->
-        <div id="scan-idle" class="scan-idle">
+          <!-- Journey 1: a bag you have never seen -->
           <div class="scan-hero">
             <div class="scan-ring">
               <svg class="scan-ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -52,7 +59,7 @@
               </svg>
             </div>
             <h2 class="scan-title">Scan Your Coffee</h2>
-            <p class="scan-subtitle">Take a photo of your coffee bag for an instant dial-in recommendation</p>
+            <p class="scan-subtitle">Take a photo of the bag for a starting recipe</p>
           </div>
 
           <label class="btn btn-primary btn-scan" id="btn-scan" for="file-input">
@@ -60,17 +67,45 @@
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
             </svg>
-            Scan Coffee Bag
+            Scan a new bag
           </label>
           <input type="file" id="file-input" accept="image/*" capture="environment" class="file-input-hidden" />
 
           <div class="install-hint" id="install-hint" hidden>
             <strong>iPhone install tip:</strong> in Safari, tap Share then Add to Home Screen.
           </div>
+
+          <!-- Journey 2: a bag already in the system -->
+          <div class="tab-header-row home-list-head">
+            <div>
+              <h2 class="tab-title">Your coffees</h2>
+              <p class="tab-subtitle">Tap one to dial it in</p>
+            </div>
+            <div class="tab-actions">
+              <button class="btn btn-sm btn-primary" id="btn-add-log">Add</button>
+              <button class="btn btn-sm btn-ghost" id="btn-refresh-logs">Refresh</button>
+            </div>
+          </div>
+
+          <div id="recent-list" class="logs-list">
+            <div class="logs-empty">Loading your coffees…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Recipe: where both journeys land ───────────────────────────── -->
+      <section class="tab-panel" id="tab-recipe">
+
+        <!-- Nothing on the bench yet -->
+        <div id="recipe-empty" class="flow-panel scan-success">
+          <div class="success-icon">☕</div>
+          <h2 class="success-title">No coffee on the bench</h2>
+          <p class="success-sub">Scan a bag or pick one of your coffees to get a recipe.</p>
+          <button class="btn btn-primary" id="btn-go-home">Choose a coffee</button>
         </div>
 
         <!-- Loading state -->
-        <div id="scan-loading" class="scan-loading hidden">
+        <div id="scan-loading" class="flow-panel scan-loading hidden">
           <div class="loader">
             <div class="loader-ring"></div>
             <span class="loader-icon">☕</span>
@@ -80,7 +115,7 @@
         </div>
 
         <!-- Results state -->
-        <div id="scan-results" class="scan-results hidden">
+        <div id="recipe-view" class="flow-panel scan-results hidden">
           <div class="coffee-card">
             <div class="coffee-card-header">
               <div class="coffee-badge">☕</div>
@@ -90,6 +125,7 @@
               </div>
             </div>
             <div class="coffee-chips" id="coffee-chips"></div>
+            <p class="recipe-for" id="recipe-setup-line"></p>
           </div>
 
           <div class="dose-adjust">
@@ -121,37 +157,20 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
                 It worked!
               </button>
-              <button class="btn btn-ghost" id="btn-scan-again">Scan again</button>
+              <button class="btn btn-ghost" id="btn-scan-again">Done</button>
             </div>
           </div>
         </div>
 
         <!-- Success state -->
-        <div id="scan-success" class="scan-success hidden">
+        <div id="scan-success" class="flow-panel scan-success hidden">
           <div class="success-icon">✅</div>
-          <h2 class="success-title">Saved to your logs!</h2>
-          <p class="success-sub">Your dial-in data helps improve future recommendations.</p>
-          <button class="btn btn-primary" id="btn-new-scan">Scan Another Bag</button>
+          <h2 class="success-title">Shot logged</h2>
+          <p class="success-sub" id="success-sub">Every measured shot sharpens the next recommendation.</p>
+          <button class="btn btn-primary" id="btn-log-another">Next shot</button>
+          <button class="btn btn-ghost" id="btn-new-scan">Back to my coffees</button>
         </div>
 
-      </section>
-
-      <!-- Logs Tab -->
-      <section class="tab-panel" id="tab-logs">
-        <div class="tab-header-row">
-          <div>
-            <h2 class="tab-title">Bean Logs</h2>
-            <p class="tab-subtitle">Your recent saved dial-in entries</p>
-          </div>
-          <div class="tab-actions">
-            <button class="btn btn-sm btn-primary" id="btn-add-log">Add</button>
-            <button class="btn btn-sm btn-ghost" id="btn-refresh-logs">Refresh</button>
-          </div>
-        </div>
-
-        <div id="logs-list" class="logs-list">
-          <div class="logs-empty">Loading recent logs…</div>
-        </div>
       </section>
 
       <!-- Settings Tab -->
@@ -243,12 +262,20 @@
 
     <!-- ── Bottom navigation ────────────────────────────────────────────── -->
     <nav class="bottom-nav">
-      <button class="nav-item active" data-tab="tab-scan">
+      <button class="nav-item active" data-tab="tab-home">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-          <circle cx="12" cy="13" r="4"/>
+          <path d="M3 10.5 12 3l9 7.5"/>
+          <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/>
         </svg>
-        <span class="nav-label">Scan</span>
+        <span class="nav-label">Home</span>
+      </button>
+      <button class="nav-item" data-tab="tab-recipe">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6.5 6.5h11v9a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3v-9z"/>
+          <path d="M17.5 9h1a2 2 0 0 1 0 4h-1"/>
+          <path d="M6 3h12"/>
+        </svg>
+        <span class="nav-label">Recipe</span>
       </button>
       <button class="nav-item" data-tab="tab-settings">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -257,16 +284,27 @@
         </svg>
         <span class="nav-label">Settings</span>
       </button>
-      <button class="nav-item" data-tab="tab-logs">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M8 7h8M8 11h8M8 15h5"/>
-          <path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
-        </svg>
-        <span class="nav-label">Logs</span>
-      </button>
     </nav>
 
   </div><!-- #app -->
+
+  <!-- Switch brew setup. Two taps from anywhere, because a grind number is
+       only meaningful for one setup. -->
+  <div class="dialog-overlay hidden" id="setup-switch-dialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h3 class="dialog-title">Brewing with</h3>
+        <p class="dialog-sub">Switching recalculates the recipe for that setup.</p>
+      </div>
+      <div class="dialog-body">
+        <div class="setup-list" id="setup-switch-list"></div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" id="btn-switch-manage">Manage setups…</button>
+        <button class="btn btn-ghost" id="btn-close-setup-switch">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- "It worked!" dialog: log the dose + grind that dialled the coffee in -->
   <div class="dialog-overlay hidden" id="grind-dialog">
@@ -516,6 +554,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=19"></script>
+  <script src="/static/app.js?v=20"></script>
 </body>
 </html>

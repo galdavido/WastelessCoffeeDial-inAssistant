@@ -14,12 +14,21 @@ let serverAssetVersion = null;
 let engineVersion = null;
 
 /* ── State ──────────────────────────────────────────────────────────────── */
+/* What's on the bench. currentBeanId is set when the coffee exists in the
+   library, which is what lets the engine work from the real row. */
+let currentBeanId = null;
 let currentCoffeeData = null;
 let currentRecommendation = null;
 // The engine's structured numbers. Read these directly rather than parsing
 // them back out of the prose — the prose is an explanation, not a source.
 let currentRecipe = null;
 let currentRecommendationId = null;
+/* The active setup, mirrored into the header chip. */
+let activeSetupId = null;
+let activeSetupName = '';
+let activeSetupMethod = null;
+/* Navigation */
+let currentTab = 'tab-home';
 let editingBeanId = null;
 let setupEditingId = null;
 let equipmentEditingId = null;
@@ -28,6 +37,16 @@ let cachedEquipmentLibrary = { grinders: [], machines: [] };
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
+
+/* Bind a listener only if the element exists. During a deploy a fresh app.js
+   can briefly run against a cached older index.html (or the reverse); without
+   this an unguarded addEventListener on a missing id throws and takes the
+   whole script — and therefore the whole app — down blank. */
+function on(id, event, handler) {
+  const el = $(id);
+  if (el) el.addEventListener(event, handler);
+  return el;
+}
 
 /* Basket capacity shifts with roast: a dense dark roast packs less mass into the
    same basket than a fluffy light roast. These are the midpoints of the ranges
@@ -65,11 +84,33 @@ function currentScanDose() {
   return v > 0 ? v : null;
 }
 
+/* Data-driven rather than a hard-coded list, so adding a panel to the markup
+   is enough — no parallel array to forget to update. */
 function showPanel(id) {
-  ['scan-idle', 'scan-loading', 'scan-results', 'scan-success'].forEach(p => {
-    const el = $(p);
-    el && el.classList.toggle('hidden', p !== id);
+  document.querySelectorAll('.flow-panel').forEach(el => {
+    el.classList.toggle('hidden', el.id !== id);
   });
+}
+
+/* ── State transitions ──────────────────────────────────────────────────── */
+/* Only these three touch the recommendation, so a stale recommendation_id
+   cannot survive a recompute or be posted after a shot is logged. */
+function setRecommendation(data) {
+  currentRecipe = data.recipe || null;
+  currentRecommendation = data.recommendation || '';
+  currentRecommendationId = data.recommendation_id ?? null;
+}
+
+function clearRecommendation() {
+  currentRecipe = null;
+  currentRecommendation = null;
+  currentRecommendationId = null;
+}
+
+function clearCoffee() {
+  clearRecommendation();
+  currentCoffeeData = null;
+  currentBeanId = null;
 }
 
 /* ── Dialogs ────────────────────────────────────────────────────────────── */
@@ -134,20 +175,29 @@ function getApiErrorMessage(payload, fallback) {
 }
 
 /* ── Tab navigation ─────────────────────────────────────────────────────── */
-document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tabId = btn.dataset.tab;
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(tabId).classList.add('active');
-    if (tabId === 'tab-settings') {
-      loadSetups();
-      loadSettings();
-      loadEquipmentLibrary();
-    }
-    if (tabId === 'tab-logs') loadLogs();
+const TAB_LOADERS = {
+  'tab-home': () => loadRecents(),
+  'tab-settings': () => { loadSetups(); loadSettings(); loadEquipmentLibrary(); },
+  'tab-recipe': () => {},
+};
+
+/* Switching tabs never touches coffee state — that is the point of keeping
+   Recipe in the nav: you can detour to Settings and come back to your shot. */
+function showTab(id, { push = true } = {}) {
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === id);
   });
+  document.querySelectorAll('.nav-item').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === id);
+  });
+  currentTab = id;
+  (TAB_LOADERS[id] || (() => {}))();
+  // Give the back gesture something to pop; without this it exits the app.
+  if (push && history.state?.tab !== id) history.pushState({ tab: id }, '');
+}
+
+window.addEventListener('popstate', (e) => {
+  showTab(e.state?.tab || 'tab-home', { push: false });
 });
 
 /* ── Scan flow ──────────────────────────────────────────────────────────── */
@@ -158,11 +208,80 @@ if (installHint && (isIos || window.location.protocol !== 'https:') && !isStanda
   installHint.hidden = false;
 }
 
-$('file-input').addEventListener('change', async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  e.target.value = '';          // reset so same file can be re-selected
+/* Fill the coffee card from a profile — shared by both entrances. */
+function renderCoffeeCard(profile) {
+  if (!profile) return;
+  $('result-name').textContent = profile.name || '—';
+  $('result-roaster').textContent = profile.roaster || '—';
 
+  const chipsEl = $('coffee-chips');
+  if (!chipsEl) return;
+  chipsEl.innerHTML = '';
+  [
+    profile.origin,
+    profile.process,
+    profile.roast_level,
+    profile.roast_date ? `Roasted ${profile.roast_date}` : null,
+  ].forEach((v) => {
+    if (v && v !== 'Unknown') {
+      const span = document.createElement('span');
+      span.className = 'chip';
+      span.textContent = v;
+      chipsEl.appendChild(span);
+    }
+  });
+}
+
+/* The single path every recompute goes through: dose change, setup switch,
+   and refreshing after a shot. Sends bean_id when the coffee is in the
+   library so the engine works from the real row. */
+async function refreshRecommendation({ dose, silent = false } = {}) {
+  if (!currentBeanId && !currentCoffeeData) return false;
+  const body = currentBeanId
+    ? { bean_id: currentBeanId, dose_g: dose ?? null }
+    : { coffee_data: currentCoffeeData, dose_g: dose ?? null };
+
+  try {
+    const res = await fetch('/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not update recipe'));
+
+    if (data.coffee_data) currentCoffeeData = data.coffee_data;
+    renderRecipe(data);
+    return true;
+  } catch (err) {
+    if (!silent) showToast('❌ ' + (err.message || 'Could not update recipe'));
+    return false;
+  }
+}
+
+/* Journey 2: pick up a coffee already in the library. */
+async function openBean(entry) {
+  clearCoffee();
+  currentBeanId = Number(entry.bean_id);
+  showTab('tab-recipe');
+  showPanel('scan-loading');
+
+  const ok = await refreshRecommendation({ dose: null });
+  if (!ok) {
+    clearCoffee();
+    showPanel('recipe-empty');
+    showTab('tab-home');
+    return;
+  }
+  renderCoffeeCard(currentCoffeeData);
+  setScanDose(Number(currentCoffeeData?.preferred_dose_g) || 16);
+  showPanel('recipe-view');
+}
+
+/* Journey 1: a bag we have never seen. */
+async function analyzeFile(file) {
+  clearCoffee();
+  showTab('tab-recipe');
   showPanel('scan-loading');
 
   const form = new FormData();
@@ -173,30 +292,9 @@ $('file-input').addEventListener('change', async (e) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Analysis failed');
 
-    currentCoffeeData   = data.coffee_data;
-    currentRecommendation = data.recommendation;
-
-    // Coffee card
-    $('result-name').textContent    = currentCoffeeData.name    || '—';
-    $('result-roaster').textContent = currentCoffeeData.roaster || '—';
-
-    const chipsEl = $('coffee-chips');
-    chipsEl.innerHTML = '';
-    const chipFields = [
-      currentCoffeeData.origin,
-      currentCoffeeData.process,
-      currentCoffeeData.roast_level,
-      currentCoffeeData.roast_date ? `Roasted ${currentCoffeeData.roast_date}` : null,
-    ];
-    chipFields.forEach(v => {
-      if (v && v !== 'Unknown') {
-        const span = document.createElement('span');
-        span.className = 'chip';
-        span.textContent = v;
-        chipsEl.appendChild(span);
-      }
-    });
-
+    currentCoffeeData = data.coffee_data;
+    currentBeanId = data.coffee_data?.bean_id ?? null;
+    renderCoffeeCard(currentCoffeeData);
     renderRecipe(data);
 
     // Pre-fill the per-shot dose with a roast-aware guess; the user can override
@@ -208,26 +306,17 @@ $('file-input').addEventListener('change', async (e) => {
       roastLevel: currentCoffeeData.roast_level,
     });
 
-    showPanel('scan-results');
+    showPanel('recipe-view');
   } catch (err) {
-    showPanel('scan-idle');
+    clearCoffee();
+    showPanel('recipe-empty');
+    showTab('tab-home');
     showToast('❌ ' + (err.message || 'Something went wrong'));
   }
-});
+}
 
-$('btn-scan-again').addEventListener('click', () => {
-  currentCoffeeData = null;
-  currentRecommendation = null;
-  showPanel('scan-idle');
-});
-
-$('scan-dose-input').addEventListener('input', () => {
-  const dose = currentScanDose();
-  if (currentCoffeeData && dose !== null) currentCoffeeData.preferred_dose_g = dose;
-});
-
-$('btn-recalc').addEventListener('click', async () => {
-  if (!currentCoffeeData) return;
+async function recalcForDose() {
+  if (!currentBeanId && !currentCoffeeData) return;
   const dose = currentScanDose();
   if (dose === null) { showToast('Enter a valid dose'); return; }
 
@@ -236,105 +325,163 @@ $('btn-recalc').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Updating…';
   try {
-    const res = await fetch('/api/recommendation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ coffee_data: currentCoffeeData, dose_g: dose }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not update recipe'));
-
-    currentCoffeeData.preferred_dose_g = dose;
-    renderRecipe(data);
-    $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
-    showToast(`✅ Recipe updated for ${dose} g`);
-  } catch (err) {
-    showToast('❌ ' + (err.message || 'Could not update recipe'));
+    const ok = await refreshRecommendation({ dose });
+    if (ok) {
+      if (currentCoffeeData) currentCoffeeData.preferred_dose_g = dose;
+      $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
+      showToast(`✅ Recipe updated for ${dose} g`);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = prevLabel;
   }
+}
+
+/* ── Flow wiring ───────────────────────────────────────────────────────── */
+document.querySelectorAll('.nav-item').forEach((btn) => {
+  btn.addEventListener('click', () => showTab(btn.dataset.tab));
 });
 
-$('btn-new-scan').addEventListener('click', () => showPanel('scan-idle'));
+on('file-input', 'change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  e.target.value = '';          // reset so the same file can be re-selected
+  await analyzeFile(file);
+});
 
-/* ── Logs ──────────────────────────────────────────────────────────────── */
-$('btn-refresh-logs').addEventListener('click', () => loadLogs());
-$('btn-add-log').addEventListener('click', () => openRecordEditor());
-$('btn-save-record').addEventListener('click', () => saveRecordFromForm());
-$('btn-cancel-record').addEventListener('click', () => closeRecordEditor());
-$('setup-select').addEventListener('change', (event) => selectSetup(event.target.value));
-$('btn-manage-setups').addEventListener('click', () => openSetupManager());
-$('btn-save-setup').addEventListener('click', () => saveSetupFromForm());
-$('btn-cancel-setup').addEventListener('click', () => closeSetupManager());
-$('btn-manage-equipment').addEventListener('click', () => openEquipmentManager());
-$('btn-save-equipment').addEventListener('click', () => saveEquipmentFromForm());
-$('btn-close-equipment').addEventListener('click', () => closeEquipmentManager());
-$('btn-cancel-equipment-edit').addEventListener('click', () => clearEquipmentForm());
+on('scan-dose-input', 'input', () => {
+  const dose = currentScanDose();
+  if (currentCoffeeData && dose !== null) currentCoffeeData.preferred_dose_g = dose;
+});
 
-async function loadLogs() {
-  const list = $('logs-list');
-  list.innerHTML = '<div class="logs-empty">Loading saved beans…</div>';
+on('btn-recalc', 'click', () => recalcForDose());
+
+on('btn-scan-again', 'click', () => {
+  clearCoffee();
+  showPanel('recipe-empty');
+  showTab('tab-home');
+});
+
+on('btn-go-home', 'click', () => showTab('tab-home'));
+
+// Straight back to the recipe for another shot on the same coffee.
+on('btn-log-another', 'click', () => showPanel('recipe-view'));
+
+on('btn-new-scan', 'click', () => {
+  clearCoffee();
+  showPanel('recipe-empty');
+  showTab('tab-home');
+});
+
+/* ── Coffees & settings wiring ─────────────────────────────────────────── */
+on('btn-refresh-logs', 'click', () => loadRecents());
+on('btn-add-log', 'click', () => openRecordEditor());
+on('btn-save-record', 'click', () => saveRecordFromForm());
+on('btn-cancel-record', 'click', () => closeRecordEditor());
+on('setup-select', 'change', (event) => selectSetup(event.target.value));
+on('setup-chip', 'click', () => openSetupSwitch());
+on('btn-close-setup-switch', 'click', () => closeDialog('setup-switch-dialog'));
+on('btn-switch-manage', 'click', () => {
+  closeDialog('setup-switch-dialog');
+  showTab('tab-settings');
+  openSetupManager();
+});
+on('btn-manage-setups', 'click', () => openSetupManager());
+on('btn-save-setup', 'click', () => saveSetupFromForm());
+on('btn-cancel-setup', 'click', () => closeSetupManager());
+on('btn-manage-equipment', 'click', () => openEquipmentManager());
+on('btn-save-equipment', 'click', () => saveEquipmentFromForm());
+on('btn-close-equipment', 'click', () => closeEquipmentManager());
+on('btn-cancel-equipment-edit', 'click', () => clearEquipmentForm());
+
+/* Human "3 days ago" for the card foot — precise dates are noise here; what
+   matters is whether this is the bag you're working through. */
+function relativeDay(iso) {
+  if (!iso) return 'never brewed';
+  const then = new Date(iso);
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+  if (days <= 0) return 'brewed today';
+  if (days === 1) return 'brewed yesterday';
+  if (days < 30) return `brewed ${days} days ago`;
+  return `brewed ${then.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
+
+function daysSinceRoast(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+
+async function loadRecents() {
+  const list = $('recent-list');
+  if (!list) return;
+  list.innerHTML = '<div class="logs-empty">Loading your coffees…</div>';
 
   try {
     const response = await fetch('/api/logs?limit=20');
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Failed to load beans');
+    if (!response.ok) throw new Error(data.detail || 'Failed to load coffees');
 
     const entries = data.entries || [];
     if (!entries.length) {
-      list.innerHTML = '<div class="logs-empty">No saved beans yet. Scan a bag and save feedback to populate this view.</div>';
+      list.innerHTML =
+        '<div class="logs-empty">No coffees yet. Scan a bag to get started.</div>';
       return;
     }
 
     list.innerHTML = '';
-    entries.forEach(entry => {
+    entries.forEach((entry) => {
       const card = document.createElement('article');
-      card.className = 'log-card';
+      card.className = 'log-card is-tappable';
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
 
       const latest = entry.latest_log;
-      const logsCount = Number(entry.logs_count || 0);
-      const hasLatest = Boolean(latest);
-
-      const latestHtml = hasLatest
-        ? `
-          <div class="log-grid">
-            <div><span class="log-label">Grind</span><span class="log-value">${escapeHtml(latest.grind_setting)}</span></div>
-            <div><span class="log-label">Dose</span><span class="log-value">${escapeHtml(String(latest.dose_g))}g</span></div>
-            <div><span class="log-label">Yield</span><span class="log-value">${escapeHtml(String(latest.yield_g))}g</span></div>
-            <div><span class="log-label">Time</span><span class="log-value">${escapeHtml(String(latest.time_s))}s</span></div>
-          </div>
-          <div class="log-foot">
-            <span>${escapeHtml(latest.grinder)}</span>
-            <span>${escapeHtml(latest.machine)}</span>
-            <span>${escapeHtml(new Date(latest.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>
-          </div>
-          ${latest.tasting_notes ? `<p class="log-notes">${escapeHtml(latest.tasting_notes)}</p>` : ''}
-        `
-        : '<div class="logs-empty logs-empty-compact">No dial-in log saved yet for this bean.</div>';
+      const shots = Number(entry.logs_count || 0);
+      const rested = daysSinceRoast(entry.roast_date);
 
       card.innerHTML = `
-        ${logMedia(entry.origin, hasLatest ? latest.image_url : null)}
+        ${logMedia(entry.origin, latest ? latest.image_url : null)}
         <div class="log-card-head">
           <div>
             <h3 class="log-title">${escapeHtml(entry.roaster)} ${escapeHtml(entry.bean_name)}</h3>
             <p class="log-meta">${escapeHtml(entry.origin)} • ${escapeHtml(entry.process)} • ${escapeHtml(entry.roast_level)}</p>
           </div>
-          <span class="log-rating">${escapeHtml(String(logsCount))} log${logsCount === 1 ? '' : 's'}</span>
+          <span class="log-rating">${escapeHtml(String(shots))} shot${shots === 1 ? '' : 's'}</span>
+        </div>
+        <div class="log-foot">
+          <span>${escapeHtml(relativeDay(entry.last_brewed_at))}</span>
+          ${rested !== null ? `<span>${escapeHtml(String(rested))} days off roast</span>` : ''}
         </div>
         <div class="log-actions">
+          <button class="btn btn-sm btn-primary js-open-bean">Dial in</button>
           <button class="btn btn-sm btn-ghost js-edit-record">Edit</button>
           <button class="btn btn-sm btn-ghost js-delete-record">Delete</button>
         </div>
-        ${latestHtml}
       `;
-      card.querySelector('.js-edit-record')?.addEventListener('click', () => openRecordEditor(entry));
-      card.querySelector('.js-delete-record')?.addEventListener('click', () => deleteRecord(entry));
+
+      const open = () => openBean(entry);
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      });
+      // Secondary actions must not also open the coffee.
+      card.querySelector('.js-open-bean')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        open();
+      });
+      card.querySelector('.js-edit-record')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openRecordEditor(entry);
+      });
+      card.querySelector('.js-delete-record')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteRecord(entry);
+      });
       wireLogMedia(card);
       list.appendChild(card);
     });
   } catch (err) {
-    list.innerHTML = `<div class="logs-empty">${escapeHtml(err.message || 'Could not load beans')}</div>`;
+    list.innerHTML = `<div class="logs-empty">${escapeHtml(err.message || 'Could not load coffees')}</div>`;
   }
 }
 
@@ -396,7 +543,7 @@ async function saveRecordFromForm() {
     if (!res.ok) throw new Error(data.detail || 'Save failed');
 
     closeRecordEditor();
-    await loadLogs();
+    await loadRecents();
     showToast('✅ Record saved');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save record'));
@@ -412,7 +559,12 @@ async function deleteRecord(entry) {
     const res = await fetch(`/api/logs/${beanId}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Delete failed');
-    await loadLogs();
+    // If the deleted coffee is the one on the bench, take it off.
+    if (currentBeanId === beanId) {
+      clearCoffee();
+      showPanel('recipe-empty');
+    }
+    await loadRecents();
     showToast('✅ Record deleted');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not delete record'));
@@ -567,7 +719,7 @@ function closePhotoViewer() {
   }, 250);
 }
 
-$('btn-close-photo').addEventListener('click', () => closePhotoViewer());
+on('btn-close-photo', 'click', () => closePhotoViewer());
 
 function wireLogMedia(card) {
   const photo = card.querySelector('.log-photo');
@@ -635,9 +787,7 @@ const GUARDRAIL_LABELS = {
 };
 
 function renderRecipe(data) {
-  currentRecommendation = data.recommendation || '';
-  currentRecipe = data.recipe || null;
-  currentRecommendationId = data.recommendation_id ?? null;
+  setRecommendation(data);
 
   const grid = $('recipe-grid');
   grid.innerHTML = '';
@@ -678,6 +828,16 @@ function renderRecipe(data) {
     : currentRecommendation;
   $('recommendation-text').textContent = prose || '—';
   $('recipe-confidence').textContent = data.confidence_label || '';
+
+  // Attribute the numbers to a setup: the same grind means something
+  // different on a different grinder.
+  const setupLine = $('recipe-setup-line');
+  if (setupLine) {
+    const method = r?.method ? METHOD_LABELS[r.method] || r.method : '';
+    setupLine.textContent = activeSetupName
+      ? `for ${activeSetupName}${method ? ` · ${method}` : ''}`
+      : '';
+  }
 }
 
 /* ── Pre-infusion tap timer ─────────────────────────────────────────────── */
@@ -708,7 +868,7 @@ function resetPrepTimer({ clearFields = true } = {}) {
   }
 }
 
-$('prep-step-btn').addEventListener('click', () => {
+on('prep-step-btn', 'click', () => {
   const now = performance.now();
   const stage = $('prep-step-btn').dataset.stage;
 
@@ -728,7 +888,7 @@ $('prep-step-btn').addEventListener('click', () => {
   }
 });
 
-$('prep-reset-btn').addEventListener('click', () => resetPrepTimer());
+on('prep-reset-btn', 'click', () => resetPrepTimer());
 
 /* ── Feedback: log the shot ─────────────────────────────────────────────── */
 /* The grind number comes from the engine's structured recipe. It used to be
@@ -746,7 +906,7 @@ document.querySelectorAll('#taste-scale .taste-btn').forEach((btn) => {
   });
 });
 
-$('btn-worked').addEventListener('click', () => {
+on('btn-worked', 'click', () => {
   const dose = currentScanDose() ?? currentCoffeeData?.preferred_dose_g ?? '';
   $('worked-dose-input').value = dose === '' ? '' : String(dose);
   $('grind-input').value = currentRecipe?.grind_clicks ?? '';
@@ -765,7 +925,7 @@ $('btn-worked').addEventListener('click', () => {
   openDialog('grind-dialog');
 });
 
-$('btn-save-grind').addEventListener('click', () => saveFeedback({
+on('btn-save-grind', 'click', () => saveFeedback({
   grind: $('grind-input').value.trim(),
   dose: parseFloat($('worked-dose-input').value),
   yield_g: parseFloat($('worked-yield-input').value),
@@ -775,11 +935,15 @@ $('btn-save-grind').addEventListener('click', () => saveFeedback({
   preinfusion_s: parseFloat($('worked-preinfusion-input').value),
   pause_s: parseFloat($('worked-pause-input').value),
 }));
-$('btn-skip-grind').addEventListener('click', () => closeDialog('grind-dialog'));
+on('btn-skip-grind', 'click', () => closeDialog('grind-dialog'));
 
 async function saveFeedback(worked) {
+  if (!currentCoffeeData && !currentBeanId) {
+    // Was a silent early-return, which swallowed the shot with no explanation.
+    showToast('Nothing to log — pick a coffee first');
+    return;
+  }
   closeDialog('grind-dialog');
-  if (!currentCoffeeData || !currentRecommendation) return;
 
   const actualGrind = worked && worked.grind ? worked.grind : null;
   const doseUsed = worked && worked.dose > 0
@@ -805,14 +969,30 @@ async function saveFeedback(worked) {
         preinfusion_s:  num(worked?.preinfusion_s),
         pause_s:        num(worked?.pause_s),
         recommendation_id: currentRecommendationId,
-        image_name:     currentCoffeeData.image_name ?? null,
+        image_name:     currentCoffeeData?.image_name ?? null,
       }),
     });
     if (!res.ok) {
       const d = await res.json();
       throw new Error(d.detail || 'Save failed');
     }
+
+    // That recommendation has been consumed. Clearing it here is what stops
+    // a second shot being logged against the same recommendation_id.
+    clearRecommendation();
     showPanel('scan-success');
+
+    // Fold the shot into the next suggestion, so "Next shot" already has it.
+    const refreshed = await refreshRecommendation({
+      dose: currentScanDose(),
+      silent: true,
+    });
+    const sub = $('success-sub');
+    if (sub) {
+      sub.textContent = refreshed
+        ? 'Recipe updated with that shot. Tap "Next shot" to see it.'
+        : 'Every measured shot sharpens the next recommendation.';
+    }
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save'));
   }
@@ -851,6 +1031,12 @@ async function loadSetups() {
 
     const activeId = Number(data.active_setup_id);
     cachedSetups = Array.isArray(data.setups) ? data.setups : [];
+
+    const active = cachedSetups.find((s) => Number(s.id) === activeId);
+    activeSetupId = activeId || null;
+    activeSetupName = active?.name || '';
+    activeSetupMethod = active?.method || null;
+    renderSetupChip();
 
     select.innerHTML = '';
     cachedSetups.forEach(setup => {
@@ -1034,9 +1220,57 @@ function renderSetupManagerList(activeId = null) {
   });
 }
 
+const METHOD_LABELS = {
+  espresso: 'espresso',
+  pourover: 'pour-over',
+  moka: 'moka',
+};
+
+function renderSetupChip() {
+  const name = $('setup-chip-name');
+  const method = $('setup-chip-method');
+  if (name) name.textContent = activeSetupName || 'No setup';
+  if (method) {
+    method.textContent = activeSetupMethod
+      ? METHOD_LABELS[activeSetupMethod] || activeSetupMethod
+      : '';
+  }
+}
+
+function openSetupSwitch() {
+  const list = $('setup-switch-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!cachedSetups.length) {
+    list.innerHTML = '<div class="logs-empty">No setups yet. Add one in Settings.</div>';
+  }
+
+  cachedSetups.forEach((setup) => {
+    const isActive = Number(setup.id) === activeSetupId;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'setup-item' + (isActive ? ' is-active' : '');
+    row.innerHTML = `
+      <div class="setup-item-main">
+        <span class="setup-item-name">${escapeHtml(setup.name)}</span>
+        <span class="setup-item-method">${escapeHtml(
+          METHOD_LABELS[setup.method] || setup.method || 'espresso'
+        )} · ${escapeHtml(setup.grinder?.model || '')}</span>
+      </div>
+      ${isActive ? '<span class="setup-active-pill">Active</span>' : ''}
+    `;
+    row.addEventListener('click', () => selectSetup(setup.id));
+    list.appendChild(row);
+  });
+
+  openDialog('setup-switch-dialog');
+}
+
 async function selectSetup(setupId) {
   const parsed = Number(setupId);
   if (!parsed) return;
+  if (parsed === activeSetupId) { closeDialog('setup-switch-dialog'); return; }
 
   try {
     const res = await fetch('/api/setups/active', {
@@ -1047,8 +1281,18 @@ async function selectSetup(setupId) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not switch setup'));
 
-    await Promise.all([loadSetups(), loadSettings()]);
-    showToast('✅ Setup switched');
+    closeDialog('setup-switch-dialog');
+    await loadSetups();
+    loadSettings();
+
+    // The recipe on screen belongs to the setup it was computed for. Leaving
+    // it there after a switch would show espresso numbers labelled as filter.
+    if (currentBeanId || currentCoffeeData) {
+      await refreshRecommendation({ dose: currentScanDose() });
+    } else {
+      clearRecommendation();
+    }
+    showToast(`✅ Now on ${activeSetupName || 'the new setup'}`);
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not switch setup'));
   }
@@ -1130,7 +1374,7 @@ function populateEquipmentForm(item) {
   $('equipment-form-title').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-$('equipment-form-type').addEventListener('change', (e) => showCapsFor(e.target.value));
+on('equipment-form-type', 'change', (e) => showCapsFor(e.target.value));
 
 function clearSetupForm() {
   $('setup-form-name').value = '';
@@ -1263,15 +1507,15 @@ async function deleteSetup(setup) {
   }
 }
 
-$('btn-open-equipment-manager').addEventListener('click', () => openEquipmentManager());
+on('btn-open-equipment-manager', 'click', () => openEquipmentManager());
 
-$('btn-save-dose').addEventListener('click', async () => {
+on('btn-save-dose', 'click', async () => {
   const val = parseFloat($('dose-input').value);
   if (!val || val <= 0) { showToast('Enter a valid dose'); return; }
   await putJson('/api/settings/dose', { dose_g: val }, `Dose set to ${val}g ✓`);
 });
 
-$('btn-save-offset').addEventListener('click', async () => {
+on('btn-save-offset', 'click', async () => {
   const raw = $('offset-input').value.trim();
   if (raw === '') { showToast('Enter an offset value'); return; }
   const val = parseFloat(raw);
@@ -1370,7 +1614,7 @@ async function updateToLatest() {
   location.reload();
 }
 
-$('version-chip')?.addEventListener('click', () => {
+on('version-chip', 'click', () => {
   if (serverAssetVersion && BUNDLE_VERSION && serverAssetVersion !== BUNDLE_VERSION) {
     // Never automatic: a reload loop against a broken deploy is worse than
     // running a stale bundle for another minute.
@@ -1388,5 +1632,10 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+/* ── Boot ───────────────────────────────────────────────────────────────── */
+clearCoffee();
+showPanel('recipe-empty');
+showTab('tab-home', { push: false });
+history.replaceState({ tab: 'tab-home' }, '');
 loadSetups();
 loadVersion();
