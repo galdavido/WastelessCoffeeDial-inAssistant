@@ -10,17 +10,25 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from ai.rag import get_best_grind_setting
 from ai.vision import analyze_coffee_bag, get_last_vision_error
 from database.models import Bean, BrewSetup, DialInLog, Equipment
 
 from .db_session import get_db
+from .engine import (
+    persist_recommendation,
+    recommend,
+    render_legacy_text,
+    serialize_result,
+)
 from .web_helpers import (
     as_non_empty_text,
+    find_existing_bean,
     get_active_setup,
     get_default_dose_g,
     get_grind_offset_clicks,
+    parse_roast_date,
     resolve_log_values,
+    roast_level_ordinal,
     save_dial_in_log,
     serialize_equipment,
     serialize_setup,
@@ -60,6 +68,63 @@ def _server_error(exc: Exception, action: str) -> HTTPException:
     """Log the real error server-side, return a generic message to the client."""
     logger.exception("Error while %s: %s", action, exc)
     return HTTPException(status_code=500, detail=f"Could not {action}.")
+
+
+def _bean_for(db: Session, coffee_data: dict[str, Any]) -> Bean | None:
+    """The stored bean if we have brewed it, otherwise a transient stand-in.
+
+    An unsaved Bean still carries roast level, process and origin, which is
+    what similarity scoring needs -- so a coffee scanned for the first time
+    still gets sensible retrieval rather than none.
+    """
+    name = as_non_empty_text(coffee_data.get("name"))
+    roaster = as_non_empty_text(coffee_data.get("roaster"))
+    origin = as_non_empty_text(coffee_data.get("origin"))
+    process = as_non_empty_text(coffee_data.get("process"))
+    roast_level = as_non_empty_text(coffee_data.get("roast_level"))
+
+    existing = find_existing_bean(
+        db, name=name, roaster=roaster, origin=origin, process=process
+    )
+    if existing is not None:
+        return existing
+
+    return Bean(
+        roaster=roaster,
+        name=name,
+        origin=origin,
+        process=process,
+        roast_level=roast_level,
+        roast_date=parse_roast_date(coffee_data.get("roast_date")),
+        roast_level_ord=roast_level_ordinal(roast_level),
+    )
+
+
+def _engine_recommendation(db: Session, coffee_data: dict[str, Any]) -> dict[str, Any]:
+    """Run the deterministic engine and shape the API response.
+
+    The response is a superset: `recipe` and `rationale` are the real
+    contract, while the legacy `recommendation` string is rendered *from* the
+    structured result so older PWA clients keep working for one release. The
+    number in that prose is the engine's number, not one parsed back out of
+    generated text.
+    """
+    setup = get_active_setup(db)
+    bean = _bean_for(db, coffee_data)
+    dose = coffee_data.get("preferred_dose_g") or get_default_dose_g(db)
+
+    result = recommend(db, setup, bean, float(dose))
+
+    recommendation_id: int | None = None
+    if bean is not None and bean.id is not None:
+        # Only persist against a bean that actually exists; a transient
+        # stand-in has no row to reference.
+        recommendation_id = persist_recommendation(db, result, setup, bean)
+
+    payload = serialize_result(result)
+    payload["recommendation"] = render_legacy_text(result)
+    payload["recommendation_id"] = recommendation_id
+    return payload
 
 
 def register_routes(app: FastAPI, static_dir: str) -> None:
@@ -166,8 +231,8 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         if image_name:
             coffee_data["image_name"] = image_name
 
-        recommendation = get_best_grind_setting(coffee_data)
-        return {"coffee_data": coffee_data, "recommendation": recommendation}
+        payload = _engine_recommendation(db, coffee_data)
+        return {"coffee_data": coffee_data, **payload}
 
     @app.post("/api/recommendation")
     def refresh_recommendation(
@@ -190,10 +255,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
 
         try:
-            recommendation = get_best_grind_setting(coffee_data)
+            return _engine_recommendation(db, coffee_data)
         except Exception as exc:
             raise _server_error(exc, "refresh recommendation") from exc
-        return {"recommendation": recommendation}
 
     @app.post("/api/feedback")
     def save_feedback(body: FeedbackRequest) -> dict[str, str]:
@@ -204,6 +268,13 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 actual_grind=body.actual_grind,
                 dose_g=body.dose_g,
                 image_name=body.image_name,
+                yield_g=body.yield_g,
+                water_g=body.water_g,
+                time_s=body.time_s,
+                taste_axis=body.taste_axis,
+                astringent=body.astringent,
+                brew_temp_c=body.brew_temp_c,
+                recommendation_id=body.recommendation_id,
             )
         except Exception as exc:
             raise _server_error(exc, "save feedback") from exc

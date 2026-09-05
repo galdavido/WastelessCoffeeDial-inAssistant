@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -11,6 +11,17 @@ class FeedbackRequest(BaseModel):
     actual_grind: str | None = None
     dose_g: float | None = None
     image_name: str | None = None
+    # Measured outcome. All optional, and absent means unmeasured -- never
+    # substituted with a default, because calibration reads these as truth.
+    yield_g: float | None = None
+    water_g: float | None = None
+    time_s: int | None = None
+    taste_axis: (
+        Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"] | None
+    ) = None
+    astringent: bool | None = None
+    brew_temp_c: float | None = None
+    recommendation_id: int | None = None
 
 
 class RecommendationRequest(BaseModel):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from datetime import date, datetime
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -103,6 +104,27 @@ def parse_grind_clicks(value: str | float | None) -> float | None:
         return float(match.group(1).replace(",", "."))
     except ValueError:
         return None
+
+
+def parse_roast_date(value: Any) -> date | None:
+    """Parse the roast date vision extracts, tolerating the usual formats.
+
+    Returns None rather than guessing: days-since-roast widens the acceptance
+    bands, so a wrong date silently changes the advice.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text or text.lower() in ("none", "unknown", "n/a"):
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%Y.%m.%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def roast_level_ordinal(label: str | None) -> int | None:
@@ -323,6 +345,13 @@ def save_dial_in_log(
     actual_grind: str | None = None,
     dose_g: float | None = None,
     image_name: str | None = None,
+    yield_g: float | None = None,
+    water_g: float | None = None,
+    time_s: int | None = None,
+    taste_axis: str | None = None,
+    astringent: bool | None = None,
+    brew_temp_c: float | None = None,
+    recommendation_id: int | None = None,
 ) -> None:
     db = SessionLocal()
     try:
@@ -378,15 +407,28 @@ def save_dial_in_log(
                 grind_setting=grind_setting,
                 grind_clicks=grind_clicks,
                 dose_g=resolved_dose_g,
-                # Outcome fields stay None until the user measures them.
-                yield_g=None,
-                time_s=None,
+                # Whatever the user actually measured; anything they left
+                # blank stays None rather than being filled with a default.
+                yield_g=yield_g,
+                water_g=water_g,
+                time_s=time_s,
+                taste_axis=taste_axis,
+                astringent=astringent,
+                brew_temp_c=brew_temp_c,
                 rating=None,
                 tasting_notes=None,
+                recommendation_id=recommendation_id,
                 # LLM prose is kept, but out of the human tasting-notes field
                 # and out of anything the engine reads.
                 llm_note=recommendation,
-                data_quality="partial",
+                data_quality=classify_data_quality(
+                    grind_clicks=grind_clicks,
+                    time_s=time_s,
+                    yield_g=yield_g,
+                    water_g=water_g,
+                    rating=None,
+                    taste_axis=taste_axis,
+                ),
                 image_path=resolved_image_name,
             )
         )

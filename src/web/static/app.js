@@ -1,6 +1,10 @@
 /* ── State ──────────────────────────────────────────────────────────────── */
 let currentCoffeeData = null;
 let currentRecommendation = null;
+// The engine's structured numbers. Read these directly rather than parsing
+// them back out of the prose — the prose is an explanation, not a source.
+let currentRecipe = null;
+let currentRecommendationId = null;
 let editingBeanId = null;
 let setupEditingId = null;
 let equipmentEditingId = null;
@@ -178,7 +182,7 @@ $('file-input').addEventListener('change', async (e) => {
       }
     });
 
-    $('recommendation-text').textContent = currentRecommendation || '—';
+    renderRecipe(data);
 
     // Pre-fill the per-shot dose with a roast-aware guess; the user can override
     // it and hit "Update recipe" to regenerate the recommendation.
@@ -225,9 +229,8 @@ $('btn-recalc').addEventListener('click', async () => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not update recipe'));
 
-    currentRecommendation = data.recommendation;
     currentCoffeeData.preferred_dose_g = dose;
-    $('recommendation-text').textContent = currentRecommendation || '—';
+    renderRecipe(data);
     $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
     showToast(`✅ Recipe updated for ${dose} g`);
   } catch (err) {
@@ -599,23 +602,106 @@ function parseNullableInt(value) {
   return Number.isNaN(n) ? null : n;
 }
 
-/* ── Feedback: "It worked!" ─────────────────────────────────────────────── */
-function suggestedGrindFromRecommendation(text) {
-  // Pull the number out of e.g. "**Suggested Grind Setting:** 33 clicks".
-  const match = /Suggested Grind Setting:\**\s*([0-9]+(?:\.[0-9]+)?)/i.exec(String(text || ''));
-  return match ? match[1] : '';
+/* ── Rendering the recipe ───────────────────────────────────────────────── */
+/* Numbers come from data.recipe as labelled fields; the prose sits underneath
+   as explanation. Every clamp the engine applied is shown as a chip rather
+   than silently changing what was asked for. */
+const GUARDRAIL_LABELS = {
+  grind_channeling_floor: 'Held back from finer — channeling',
+  grind_hardware_min: 'At your grinder’s finest',
+  grind_hardware_max: 'At your grinder’s coarsest',
+  grind_snapped_to_step: 'Rounded to a real click',
+  dose_basket_capacity: 'Fitted to your basket',
+  dose_plausible_range: 'Dose clamped',
+  ratio_out_of_band: 'Ratio pulled into range',
+  yield_below_dose_rejected: 'Yield looked mis-logged',
+  temp_not_controllable: 'Your machine’s temp is fixed',
+  temp_machine_range: 'Temp clamped to your machine',
+};
+
+function renderRecipe(data) {
+  currentRecommendation = data.recommendation || '';
+  currentRecipe = data.recipe || null;
+  currentRecommendationId = data.recommendation_id ?? null;
+
+  const grid = $('recipe-grid');
+  grid.innerHTML = '';
+  const r = currentRecipe;
+  if (r) {
+    const fields = [
+      ['Grind', r.grind_clicks !== null && r.grind_clicks !== undefined ? r.grind_clicks : '—'],
+      ['Dose', r.dose_g != null ? `${r.dose_g} g` : '—'],
+      [r.method === 'espresso' ? 'Out' : 'Water',
+       (r.yield_g ?? r.water_g) != null ? `${r.yield_g ?? r.water_g} g` : '—'],
+      ['Time', r.target_time_s != null ? `${r.target_time_s} s` : '—'],
+    ];
+    if (r.brew_temp_c != null) fields.push(['Temp', `${r.brew_temp_c} °C`]);
+    fields.forEach(([label, value]) => {
+      const cell = document.createElement('div');
+      cell.className = 'recipe-cell';
+      cell.innerHTML = `<span class="recipe-label"></span><span class="recipe-value"></span>`;
+      cell.querySelector('.recipe-label').textContent = label;
+      cell.querySelector('.recipe-value').textContent = value;
+      grid.appendChild(cell);
+    });
+  }
+
+  const flags = $('recipe-flags');
+  flags.innerHTML = '';
+  (r?.guardrails_hit || []).forEach((key) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip chip-guard';
+    chip.textContent = GUARDRAIL_LABELS[key] || key;
+    flags.appendChild(chip);
+  });
+
+  const prose = data.rationale
+    ? [data.rationale.headline, data.rationale.why, data.rationale.what_to_watch]
+        .filter(Boolean).join('\n\n')
+    : currentRecommendation;
+  $('recommendation-text').textContent = prose || '—';
+  $('recipe-confidence').textContent = data.confidence_label || '';
 }
+
+/* ── Feedback: log the shot ─────────────────────────────────────────────── */
+/* The grind number comes from the engine's structured recipe. It used to be
+   regexed back out of the recommendation prose, which meant a generated
+   number could be logged as if it were something the user had measured. */
+let selectedTaste = null;
+
+document.querySelectorAll('#taste-scale .taste-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const value = btn.dataset.taste;
+    selectedTaste = selectedTaste === value ? null : value;
+    document.querySelectorAll('#taste-scale .taste-btn').forEach((b) => {
+      b.classList.toggle('is-selected', b.dataset.taste === selectedTaste);
+    });
+  });
+});
 
 $('btn-worked').addEventListener('click', () => {
   const dose = currentScanDose() ?? currentCoffeeData?.preferred_dose_g ?? '';
   $('worked-dose-input').value = dose === '' ? '' : String(dose);
-  $('grind-input').value = suggestedGrindFromRecommendation(currentRecommendation);
+  $('grind-input').value = currentRecipe?.grind_clicks ?? '';
+  $('worked-yield-input').value = currentRecipe?.yield_g ?? currentRecipe?.water_g ?? '';
+  $('worked-time-input').value = '';
+  $('worked-astringent-input').checked = false;
+  selectedTaste = null;
+  document.querySelectorAll('#taste-scale .taste-btn')
+    .forEach((b) => b.classList.remove('is-selected'));
+  // Pour-over and moka are measured by water in, not beverage out.
+  $('yield-label').textContent =
+    currentRecipe && currentRecipe.method !== 'espresso' ? 'Water in (g)' : 'Out (g)';
   openDialog('grind-dialog');
 });
 
 $('btn-save-grind').addEventListener('click', () => saveFeedback({
   grind: $('grind-input').value.trim(),
   dose: parseFloat($('worked-dose-input').value),
+  yield_g: parseFloat($('worked-yield-input').value),
+  time_s: parseInt($('worked-time-input').value, 10),
+  taste_axis: selectedTaste,
+  astringent: $('worked-astringent-input').checked,
 }));
 $('btn-skip-grind').addEventListener('click', () => closeDialog('grind-dialog'));
 
@@ -627,6 +713,7 @@ async function saveFeedback(worked) {
   const doseUsed = worked && worked.dose > 0
     ? worked.dose
     : (currentScanDose() ?? currentCoffeeData.preferred_dose_g ?? null);
+  const num = (v) => (Number.isFinite(v) && v > 0 ? v : null);
 
   try {
     const res = await fetch('/api/feedback', {
@@ -637,6 +724,13 @@ async function saveFeedback(worked) {
         recommendation: currentRecommendation,
         actual_grind:   actualGrind,
         dose_g:         doseUsed,
+        // Anything left blank is sent as null and stored as unmeasured.
+        // Never filled in with a plausible-looking default.
+        yield_g:        num(worked?.yield_g),
+        time_s:         num(worked?.time_s),
+        taste_axis:     worked?.taste_axis ?? null,
+        astringent:     worked?.astringent ?? null,
+        recommendation_id: currentRecommendationId,
         image_name:     currentCoffeeData.image_name ?? null,
       }),
     });

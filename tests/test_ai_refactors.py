@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime
-from types import SimpleNamespace
 
 from ai.model_selection import try_model_candidates
-from ai.rag import _rank_similar_logs_for_active_setup
 from ai.vision import _parse_coffee_data_response
 
 
@@ -53,31 +50,9 @@ class TestAiRefactors(unittest.TestCase):
         self.assertEqual(error, "m1: invalid api key")
         self.assertEqual(attempts, ["m1"])
 
-    def test_rank_similar_logs_prefers_active_setup_equipment(self) -> None:
-        now = datetime.now(UTC)
-        active_grinder = SimpleNamespace(brand="Kingrinder", model="K6")
-        active_machine = SimpleNamespace(brand="AVX", model="Hero Plus 2024")
-
-        matching_row = (
-            SimpleNamespace(created_at=now),
-            SimpleNamespace(),
-            SimpleNamespace(brand="Kingrinder", model="K6"),
-            SimpleNamespace(brand="AVX", model="Hero Plus 2024"),
-        )
-        newer_non_matching_row = (
-            SimpleNamespace(created_at=now.replace(year=now.year + 1)),
-            SimpleNamespace(),
-            SimpleNamespace(brand="Other", model="GX"),
-            SimpleNamespace(brand="Other", model="MX"),
-        )
-
-        ranked = _rank_similar_logs_for_active_setup(
-            [newer_non_matching_row, matching_row],
-            grinder=active_grinder,
-            machine=active_machine,
-        )
-
-        self.assertIs(ranked[0], matching_row)
+    # The old _rank_similar_logs_for_active_setup test lived here. That
+    # ranking moved into core.retrieval.similarity(), where "same setup"
+    # is an explicit, weighted term -- see test_retrieval.py.
 
     def test_parse_coffee_data_response_validates_payload(self) -> None:
         valid_json = (

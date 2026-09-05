@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=15" />
+  <link rel="stylesheet" href="/static/style.css?v=16" />
 </head>
 <body>
   <div id="app">
@@ -104,7 +104,10 @@
               <span class="rec-icon">💡</span>
               <h3 class="rec-title">Recommendation</h3>
             </div>
+            <div class="recipe-grid" id="recipe-grid"></div>
+            <div class="recipe-flags" id="recipe-flags"></div>
             <div class="rec-body" id="recommendation-text">—</div>
+            <p class="recipe-confidence" id="recipe-confidence"></p>
           </div>
 
           <div class="feedback-bar">
@@ -265,21 +268,44 @@
   <div class="dialog-overlay hidden" id="grind-dialog">
     <div class="dialog-card">
       <div class="dialog-head">
-        <h3 class="dialog-title">Log what worked</h3>
-        <p class="dialog-sub">Save the dose and grind that dialled this coffee in. Pre-filled from your recipe — tweak if you changed anything.</p>
+        <h3 class="dialog-title">Log this shot</h3>
+        <p class="dialog-sub">The time and how it tasted are what let me work out your next setting — without them I can only guess.</p>
       </div>
       <div class="dialog-body">
         <label class="field">
-          <span class="field-label">Dose used (g)</span>
+          <span class="field-label">Dose in (g)</span>
           <input class="input" type="number" id="worked-dose-input" step="0.1" min="1" max="40" inputmode="decimal" placeholder="18" />
         </label>
         <label class="field">
           <span class="field-label">Grind setting used</span>
-          <input class="input" type="text" id="grind-input" placeholder="e.g. 33 clicks" />
+          <input class="input" type="number" id="grind-input" step="0.5" inputmode="decimal" placeholder="e.g. 33" />
         </label>
+        <label class="field">
+          <span class="field-label" id="yield-label">Out (g)</span>
+          <input class="input" type="number" id="worked-yield-input" step="0.1" min="1" max="1000" inputmode="decimal" placeholder="36" />
+        </label>
+        <label class="field">
+          <span class="field-label">Shot time (s)</span>
+          <input class="input" type="number" id="worked-time-input" step="1" min="1" max="900" inputmode="numeric" placeholder="28" />
+        </label>
+        <div class="field">
+          <span class="field-label">How did it taste?</span>
+          <div class="taste-scale" id="taste-scale" role="group" aria-label="Taste">
+            <button type="button" class="taste-btn" data-taste="very_sour">Very sour</button>
+            <button type="button" class="taste-btn" data-taste="sour">Sour</button>
+            <button type="button" class="taste-btn" data-taste="balanced">Balanced</button>
+            <button type="button" class="taste-btn" data-taste="bitter">Bitter</button>
+            <button type="button" class="taste-btn" data-taste="very_bitter">Very bitter</button>
+          </div>
+        </div>
+        <label class="field field-inline">
+          <input type="checkbox" id="worked-astringent-input" />
+          <span class="field-label">Drying / mouth-puckering</span>
+        </label>
+        <p class="dialog-hint">Bitter <em>and</em> drying usually means over-extracted. Bitter on its own is often just the roast — so this tick changes the advice.</p>
       </div>
       <div class="dialog-actions">
-        <button class="btn btn-primary" id="btn-save-grind">Save to logs</button>
+        <button class="btn btn-primary" id="btn-save-grind">Log this shot</button>
         <button class="btn btn-ghost" id="btn-skip-grind">Cancel</button>
       </div>
     </div>
@@ -406,6 +432,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>
