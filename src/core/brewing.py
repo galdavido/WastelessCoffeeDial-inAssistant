@@ -391,6 +391,38 @@ def beta_prior(method: Method, caps: GrinderCaps) -> float | None:
     return magnitude * caps.finer_sign
 
 
+def cold_start_clicks(caps: GrinderCaps, method: Method) -> float | None:
+    """Where to start on a grinder we have never measured a shot on.
+
+    Hand grinders are zeroed at burr contact, so the dial reads out roughly
+    linearly in particle diameter and clicks ~= d / (um per click). For a
+    16 um/click grinder that puts espresso near 19 clicks -- which is a
+    physical estimate, and lands inside the published espresso range for such
+    grinders.
+
+    The midpoint of the hardware range is *not* a substitute: that range spans
+    espresso to French press, so its centre is far too coarse. Without
+    um_per_click there is no way to locate the dial, so this returns None and
+    the caller abstains rather than guessing. See docs/science.md#cold-start.
+    """
+    if method == "moka" or caps.um_per_click is None or caps.um_per_click <= 0:
+        return None
+    d_ref = value_of(
+        "d_ref_espresso_um" if method == "espresso" else "d_ref_pourover_um"
+    )
+    estimate = d_ref / caps.um_per_click
+    if caps.finer_sign > 0:
+        # On a higher-is-finer dial the scale runs the other way.
+        if caps.max_clicks is None:
+            return None
+        estimate = caps.max_clicks - estimate
+    if caps.min_clicks is not None:
+        estimate = max(estimate, caps.min_clicks)
+    if caps.max_clicks is not None:
+        estimate = min(estimate, caps.max_clicks)
+    return snap_to_step(estimate, caps)
+
+
 def solve_grind(
     current_clicks: float,
     tr_observed: float,

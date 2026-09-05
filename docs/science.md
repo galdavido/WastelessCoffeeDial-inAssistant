@@ -254,7 +254,32 @@ against common experience with hand grinders.
 Where `u` is unknown, `β_prior = −0.06` per click is used, confidence is capped
 low, and the prior variance is widened.
 
-### 4.2 Kingrinder K6 {#k6-caps}
+### 4.2 Locating the dial on an unmeasured grinder {#cold-start}
+
+With no measured shot there is no intercept `α`, so the grind law cannot be
+solved. But most hand grinders are zeroed at burr contact, which makes the dial
+read out roughly linearly in particle diameter:
+
+```
+clicks ≈ d / (µm per click)
+```
+
+For a 16 µm/click grinder, espresso's 300 µm reference lands at ~19 clicks —
+inside the published espresso range for such grinders, and derived rather than
+guessed.
+
+**Why not the midpoint of the hardware range?** Because that range spans
+espresso to French press. On a K6 (0–180) the midpoint is 90 clicks, roughly
+1.4 mm particles — French press territory, and a genuinely bad first shot. The
+midpoint looks like a reasonable default and is not one.
+
+**Assumption:** the dial's zero is burr contact and the scale is linear from
+there. True for zero-set hand grinders; not necessarily true of stepped
+electric grinders with an arbitrary origin. Where `µm per click` is unknown the
+dial cannot be located at all, and the engine abstains (tier E) rather than
+guessing.
+
+### 4.3 Kingrinder K6 {#k6-caps}
 
 **60 clicks per rotation, 16 µm per click.**
 

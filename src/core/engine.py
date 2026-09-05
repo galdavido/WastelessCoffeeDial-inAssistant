@@ -29,6 +29,7 @@ from .brewing import (
     Recipe,
     apply_guardrails,
     beta_prior,
+    cold_start_clicks,
     correct,
     target_for,
 )
@@ -147,16 +148,13 @@ def recommend(
     else:
         # Cold start. Everything but the grind comes from the target band;
         # the grind number comes from hardware midpoint, or not at all.
-        grind = None
-        if (
-            caps.has_range
-            and caps.min_clicks is not None
-            and caps.max_clicks is not None
-        ):
-            grind = round((caps.min_clicks + caps.max_clicks) / 2.0)
-        else:
-            # Tier E: no measured shots and no known range. Any click number
-            # here would be invented, so ask for one measurement instead.
+        # Estimate the dial position for the reference particle size rather
+        # than taking the middle of the hardware range -- that range spans
+        # espresso to French press, so its midpoint is far too coarse.
+        grind = cold_start_clicks(caps, method)
+        if grind is None:
+            # Tier E: nothing measured and no way to locate the dial. Any
+            # click number here would be invented, so ask for one measurement.
             protocol = CALIBRATION_PROTOCOL.format(
                 dose=dose_g, yield_=round(dose_g * target.ratio_aim, 1)
             )

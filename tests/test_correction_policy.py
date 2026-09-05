@@ -109,6 +109,41 @@ class TestConvergence(unittest.TestCase):
         self.assertTrue(is_finer(recipe.grind_clicks, fast.grind_clicks, K6))
 
 
+class TestColdStart(unittest.TestCase):
+    def test_starting_point_is_derived_not_the_hardware_midpoint(self) -> None:
+        """The K6 spans 0-180 clicks; its midpoint is French press.
+
+        300 um / 16 um-per-click ~= 19 clicks, which is a physical estimate
+        and lands in the published espresso range.
+        """
+        from core.brewing import cold_start_clicks
+
+        clicks = cold_start_clicks(K6, "espresso")
+        assert clicks is not None
+        self.assertAlmostEqual(clicks, 19.0, delta=1.0)
+        self.assertNotAlmostEqual(clicks, 90.0, delta=10.0)
+
+    def test_pourover_starts_coarser_than_espresso(self) -> None:
+        from core.brewing import cold_start_clicks
+
+        espresso = cold_start_clicks(K6, "espresso")
+        pourover = cold_start_clicks(K6, "pourover")
+        assert espresso is not None and pourover is not None
+        self.assertGreater(pourover, espresso)
+
+    def test_unknown_micron_per_click_means_abstain(self) -> None:
+        """No way to locate the dial, so no number -- tier E."""
+        from core.brewing import cold_start_clicks
+
+        unknown = GrinderCaps(min_clicks=0.0, max_clicks=180.0, step_clicks=1.0)
+        self.assertIsNone(cold_start_clicks(unknown, "espresso"))
+
+    def test_moka_never_gets_a_derived_grind(self) -> None:
+        from core.brewing import cold_start_clicks
+
+        self.assertIsNone(cold_start_clicks(K6, "moka"))
+
+
 class TestCameronGuardrail(unittest.TestCase):
     def test_finer_but_faster_history_sets_a_floor(self) -> None:
         # 26 clicks is finer than 30 but runs faster: channeling.

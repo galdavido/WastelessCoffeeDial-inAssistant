@@ -75,6 +75,9 @@ class TestScienceDoc(unittest.TestCase):
             "darcy",
             "normalised-time",
             "beta-law",
+            # Derivations, not constants: they explain how a value is
+            # computed rather than declaring one.
+            "cold-start",
             "ey-formula",
             "sca-bands",
             "cameron",
