@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=20" />
+  <link rel="stylesheet" href="/static/style.css?v=21" />
 </head>
 <body>
   <div id="app">
@@ -149,6 +149,16 @@
             <div class="rec-body" id="recommendation-text">—</div>
             <p class="recipe-confidence" id="recipe-confidence"></p>
           </div>
+
+          <!-- What you have tried on this bag, and which way it moved. -->
+          <section class="recommendation-card history-strip" id="dial-in-history" hidden>
+            <div class="rec-header">
+              <span class="rec-icon">📈</span>
+              <h3 class="rec-title">Your last shots on this bag</h3>
+            </div>
+            <div id="history-rows"></div>
+            <p class="dialog-hint" id="history-note"></p>
+          </section>
 
           <div class="feedback-bar">
             <p class="feedback-label">Did this work for you?</p>
@@ -554,6 +564,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20"></script>
+  <script src="/static/app.js?v=21"></script>
 </body>
 </html>

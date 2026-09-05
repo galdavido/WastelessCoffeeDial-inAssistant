@@ -259,6 +259,108 @@ async function refreshRecommendation({ dose, silent = false } = {}) {
   }
 }
 
+/* ── Dial-in history ────────────────────────────────────────────────────── */
+const BAND_LABELS = { in: 'In the band', long: 'Ran long', fast: 'Ran fast' };
+const TASTE_LABELS = {
+  very_sour: 'Very sour',
+  sour: 'Sour',
+  balanced: 'Balanced',
+  bitter: 'Bitter',
+  very_bitter: 'Very bitter',
+};
+
+/* One factual sentence about direction of travel, derived from the shots
+   themselves — never invented, and silent when there is nothing to say. */
+function historyNote(shots) {
+  const measured = shots.filter((s) => s.data_quality === 'measured');
+  if (!measured.length) {
+    return 'No measured shots yet. Log a grind, a time and how it tasted and '
+      + 'the next recommendation is computed from it rather than from theory.';
+  }
+  if (measured.length === 1) {
+    return 'One measured shot so far — the next one is what turns a starting '
+      + 'guess into a calibration.';
+  }
+  const [latest, previous] = measured;
+  if (latest.band === 'in') return 'Your last shot landed in the target band.';
+  if (latest.band && latest.band === previous.band) {
+    const movedRight = latest.delta_clicks !== null
+      && ((latest.band === 'long' && latest.delta_clicks > 0)
+        || (latest.band === 'fast' && latest.delta_clicks < 0));
+    return movedRight
+      ? `Two in a row ${latest.band === 'long' ? 'ran long' : 'ran fast'} — `
+        + 'the last change went the right way, just not far enough.'
+      : `Two in a row ${latest.band === 'long' ? 'ran long' : 'ran fast'}.`;
+  }
+  return '';
+}
+
+function renderHistory(shots) {
+  const section = $('dial-in-history');
+  const rows = $('history-rows');
+  if (!section || !rows) return;
+
+  if (!shots.length) { section.hidden = true; return; }
+  section.hidden = false;
+  rows.innerHTML = '';
+
+  shots.forEach((shot) => {
+    const measured = shot.data_quality === 'measured';
+    const row = document.createElement('div');
+    row.className = 'history-row' + (measured ? '' : ' is-unmeasured');
+    if (shot.band) row.dataset.band = shot.band;
+
+    const when = new Date(shot.created_at).toLocaleDateString([], {
+      month: 'short', day: 'numeric',
+    });
+    const delta = shot.delta_clicks
+      ? `<span class="history-delta">${shot.delta_clicks > 0 ? '+' : '−'}${Math.abs(shot.delta_clicks)}</span>`
+      : '';
+    // A shot with no measurements is shown, not hidden: it is the only place
+    // you learn why it did not move the recommendation.
+    const verdict = measured
+      ? (shot.band
+        ? `<span class="chip chip-band">${escapeHtml(BAND_LABELS[shot.band])}</span>`
+        : '')
+      : '<span class="chip chip-guard">Not measured</span>';
+
+    row.innerHTML = `
+      <div class="history-when">
+        <span class="log-label">${escapeHtml(when)}</span>
+      </div>
+      <div class="log-grid history-cells">
+        <div><span class="log-label">Grind</span><span class="log-value">${
+          shot.grind_clicks ?? '—'}${delta}</span></div>
+        <div><span class="log-label">Time</span><span class="log-value">${
+          shot.time_s ? escapeHtml(String(shot.time_s)) + ' s' : '—'}</span></div>
+        <div><span class="log-label">Taste</span><span class="log-value">${
+          shot.taste_axis ? escapeHtml(TASTE_LABELS[shot.taste_axis] || shot.taste_axis) : '—'}</span></div>
+      </div>
+      <div class="history-verdict">
+        ${verdict}
+        ${shot.astringent ? '<span class="chip chip-guard">Drying</span>' : ''}
+      </div>
+    `;
+    rows.appendChild(row);
+  });
+
+  const note = $('history-note');
+  if (note) note.textContent = historyNote(shots);
+}
+
+async function loadHistory(beanId) {
+  const section = $('dial-in-history');
+  if (!beanId) { if (section) section.hidden = true; return; }
+  try {
+    const res = await fetch(`/api/beans/${beanId}/shots?limit=5`);
+    const data = await res.json();
+    if (!res.ok) throw new Error('history unavailable');
+    renderHistory(data.shots || []);
+  } catch {
+    if (section) section.hidden = true;   // never block the recipe on this
+  }
+}
+
 /* Journey 2: pick up a coffee already in the library. */
 async function openBean(entry) {
   clearCoffee();
@@ -275,6 +377,7 @@ async function openBean(entry) {
   }
   renderCoffeeCard(currentCoffeeData);
   setScanDose(Number(currentCoffeeData?.preferred_dose_g) || 16);
+  loadHistory(currentBeanId);
   showPanel('recipe-view');
 }
 
@@ -306,6 +409,7 @@ async function analyzeFile(file) {
       roastLevel: currentCoffeeData.roast_level,
     });
 
+    loadHistory(currentBeanId);
     showPanel('recipe-view');
   } catch (err) {
     clearCoffee();
@@ -981,6 +1085,7 @@ async function saveFeedback(worked) {
     // a second shot being logged against the same recommendation_id.
     clearRecommendation();
     showPanel('scan-success');
+    loadHistory(currentBeanId);
 
     // Fold the shot into the next suggestion, so "Next shot" already has it.
     const refreshed = await refreshRecommendation({
@@ -1289,6 +1394,7 @@ async function selectSetup(setupId) {
     // it there after a switch would show espresso numbers labelled as filter.
     if (currentBeanId || currentCoffeeData) {
       await refreshRecommendation({ dose: currentScanDose() });
+      loadHistory(currentBeanId);
     } else {
       clearRecommendation();
     }
