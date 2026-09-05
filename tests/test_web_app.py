@@ -6,7 +6,9 @@ The TestClient is used without its context manager so the startup lifespan
 
 from __future__ import annotations
 
+import re
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -70,6 +72,65 @@ class TestWebAppWiring(unittest.TestCase):
         body = client.get("/").text
         self.assertRegex(body, r'href="/static/style\.css\?v=\d+"')
         self.assertRegex(body, r'src="/static/app\.js\?v=\d+"')
+
+    def test_version_references_do_not_drift(self) -> None:
+        """sw.js, index.html and /api/version must all agree.
+
+        The app shows a version chip so the user can tell whether a deploy
+        reached their phone. That is only trustworthy if the number cannot
+        disagree with itself, and it lives in several hand-edited places.
+        """
+        static = Path(__file__).resolve().parents[1] / "src" / "web" / "static"
+
+        match = re.search(
+            r"const CACHE\s*=\s*'wcda-v(\d+)'",
+            (static / "sw.js").read_text(encoding="utf-8"),
+        )
+        self.assertIsNotNone(match, "sw.js CACHE version not found")
+        assert match is not None
+        cache_version = int(match.group(1))
+
+        html = (static / "index.html").read_text(encoding="utf-8")
+        pinned = re.findall(r"/static/[\w./-]+\.(?:css|js)\?v=(\d+)", html)
+        self.assertTrue(pinned, "no version-pinned assets in index.html")
+        self.assertEqual(
+            {int(v) for v in pinned},
+            {cache_version},
+            "index.html ?v= does not match sw.js CACHE",
+        )
+
+        # A newly added tag without ?v= would silently escape the pinning.
+        unpinned = re.findall(r'(?:href|src)="(/static/[\w./-]+\.(?:css|js))"', html)
+        self.assertEqual(unpinned, [], f"unversioned static assets: {unpinned}")
+
+        served = client.get("/api/version").json()
+        self.assertEqual(served["asset_version"], cache_version)
+
+    def test_version_endpoint_shape(self) -> None:
+        response = client.get("/api/version")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("asset_version", body)
+        self.assertIn("engine_version", body)
+
+    def test_recommendation_accepts_a_bean_id_instead_of_coffee_data(self) -> None:
+        """A saved coffee is identified by id, not by resending its fields.
+
+        Asserted against the schema rather than the route: reaching the route
+        needs a database, and these tests run without one.
+        """
+        from pydantic import ValidationError
+
+        from core.web_schemas import RecommendationRequest
+
+        self.assertEqual(RecommendationRequest(bean_id=7).bean_id, 7)
+        self.assertIsNone(RecommendationRequest(bean_id=7).coffee_data)
+        self.assertEqual(
+            RecommendationRequest(coffee_data={"name": "Test"}).coffee_data,
+            {"name": "Test"},
+        )
+        with self.assertRaises(ValidationError):
+            RecommendationRequest()
 
     def test_setups_active_route_is_not_shadowed(self) -> None:
         # PUT /api/setups/active must reach select_setup, not be captured by

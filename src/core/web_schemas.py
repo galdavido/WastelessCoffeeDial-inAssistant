@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class FeedbackRequest(BaseModel):
@@ -29,8 +29,22 @@ class FeedbackRequest(BaseModel):
 
 
 class RecommendationRequest(BaseModel):
-    coffee_data: dict[str, Any]
+    """Ask for a recipe, either for a scanned bag or one already saved.
+
+    `bean_id` is what makes fine-tuning possible: the engine then works from
+    the real Bean row, so roast date and roast level are populated and the
+    resulting recommendation is stored against a real bean.
+    """
+
+    coffee_data: dict[str, Any] | None = None
+    bean_id: int | None = None
     dose_g: float | None = None
+
+    @model_validator(mode="after")
+    def _needs_a_subject(self) -> RecommendationRequest:
+        if self.coffee_data is None and self.bean_id is None:
+            raise ValueError("coffee_data or bean_id is required")
+        return self
 
 
 class EquipmentUpdate(BaseModel):

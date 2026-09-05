@@ -5,6 +5,7 @@ import re
 import unicodedata
 from datetime import date, datetime
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any
 
 from database.database import SessionLocal
@@ -202,6 +203,42 @@ def ensure_default_equipment(db: Any) -> tuple[Any, Any]:
     return grinder, machine
 
 
+def bean_coffee_data(bean: Bean) -> dict[str, Any]:
+    """The coffee_data shape the rest of the API speaks, straight from a row.
+
+    Used when recommending for a coffee already in the library, so the client
+    never has to rebuild this payload from what it happens to have on screen.
+    """
+    return {
+        "bean_id": bean.id,
+        "name": bean.name,
+        "roaster": bean.roaster,
+        "origin": bean.origin,
+        "process": bean.process,
+        "roast_level": bean.roast_level,
+        "roast_date": bean.roast_date.isoformat() if bean.roast_date else None,
+    }
+
+
+_CACHE_VERSION_RE = re.compile(r"const CACHE\s*=\s*'wcda-v(\d+)'")
+
+
+def read_asset_version(static_dir: str) -> int | None:
+    """The shipped bundle version, parsed from sw.js.
+
+    sw.js's CACHE constant is the one hand-authored version number in the
+    project; everything else derives from it. Returns None rather than a guess
+    when it cannot be read, so the client shows no update prompt instead of a
+    false one.
+    """
+    try:
+        text = (Path(static_dir) / "sw.js").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = _CACHE_VERSION_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
 def _as_float(value: Any) -> float | None:
     return None if value is None else float(value)
 
@@ -382,13 +419,22 @@ def save_dial_in_log(
         bean_process = as_non_empty_text(coffee_data.get("process"))
         bean_roast_level = as_non_empty_text(coffee_data.get("roast_level"))
 
-        bean = find_existing_bean(
-            db,
-            name=bean_name,
-            roaster=bean_roaster,
-            origin=bean_origin,
-            process=bean_process,
-        )
+        # An explicit id beats the fuzzy name match. find_existing_bean's 0.9
+        # similarity threshold is a good guess at identity but is not identity,
+        # so a shot logged against a known bean must never be attached to a
+        # similarly-named one.
+        bean = None
+        explicit_id = coffee_data.get("bean_id")
+        if explicit_id is not None:
+            bean = db.get(Bean, int(explicit_id))
+        if bean is None:
+            bean = find_existing_bean(
+                db,
+                name=bean_name,
+                roaster=bean_roaster,
+                origin=bean_origin,
+                process=bean_process,
+            )
         if not bean:
             bean = Bean(
                 roaster=bean_roaster,

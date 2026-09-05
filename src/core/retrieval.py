@@ -136,7 +136,7 @@ def recency_factor(created_at: datetime | None, now: datetime | None = None) -> 
     return max(0.7, value_of("similarity_recency_decay") ** weeks)
 
 
-def _to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRecord:
+def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRecord:
     days = None
     if bean is not None and bean.roast_date is not None and log.created_at is not None:
         days = (log.created_at.date() - bean.roast_date).days
@@ -182,7 +182,7 @@ def fetch_calibration_shots(
         .order_by(DialInLog.created_at.desc())
     )
     return [
-        _to_shot_record(log, bean, method) for log, bean in db.execute(stmt).tuples()
+        to_shot_record(log, bean, method) for log, bean in db.execute(stmt).tuples()
     ]
 
 
@@ -212,7 +212,7 @@ def fetch_exemplars(
         score = similarity(target, candidate, same_setup=log.setup_id == setup_id)
         score *= recency_factor(log.created_at)
         if score >= floor:
-            scored.append((_to_shot_record(log, bean, method), score))
+            scored.append((to_shot_record(log, bean, method), score))
     scored.sort(key=lambda pair: pair[1], reverse=True)
     return scored[:limit]
 

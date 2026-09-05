@@ -9,25 +9,31 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
 from ai.vision import analyze_coffee_bag, get_last_vision_error
-from database.models import Bean, BrewSetup, DialInLog, Equipment
+from database.models import Bean, BrewSetup, DialInLog, Equipment, Recommendation
 
+from .brewing import normalised_time, target_for
 from .db_session import get_db
 from .engine import (
+    ENGINE_VERSION,
     persist_recommendation,
     recommend,
     render_legacy_text,
     serialize_result,
 )
+from .retrieval import get_active_setup_method, to_shot_record
 from .web_helpers import (
     as_non_empty_text,
+    bean_coffee_data,
     find_existing_bean,
     get_active_setup,
     get_default_dose_g,
     get_grind_offset_clicks,
     parse_roast_date,
+    read_asset_version,
     resolve_log_values,
     roast_level_ordinal,
     save_dial_in_log,
@@ -63,6 +69,11 @@ _ALLOWED_IMAGE_TYPES = {
 _ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 _EQUIPMENT_TYPES = {"grinder", "espresso_machine", "filter", "other"}
+
+
+def _as_float(value: Any) -> float | None:
+    """Numeric columns come back as Decimal; the API speaks floats."""
+    return None if value is None else float(value)
 
 
 def _server_error(exc: Exception, action: str) -> HTTPException:
@@ -147,7 +158,9 @@ def _bean_for(db: Session, coffee_data: dict[str, Any]) -> Bean | None:
     )
 
 
-def _engine_recommendation(db: Session, coffee_data: dict[str, Any]) -> dict[str, Any]:
+def _engine_recommendation(
+    db: Session, coffee_data: dict[str, Any], bean: Bean | None = None
+) -> dict[str, Any]:
     """Run the deterministic engine and shape the API response.
 
     The response is a superset: `recipe` and `rationale` are the real
@@ -155,9 +168,13 @@ def _engine_recommendation(db: Session, coffee_data: dict[str, Any]) -> dict[str
     structured result so older PWA clients keep working for one release. The
     number in that prose is the engine's number, not one parsed back out of
     generated text.
+
+    `bean` is passed in when the caller already has the real row (recommending
+    for a saved coffee); otherwise one is found or fabricated from coffee_data.
     """
     setup = get_active_setup(db)
-    bean = _bean_for(db, coffee_data)
+    if bean is None:
+        bean = _bean_for(db, coffee_data)
     dose = coffee_data.get("preferred_dose_g") or get_default_dose_g(db)
 
     result = recommend(db, setup, bean, float(dose))
@@ -210,6 +227,24 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Parsed once at startup: the prod container is read-only, so the file
+    # cannot change under a running process, and this keeps it off the
+    # request path.
+    asset_version = read_asset_version(static_dir)
+
+    @app.get("/api/version")
+    def get_version() -> dict[str, Any]:
+        """What the server is currently serving.
+
+        The client compares this against the version its own bundle was
+        loaded with, so the user can tell whether a deploy actually reached
+        their phone or they are looking at a cached one.
+        """
+        return {
+            "asset_version": asset_version,
+            "engine_version": ENGINE_VERSION,
+        }
 
     @app.get("/sw.js", include_in_schema=False)
     def service_worker() -> FileResponse:
@@ -285,15 +320,26 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     def refresh_recommendation(
         body: RecommendationRequest, db: Session = Depends(get_db)
     ) -> dict[str, Any]:
-        """Regenerate the dial-in recommendation for an already-scanned bag.
+        """Regenerate the recipe for a scanned bag or a coffee already saved.
 
-        Used when the user changes the per-shot dose on the results screen
-        (e.g. a lighter roast that packs more grams into the same basket).
+        Called when the dose changes, when the active setup changes, and when
+        the user opens one of their existing coffees to fine-tune it. Passing
+        `bean_id` uses the stored row, so the engine sees the real roast date
+        and roast level rather than re-parsing strings, and the resulting
+        recommendation is recorded against that bean.
         """
         if body.dose_g is not None and body.dose_g <= 0:
             raise HTTPException(status_code=400, detail="Dose must be positive.")
 
-        coffee_data = dict(body.coffee_data or {})
+        bean: Bean | None = None
+        if body.bean_id is not None:
+            bean = db.query(Bean).filter(Bean.id == body.bean_id).first()
+            if bean is None:
+                raise HTTPException(status_code=404, detail="Coffee not found")
+            coffee_data = bean_coffee_data(bean)
+        else:
+            coffee_data = dict(body.coffee_data or {})
+
         if body.dose_g is not None:
             coffee_data["preferred_dose_g"] = body.dose_g
         else:
@@ -302,9 +348,13 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
 
         try:
-            return _engine_recommendation(db, coffee_data)
+            payload = _engine_recommendation(db, coffee_data, bean=bean)
         except Exception as exc:
             raise _server_error(exc, "refresh recommendation") from exc
+        # Echo the profile back so the client renders one shape from either
+        # entrance, exactly as /api/analyze does.
+        payload["coffee_data"] = coffee_data
+        return payload
 
     @app.post("/api/feedback")
     def save_feedback(body: FeedbackRequest) -> dict[str, str]:
@@ -397,7 +447,25 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         limit: int = 20, db: Session = Depends(get_db)
     ) -> dict[str, list[dict[str, Any]]]:
         safe_limit = max(1, min(limit, 50))
-        beans = db.query(Bean).order_by(Bean.id.desc()).limit(safe_limit).all()
+        # Order by when a coffee was last brewed, not when it was created --
+        # otherwise a bag added months ago and brewed this morning falls off
+        # the end of the list. selectinload avoids an N+1 over bean.logs.
+        last_brew = (
+            select(
+                DialInLog.bean_id.label("bean_id"),
+                func.max(DialInLog.created_at).label("last_at"),
+            )
+            .group_by(DialInLog.bean_id)
+            .subquery()
+        )
+        beans = (
+            db.query(Bean)
+            .outerjoin(last_brew, last_brew.c.bean_id == Bean.id)
+            .options(selectinload(Bean.logs))
+            .order_by(last_brew.c.last_at.desc().nullslast(), Bean.id.desc())
+            .limit(safe_limit)
+            .all()
+        )
 
         entries: list[dict[str, Any]] = []
         for bean in beans:
@@ -413,6 +481,12 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                     "origin": bean.origin,
                     "process": bean.process,
                     "roast_level": bean.roast_level,
+                    "roast_date": bean.roast_date.isoformat()
+                    if bean.roast_date
+                    else None,
+                    "last_brewed_at": latest_log.created_at.isoformat()
+                    if latest_log
+                    else None,
                     "logs_count": len(bean.logs),
                     "latest_log": {
                         "id": latest_log.id,
@@ -440,6 +514,115 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             )
 
         return {"entries": entries}
+
+    # Literal paths before parameterised siblings: if an /api/beans/<literal>
+    # route is ever added it must be declared above this one.
+    @app.get("/api/beans/{bean_id}/shots")
+    def get_bean_shots(
+        bean_id: int, limit: int = 5, db: Session = Depends(get_db)
+    ) -> dict[str, Any]:
+        """Recent shots on one coffee, with each judged against its target.
+
+        The band verdict is computed here rather than in the browser because
+        the engine compares *normalised* time (time / brew ratio), not raw
+        seconds. Re-deriving that in JavaScript would drift from brewing.py
+        the first time the target bands change.
+        """
+        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        if bean is None:
+            raise HTTPException(status_code=404, detail="Coffee not found")
+
+        safe_limit = max(1, min(limit, 20))
+        logs = (
+            db.query(DialInLog)
+            .filter(DialInLog.bean_id == bean_id)
+            .order_by(DialInLog.created_at.desc())
+            .limit(safe_limit)
+            .all()
+        )
+
+        suggested: dict[int, Any] = {}
+        wanted = [log.recommendation_id for log in logs if log.recommendation_id]
+        if wanted:
+            for rec in (
+                db.query(Recommendation).filter(Recommendation.id.in_(wanted)).all()
+            ):
+                suggested[rec.id] = rec.grind_clicks
+
+        setup = get_active_setup(db)
+        active_method = get_active_setup_method(setup)
+        target = target_for(active_method)
+
+        shots: list[dict[str, Any]] = []
+        for index, log in enumerate(logs):
+            method = log.brew_method or active_method
+            record = to_shot_record(log, bean, method)  # type: ignore[arg-type]
+            tr = normalised_time(record)
+
+            band: str | None = None
+            shot_target = target_for(method)  # type: ignore[arg-type]
+            if tr is not None and shot_target.tr_lo is not None:
+                hi = shot_target.tr_hi
+                if hi is not None:
+                    band = (
+                        "in"
+                        if shot_target.tr_lo <= tr <= hi
+                        else ("long" if tr > hi else "fast")
+                    )
+
+            # A click delta only means something within one setup.
+            older = logs[index + 1] if index + 1 < len(logs) else None
+            same_setup = bool(older and older.setup_id == log.setup_id)
+            delta = None
+            if (
+                same_setup
+                and older is not None
+                and log.grind_clicks is not None
+                and older.grind_clicks is not None
+            ):
+                delta = float(log.grind_clicks) - float(older.grind_clicks)
+
+            shots.append(
+                {
+                    "id": log.id,
+                    "created_at": log.created_at.isoformat(),
+                    "setup_id": log.setup_id,
+                    "method": method,
+                    "grind_clicks": _as_float(log.grind_clicks),
+                    "grind_setting": log.grind_setting,
+                    "dose_g": log.dose_g,
+                    "yield_g": log.yield_g,
+                    "water_g": _as_float(log.water_g),
+                    "time_s": log.time_s,
+                    "taste_axis": log.taste_axis,
+                    "astringent": log.astringent,
+                    "rating": log.rating,
+                    "data_quality": log.data_quality,
+                    "tr": round(tr, 2) if tr is not None else None,
+                    "band": band,
+                    "delta_clicks": delta,
+                    "same_setup_as_prev": same_setup,
+                    "suggested_grind_clicks": _as_float(
+                        suggested.get(log.recommendation_id or -1)
+                    ),
+                }
+            )
+
+        return {
+            "bean": {
+                "id": bean.id,
+                "name": bean.name,
+                "roaster": bean.roaster,
+            },
+            "target": {
+                "tr_lo": target.tr_lo,
+                "tr_hi": target.tr_hi,
+                "time_lo": target.time_lo,
+                "time_hi": target.time_hi,
+                "ratio_aim": target.ratio_aim,
+            },
+            "shots": shots,
+        }
 
     @app.get("/api/equipment/library")
     def get_equipment_library(
