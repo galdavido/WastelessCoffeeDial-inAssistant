@@ -361,11 +361,19 @@ async function loadHistory(beanId) {
   }
 }
 
+function setLoadingCopy(title, sub) {
+  const t = $('loading-text');
+  const s = $('loading-sub');
+  if (t) t.textContent = title;
+  if (s) s.textContent = sub;
+}
+
 /* Journey 2: pick up a coffee already in the library. */
 async function openBean(entry) {
   clearCoffee();
   currentBeanId = Number(entry.bean_id);
   showTab('tab-recipe');
+  setLoadingCopy('Working out your recipe…', 'Using your shots on this bag');
   showPanel('scan-loading');
 
   const ok = await refreshRecommendation({ dose: null });
@@ -385,6 +393,7 @@ async function openBean(entry) {
 async function analyzeFile(file) {
   clearCoffee();
   showTab('tab-recipe');
+  setLoadingCopy('Reading the bag…', 'Then working out a starting recipe');
   showPanel('scan-loading');
 
   const form = new FormData();

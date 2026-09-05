@@ -1092,3 +1092,6 @@ select.input { background-image: none; }
 }
 /* A partial shot is not evidence and must not look like it. */
 .history-row.is-unmeasured { opacity: .5; }
+.feedback-hint {
+  margin-top: 10px; font-size: 12px; color: var(--text-2); opacity: .8;
+}
