@@ -1,0 +1,370 @@
+# The science behind the recommendations
+
+Every number the engine uses is declared in `src/core/brewing.py::CONSTANTS`
+and carries an `anchor` pointing at a heading in this file. `tests/test_science_doc.py`
+fails the build if a constant cites a heading that doesn't exist, or if a
+heading here has no constant referring to it. The point is that no magic
+number survives review without a source or an explicit admission that it's
+a guess.
+
+Constants are labelled by kind:
+
+| kind | means |
+|---|---|
+| `PHYSICS` | derived from a physical law; not up for debate, though its *applicability* may be |
+| `LITERATURE` | published measurement or an established industry standard, cited below |
+| `CALIBRATED` | a reference value chosen to make a model fit; defensible but not universal |
+| `HEURISTIC` | our own judgement. No source. Change freely if the data disagrees |
+
+---
+
+## 1. Scope and honest limits {#limits}
+
+This app has **no refractometer**. It records dose, beverage/water mass, time,
+a taste axis, and (optionally) temperature. That bounds what can honestly be
+claimed.
+
+**Cannot be computed at all:**
+
+- **Extraction yield.** `EY% = (beverage_g × TDS%) / dose_g` needs TDS, which
+  needs a refractometer. Two of the three terms are known and the third is not,
+  so the app must **never print an EY figure** or place a shot on the SCA
+  18–22% scale. See [#ey-formula](#ey-formula).
+- **Strength versus extraction, separated.** TDS and EY are independent axes.
+  "Too weak" may be under-extraction *or* an over-long ratio, and taste alone
+  cannot decompose them. The engine's policy of fixing the *measured* ratio
+  before touching the *inferred* grind is a pragmatic ordering, not a
+  measurement.
+- **Which side of the extraction peak you are on**, directly. The peak is
+  defined on an EY axis. The engine infers it from broken time-monotonicity and
+  a long-and-sour taste signature — a genuine proxy, but a proxy, and one that
+  needs at least two shots at different settings before it can fire.
+
+**Structurally unobservable, whatever instrumentation is added, because the app
+does not record it:**
+
+- **Puck preparation** — distribution, tamp, WDT, basket wear. This dominates
+  channeling variance. A shot that ran long because of a poor tamp is
+  indistinguishable, to this system, from one that ran long because the grind
+  was too fine. **This is the single largest error source and better maths
+  cannot fix it.**
+- **Actual brew temperature** without a PID or a Scace device: `brew_temp_c` is
+  what the user set or believes, not what reached the coffee.
+- **Pour schedule and agitation** for pour-over — the dominant lever, entirely
+  uncaptured, which is why pour-over confidence is capped.
+- **Stove power and heat-cut timing** for moka — likewise dominant, likewise
+  uncaptured.
+- **Grinder retention and burr drift** — retained grounds and slow wear mean
+  the same click number means slightly different things months apart.
+
+What the engine can honestly say: *given your grinder, your machine and what
+you actually measured, here is the setting that should land your time and ratio
+in the target band.*
+
+---
+
+## 2. Physics {#physics}
+
+### 2.1 Darcy's law {#darcy}
+
+Flow through a packed bed:
+
+```
+Q = k · A · ΔP / (µ · L)
+```
+
+`Q` volumetric flow, `k` permeability, `A` bed cross-section, `ΔP` pressure
+drop, `µ` dynamic viscosity, `L` bed depth. Measured coffee-puck permeabilities
+are of order 10⁻¹³–10⁻¹⁴ m².
+
+### 2.2 Kozeny–Carman, and where it breaks {#kozeny}
+
+```
+k = d² · ε³ / (180 · (1 − ε)²)
+```
+
+for particle diameter `d` and porosity `ε`; so **`k ∝ d²`** at fixed packing.
+
+**Caveat, and it matters:** Kozeny–Carman is known to degrade near clogging,
+where percolation-type models fit better. We therefore use `k ∝ d²` only for
+the *local slope* of the grind law — a linearisation around the current
+setting — and never for absolute prediction. The regime where it fails is
+precisely the channeling regime, which [#cameron](#cameron) hands over to a
+separate guardrail. The two limits coincide, which is reassuring.
+
+### 2.3 Normalised shot time {#normalised-time}
+
+```
+T_r = time_s / brew_ratio
+```
+
+Shot time alone is not comparable across different ratios; `T_r` (seconds per
+unit of brew ratio) is. 18 g → 36 g in 28 s gives `R = 2.0`, `T_r = 14.0`.
+
+### 2.4 The grind law {#beta-law}
+
+Combining 2.1–2.3 at fixed dose, geometry and pressure gives `T_r ∝ d⁻²`. With
+a linear grinder dial (`d = d₀ + u·(c − c₀)`, `u` µm per click):
+
+```
+ln T_r = α_setup + δ_bean + β_setup · c        β = −2u / d_ref
+```
+
+which inverts to the one correction the engine actually makes:
+
+```
+c* = c + (ln T_r_target − ln T_r_observed) / β
+```
+
+`α` is the setup's intercept, `δ_bean` a per-bean offset. Both are fitted; `β`
+starts from the physical prior in [#beta-prior](#beta-prior) and is shrunk
+toward the fitted value as data arrives ([#shrinkage](#shrinkage)).
+
+### 2.5 Extraction yield {#ey-formula}
+
+```
+EY% = (beverage_g × TDS%) / dose_g
+```
+
+Documented for completeness and for the day a refractometer appears. **Not
+computable here** — see [#limits](#limits).
+
+---
+
+## 3. Literature constants {#literature}
+
+### 3.1 SCA extraction and strength bands {#sca-bands}
+
+Extraction yield **18–22%** is the long-standing target band, originating in
+Lockhart's Coffee Brewing Institute work at MIT in the 1950s and retained by
+the SCA. Espresso TDS runs **8–12%**. Below 18% reads as under-extracted
+(bright, sour, tea-like); above 22% as over-extracted.
+
+TDS is approximately inversely proportional to the brew ratio, while extraction
+yield is approximately independent of it — which is why ratio is treated as a
+strength/texture lever rather than an extraction lever.
+
+### 3.2 Espresso ratio, time and temperature {#ratio-espresso}
+
+Normale **1:2** (band 1:1.8–1:2.5), **25–30 s**, brew temperature
+**90.5–96 °C**.
+
+### 3.3 Ristretto {#ratio-ristretto}
+
+**1:1–1:1.5**, aim 1:1.25, 20–28 s. Same temperature band.
+
+### 3.4 Lungo {#ratio-lungo}
+
+**1:2.5–1:3**, aim 1:2.75, 28–36 s. Same temperature band.
+
+### 3.5 Pour-over, V60 {#ratio-pourover}
+
+Golden ratio **1:16** (≈60 g/L), band 1:15–1:17; water **92–96 °C**; total
+drawdown **2:45–3:15** for a ~15 g single; medium-fine grind, ~600–800 µm.
+
+The dominant levers — pour schedule, agitation, bloom, pour height — are not
+recorded by this app. See [#method-levers](#method-levers).
+
+### 3.6 Moka pot {#ratio-moka}
+
+Steam pressure **1–2 bar**, ratio **1:7–1:10** (aim 1:8), grind
+**360–660 µm**, water reaching the bed at roughly **93 °C** and *rising through
+the brew*.
+
+Brew time is set by stove heat input, not by bed permeability, so the engine
+does not solve grind from time for this method and does not state a target
+time it cannot control.
+
+### 3.7 Degassing {#degassing}
+
+Coffee released **5–14 days** post-roast is the commonly cited window. Fresher
+coffee releases CO₂ during extraction, causing faster and more erratic flow,
+early blonding and a raised channeling risk. Qualitatively well established;
+the specific magnitudes we apply are heuristic
+([#fresh-band](#fresh-band)).
+
+### 3.8 The extraction peak is not monotonic {#cameron}
+
+Cameron et al., *Matter* 2020, is the load-bearing citation for this project.
+A mathematical model assuming homogeneous flow predicts extraction yield
+falling monotonically as grind coarsens. Experiment disagrees: measured yield
+**peaks and then declines at fine settings**, because flow becomes
+inhomogeneous — channeling — which both wastes coffee and destroys
+reproducibility.
+
+The practical consequence is that **"the shot ran long, grind finer" is wrong
+past the peak**, and grinding finer there makes extraction *worse* and less
+repeatable. That reflex was hardcoded into this app's previous prompt. The
+engine now refuses to cross an empirically detected floor.
+
+The onset setting is device-specific (their instrument showed it below ~1.7 on
+its own dial), which is why the engine detects it from the user's own data
+rather than hardcoding a number.
+
+### 3.9 The reproducibility recipe {#cameron-reproducibility}
+
+The same paper's affirmative recommendation: **reduce the dry dose and grind
+coarser** — 20 g → 15 g in their protocol, up to **25% less coffee** — which
+raised extraction yield *and* improved shot-to-shot reproducibility. Validated
+in production at a roastery across **27,850 beverages** over roughly a year.
+
+Lower bed depth `L` reduces the pressure drop (2.1), which reduces the
+channeling that (3.8) describes. For an app named "Wasteless", using a quarter
+less coffee for a better shot is the headline move.
+
+### 3.10 Temperature by roast level {#temp-by-roast}
+
+Within the SCA band, lighter roasts are conventionally brewed hotter (more
+soluble material, denser cell structure), darker roasts cooler (more soluble,
+more prone to harsh extraction): light 94–96 °C, medium 92–94 °C,
+dark 90.5–92.5 °C. The band edges are literature; the split points are our
+interpolation.
+
+### 3.11 Sour/bitter is not a reliable extraction readout {#taste-mapping}
+
+"Sour means under-extracted, bitter means over-extracted" is the industry
+default and is **not** dependable:
+
+- Dark roasts taste bitter at *correct* extraction — that is roast character.
+- Severe channeling produces shots that are simultaneously sour **and** bitter,
+  because some coffee is over-extracted while bypassed coffee is barely
+  extracted at all.
+
+**Astringency** — a drying, mouth-puckering tactile sensation, distinct from
+bitter taste — is the more specific over-extraction marker. Hence the separate
+`astringent` flag, and hence the rule that *bitter without astringency does not
+move the grind*.
+
+---
+
+## 4. Calibrated priors {#calibrated}
+
+### 4.1 Reference particle diameter and β {#beta-prior}
+
+`β = −2u / d_ref` from [#beta-law](#beta-law) needs a reference diameter.
+We take `d_ref = 300 µm` for espresso and `700 µm` for pour-over, mid-range
+values consistent with the published grind-size ranges in §3. These are
+**calibrated**, not measured: they set the scale of the correction, and the
+fitted `β` supersedes them as soon as there is data.
+
+For a grinder with `u = 16 µm/click` this gives `β ≈ −0.107` per click, i.e.
+roughly a **10% change in shot time per click** — the right order of magnitude
+against common experience with hand grinders.
+
+Where `u` is unknown, `β_prior = −0.06` per click is used, confidence is capped
+low, and the prior variance is widened.
+
+### 4.2 Kingrinder K6 {#k6-caps}
+
+**60 clicks per rotation, 16 µm per click.**
+
+Published *espresso* ranges for this grinder disagree wildly across sources —
+manufacturer guidance around 15–25, one review 22–45, others 30–60 "start at
+45". That spread is the argument for storing capability per unit, with a
+`spec_source` citation, rather than hardcoding a range in application code.
+
+---
+
+## 5. Heuristics — our own judgement, no source {#heuristics}
+
+### 5.1 Shrinkage constants {#shrinkage}
+
+`w = n_eff / (n_eff + κ)` with `κ = 4.0` espresso, `8.0` pour-over, and
+`κ_bean = 2.0` for the per-bean offset. `n_eff` counts **distinct grind
+settings**, not shots: ten shots at one setting carry no slope information.
+Chosen so that roughly four distinct settings gets you halfway from prior to
+fitted. Pure guess, easily revised.
+
+### 5.2 Similarity weights {#similarity}
+
+same setup 0.40, roast level 0.25, process 0.15, origin 0.10, freshness 0.10;
+match floor 0.45; recency multiplier `0.97^weeks_ago`. Setup dominates because
+a click number from a different grinder is close to meaningless.
+
+### 5.3 Roast-level time modifier {#roast-time-modifier}
+
+±1 s on the target `T_r`: lighter roasts a touch longer, darker a touch
+shorter. Small enough to be nearly cosmetic; retained because it matches
+common practice.
+
+### 5.4 Fresh-coffee band widening {#fresh-band}
+
+Under 7 days off roast, acceptance bands are doubled and correction magnitudes
+halved, and the user is told the target is moving. Rationale in
+[#degassing](#degassing); the factors themselves are guesses.
+
+### 5.5 Channeling detection thresholds {#channeling-detection}
+
+Variance ratio 2.0 between fine and coarse subsets (n ≥ 6 before it may fire);
+never suggest more than 2 steps finer than the finest historically acceptable
+setting; maximum single move 25% of |1/β|. All judgement calls, tuned to fail
+safe — the cost of refusing to go finer when you could have is one extra
+iteration, while the cost of chasing the channeling regime is wasted coffee and
+an undiagnosable shot.
+
+---
+
+## 6. Method levers, and what we cannot see {#method-levers}
+
+| | espresso | pour-over | moka |
+|---|---|---|---|
+| driving force | pump, ~9 bar | gravity, ~2 kPa | steam, 1–2 bar |
+| ratio denominator | beverage out | water in | water in |
+| grind ↔ time coupling | **strong** | moderate | **weak** |
+| levers we can move | grind, dose, ratio, temp\* | grind, dose, ratio | grind, dose, ratio |
+| levers we cannot see | puck prep, distribution, tamp | pour schedule, agitation, bloom | stove power, heat-cut timing |
+| confidence cap | 1.0 | 0.6 | 0.4 |
+
+\* temperature only when the machine reports it as controllable.
+
+Espresso is the only method where the physics model is load-bearing. For moka
+the grind law is disabled outright (`β_prior = None`).
+
+---
+
+## 7. The simulator {#simulator}
+
+`src/core/sim.py` implements Darcy + Kozeny–Carman plus a logistic bypass term
+so that a fraction of flow short-circuits through a low-resistance channel as
+particle size falls below an onset diameter. This reproduces the non-monotonic
+yield curve of [#cameron](#cameron) from first principles, which lets the
+correction policy be tested before any real shots exist.
+
+It is a **test fixture only**. Its taste mapping in particular is crude. No
+production module may import it, and a convention test enforces that.
+
+---
+
+## 8. Bibliography
+
+- Cameron, M. I. et al. "Systematically Improving Espresso: Insights from
+  Mathematical Modeling and Experiment." *Matter* 2(3), 631–648, 2020.
+  <https://www.cell.com/matter/fulltext/S2590-2385(19)30410-2>
+  — non-monotonic extraction yield; the 20 g → 15 g reproducibility protocol;
+  27,850-beverage validation. Summary coverage:
+  <https://www.sciencedaily.com/releases/2020/01/200122110447.htm>
+- SCA Brewing Control Chart / Coffee Brewing Institute (Lockhart, MIT, 1950s) —
+  extraction 18–22%, espresso TDS 8–12%.
+  <https://www.baristainstitute.com/blog/jori-korhonen/january-2019/how-measure-extraction-coffee>
+  and <https://www.baristahustle.com/towards-a-common-coffee-control-chart/>
+- Corrochano, B. R. et al. "A new methodology to estimate the steady-state
+  permeability of roast and ground coffee in packed beds." *Journal of Food
+  Engineering*, 2015 — Darcy/Kozeny–Carman applied to coffee; measured
+  permeabilities.
+- "A model for the permeability of coffee pucks validated using X-ray computed
+  micro-tomography." *Royal Society Open Science*, 2026 — Kozeny–Carman
+  breakdown near clogging.
+  <https://royalsocietypublishing.org/rsos/article/13/4/252031/481206/>
+- Espresso brew ratios and basket sizes — Clive Coffee.
+  <https://clivecoffee.com/blogs/learn/brew-ratios-basket-sizes-and-the-confusion-over-a-double-shot>
+- Hario V60 brew guide — Stumptown.
+  <https://www.stumptowncoffee.com/pages/brew-guide-hario-v60>
+- Moka pot grind size and extraction — CoffeeGearHub.
+  <https://www.coffeegearhub.com/moka-pot-grind-size/>
+- Coffee degassing and the rest window — Podium Coffee Club.
+  <https://podiumcoffeeclub.com/blogs/blog/coffee-degassing>
+- KINGrinder K6 grind settings: 60 clicks/rotation, 16 µm/click — Honest Coffee
+  Guide. <https://honestcoffeeguide.com/kingrinder-k6-grind-settings/>
+- Coffee extraction and how to taste it — Barista Hustle.
+  <https://www.baristahustle.com/coffee-extraction-and-how-to-taste-it/>
+  — the limits of the sour/bitter mapping; astringency as a distinct sensation.
