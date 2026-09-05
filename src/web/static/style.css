@@ -933,47 +933,6 @@ select.input { background-image: none; }
   color: var(--text-2); opacity: .8;
 }
 
-/* ── Pre-infusion tap timer ─────────────────────────────────────────────── */
-.prep-timer { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
-.prep-step {
-  min-height: 56px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px;
-  background: rgba(200,134,10,.12);
-  border: 1px solid rgba(200,134,10,.35);
-  border-radius: 12px;
-  color: var(--accent);
-  cursor: pointer;
-  padding: 10px 14px;
-}
-.prep-step.is-running {
-  background: rgba(200,134,10,.22);
-  border-color: var(--accent);
-}
-.prep-step[data-stage="done"] { background: rgba(80,180,120,.14); border-color: rgba(80,180,120,.5); color: #6fce9a; }
-.prep-step-label { font-size: 15px; font-weight: 700; }
-.prep-step-hint { font-size: 11px; opacity: .8; }
-.prep-readout { display: flex; align-items: flex-end; gap: 10px; }
-.prep-cell { flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; }
-.prep-cell-label {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--text-2); opacity: .8;
-}
-.prep-cell-value {
-  width: 100%;
-  background: rgba(255,255,255,.05);
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 8px;
-  color: var(--text-1);
-  font-size: 16px; font-weight: 600;
-  padding: 8px 10px;
-  font-variant-numeric: tabular-nums;
-}
-.prep-reset {
-  background: none; border: 1px solid rgba(255,255,255,.14);
-  border-radius: 8px; color: var(--text-2);
-  font-size: 12px; padding: 9px 12px; cursor: pointer; min-height: 40px;
-}
 
 /* ── Version chip ───────────────────────────────────────────────────────── */
 /* Sits at the right of the header on every screen: the only way to tell a
@@ -1095,3 +1054,86 @@ select.input { background-image: none; }
 .feedback-hint {
   margin-top: 10px; font-size: 12px; color: var(--text-2); opacity: .8;
 }
+
+/* ── Shot wizard ────────────────────────────────────────────────────────── */
+.wizard-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.wizard-head {
+  flex-shrink: 0;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.wizard-step {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-3);
+}
+.wizard-title { font-size: 19px; font-weight: 700; margin-top: 2px; }
+/* Always reachable: you can abandon a shot from any step. */
+.wizard-exit {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid var(--border); border-radius: 12px;
+  color: var(--text-2); font-size: 24px; line-height: 1; cursor: pointer;
+}
+.wizard-body { flex: 1; overflow-y: auto; padding: 18px; }
+.wizard-pane { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+.wizard-actions {
+  flex-shrink: 0;
+  display: flex; gap: 10px; padding: 12px 18px 18px;
+  border-top: 1px solid var(--border);
+}
+.wizard-actions .btn-block { flex: 1; }
+
+/* ── The timer: the whole surface is the button ─────────────────────────── */
+/* Both hands are on the machine, so there is nothing to aim at. */
+.timer-surface {
+  flex: 1;
+  width: 100%;
+  min-height: 260px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+  background: rgba(255,255,255,.03);
+  border: 2px dashed var(--border);
+  border-radius: 20px;
+  color: var(--text-1);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  padding: 20px;
+}
+.timer-surface[data-stage="infusing"],
+.timer-surface[data-stage="resting"] {
+  border-style: solid; border-color: var(--accent);
+  background: rgba(200,134,10,.10);
+}
+.timer-surface[data-stage="pulling"] {
+  border-style: solid; border-color: var(--success);
+  background: rgba(61,158,92,.14);
+}
+.timer-surface[data-stage="done"] {
+  border-style: solid; border-color: var(--success);
+}
+.timer-phase {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .8px;
+  color: var(--text-2);
+}
+.timer-clock {
+  font-size: 76px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.timer-surface[data-stage="pulling"] .timer-clock { color: var(--success); }
+.timer-prompt {
+  font-size: 15px; color: var(--text-2); text-align: center; max-width: 260px;
+}
+.timer-marks {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  min-height: 28px;
+}
+.timer-tools { display: flex; gap: 10px; justify-content: center; }

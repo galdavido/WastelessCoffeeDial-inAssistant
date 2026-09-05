@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=22" />
+  <link rel="stylesheet" href="/static/style.css?v=23" />
 </head>
 <body>
   <div id="app">
@@ -322,55 +322,58 @@
   </div>
 
   <!-- "It worked!" dialog: log the dose + grind that dialled the coffee in -->
-  <div class="dialog-overlay hidden" id="grind-dialog">
-    <div class="dialog-card">
-      <div class="dialog-head">
-        <h3 class="dialog-title">Log this shot</h3>
-        <p class="dialog-sub">The time and how it tasted are what let me work out your next setting — without them I can only guess.</p>
+  <!-- Shot wizard: set up, time, then record. Three steps because the middle
+       one needs the whole screen and both your hands are on the machine. -->
+  <div class="wizard-overlay hidden" id="shot-wizard">
+    <header class="wizard-head">
+      <div>
+        <span class="wizard-step" id="wizard-step-label">Step 1 of 3</span>
+        <h3 class="wizard-title" id="wizard-title">Grind &amp; dose</h3>
       </div>
-      <div class="dialog-body">
+      <!-- Present on every step: you can always walk away from a shot. -->
+      <button class="wizard-exit" id="btn-wizard-exit" type="button" aria-label="Close">&times;</button>
+    </header>
+
+    <div class="wizard-body">
+
+      <!-- Step 1 — what you are about to pull with -->
+      <section class="wizard-pane" id="wizard-step-1">
+        <label class="field">
+          <span class="field-label">Grind setting</span>
+          <input class="input" type="number" id="wiz-grind" step="0.5" inputmode="decimal" placeholder="e.g. 19" />
+        </label>
         <label class="field">
           <span class="field-label">Dose in (g)</span>
-          <input class="input" type="number" id="worked-dose-input" step="0.1" min="1" max="40" inputmode="decimal" placeholder="18" />
+          <input class="input" type="number" id="wiz-dose" step="0.1" min="1" max="40" inputmode="decimal" placeholder="18" />
         </label>
+        <p class="dialog-hint" id="wiz-step1-hint">Pre-filled from the recipe. Change it to whatever you actually set.</p>
+      </section>
+
+      <!-- Step 2 — the timer. The pane itself is the button. -->
+      <section class="wizard-pane hidden" id="wizard-step-2">
+        <button class="timer-surface" id="timer-surface" type="button" data-stage="idle">
+          <span class="timer-phase" id="timer-phase">Pre-infusion</span>
+          <span class="timer-clock" id="timer-clock">0.0</span>
+          <span class="timer-prompt" id="timer-prompt">Tap anywhere to start</span>
+        </button>
+        <div class="timer-marks" id="timer-marks"></div>
+        <div class="timer-tools">
+          <button class="btn btn-sm btn-ghost" id="btn-timer-skip" type="button">Skip to the pull</button>
+          <button class="btn btn-sm btn-ghost" id="btn-timer-reset" type="button">Reset</button>
+        </div>
+      </section>
+
+      <!-- Step 3 — what came out, and how it tasted -->
+      <section class="wizard-pane hidden" id="wizard-step-3">
         <label class="field">
-          <span class="field-label">Grind setting used</span>
-          <input class="input" type="number" id="grind-input" step="0.5" inputmode="decimal" placeholder="e.g. 33" />
-        </label>
-        <label class="field">
-          <span class="field-label" id="yield-label">Out (g)</span>
-          <input class="input" type="number" id="worked-yield-input" step="0.1" min="1" max="1000" inputmode="decimal" placeholder="36" />
+          <span class="field-label" id="wiz-yield-label">Out (g)</span>
+          <input class="input" type="number" id="wiz-yield" step="0.1" min="1" max="1000" inputmode="decimal" placeholder="36" />
         </label>
         <label class="field">
           <span class="field-label">Shot time (s)</span>
-          <input class="input" type="number" id="worked-time-input" step="1" min="1" max="900" inputmode="numeric" placeholder="28" />
+          <input class="input" type="number" id="wiz-time" step="0.1" min="1" max="900" inputmode="decimal" placeholder="28" />
         </label>
-        <div class="field" id="prep-timer-field">
-          <span class="field-label">Pre-infusion &amp; rest</span>
-          <div class="prep-timer" id="prep-timer">
-            <button type="button" class="prep-step" id="prep-step-btn" data-stage="idle">
-              <span class="prep-step-label">Start pre-infusion</span>
-              <span class="prep-step-hint">tap when the pump goes on</span>
-            </button>
-            <div class="prep-readout">
-              <div class="prep-cell">
-                <span class="prep-cell-label">Pre-infusion</span>
-                <input class="prep-cell-value" type="number" step="0.1" min="0" max="120"
-                       inputmode="decimal" id="worked-preinfusion-input" placeholder="—" />
-              </div>
-              <div class="prep-cell">
-                <span class="prep-cell-label">Rest</span>
-                <input class="prep-cell-value" type="number" step="0.1" min="0" max="120"
-                       inputmode="decimal" id="worked-pause-input" placeholder="—" />
-              </div>
-              <button type="button" class="prep-reset" id="prep-reset-btn">Reset</button>
-            </div>
-          </div>
-          <p class="dialog-hint">Three taps: pump on, gauge starts moving, pull
-            started. You can also just type the numbers. Keeping these steady is
-            what lets the app tell a grind change from a prep change.</p>
-        </div>
-
+        <p class="dialog-hint" id="wiz-time-hint"></p>
         <div class="field">
           <span class="field-label">How did it taste?</span>
           <div class="taste-scale" id="taste-scale" role="group" aria-label="Taste">
@@ -382,16 +385,17 @@
           </div>
         </div>
         <label class="field field-inline">
-          <input type="checkbox" id="worked-astringent-input" />
+          <input type="checkbox" id="wiz-astringent" />
           <span class="field-label">Drying / mouth-puckering</span>
         </label>
-        <p class="dialog-hint">Bitter <em>and</em> drying usually means over-extracted. Bitter on its own is often just the roast — so this tick changes the advice.</p>
-      </div>
-      <div class="dialog-actions">
-        <button class="btn btn-primary" id="btn-save-grind">Log this shot</button>
-        <button class="btn btn-ghost" id="btn-skip-grind">Cancel</button>
-      </div>
+        <p class="dialog-hint">Bitter <em>and</em> drying usually means over-extracted. Bitter on its own is often just the roast &mdash; so this tick changes the advice.</p>
+      </section>
     </div>
+
+    <footer class="wizard-actions">
+      <button class="btn btn-ghost" id="btn-wiz-back">Back</button>
+      <button class="btn btn-primary btn-block" id="btn-wiz-next">Next</button>
+    </footer>
   </div>
 
   <!-- Full-screen photo viewer (tap a bag photo on a log card) -->
@@ -569,6 +573,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=22"></script>
+  <script src="/static/app.js?v=23"></script>
 </body>
 </html>

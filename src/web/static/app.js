@@ -953,102 +953,243 @@ function renderRecipe(data) {
   }
 }
 
-/* ── Pre-infusion tap timer ─────────────────────────────────────────────── */
-/* Three taps mark the two intervals the engine needs. Both fields stay
-   editable, so a missed tap doesn't cost you the shot. */
-const PREP_STAGES = {
-  idle:      { label: 'Start pre-infusion', hint: 'tap when the pump goes on' },
-  infusing:  { label: 'Gauge is moving',    hint: 'tap when the needle first lifts' },
-  resting:   { label: 'Pull started',       hint: 'tap when you open it up' },
-  done:      { label: 'Timed ✓',            hint: 'tap Reset to time another' },
+/* ── Shot wizard ────────────────────────────────────────────────────────── */
+/* Three steps, because the middle one wants the whole screen: set up, time
+   the shot, then record what came out. Exit is available on every step. */
+let wizStep = 1;
+let wizTaste = null;
+/* Marks captured by the timer, in ms. The pull is t3 -> t4, which is the
+   pressurised phase and therefore the shot time the grind law wants. */
+let wizMarks = { start: null, pressure: null, pull: null, stop: null };
+let wizTicker = null;
+
+const TIMER_STAGES = {
+  idle:     { phase: 'Pre-infusion', prompt: 'Tap anywhere to start' },
+  infusing: { phase: 'Pre-infusion', prompt: 'Tap when the gauge starts to move' },
+  resting:  { phase: 'Resting',      prompt: 'Tap when you start the pull' },
+  pulling:  { phase: 'Pulling',      prompt: 'Tap when you stop the shot' },
+  done:     { phase: 'Shot',         prompt: 'Tap Next to record what came out' },
 };
-let prepMarks = { start: null, pressure: null, pull: null };
 
-function renderPrepStage(stage) {
-  const btn = $('prep-step-btn');
-  btn.dataset.stage = stage;
-  btn.querySelector('.prep-step-label').textContent = PREP_STAGES[stage].label;
-  btn.querySelector('.prep-step-hint').textContent = PREP_STAGES[stage].hint;
-  btn.classList.toggle('is-running', stage === 'infusing' || stage === 'resting');
+function wizTimerStage() {
+  return $('timer-surface')?.dataset.stage || 'idle';
 }
 
-function resetPrepTimer({ clearFields = true } = {}) {
-  prepMarks = { start: null, pressure: null, pull: null };
-  renderPrepStage('idle');
-  if (clearFields) {
-    $('worked-preinfusion-input').value = '';
-    $('worked-pause-input').value = '';
-  }
+function secs(from, to) {
+  if (from === null || to === null) return null;
+  return Math.round(((to - from) / 1000) * 10) / 10;
 }
 
-on('prep-step-btn', 'click', () => {
+/* Whichever interval is currently running. */
+function liveElapsed() {
   const now = performance.now();
-  const stage = $('prep-step-btn').dataset.stage;
+  const stage = wizTimerStage();
+  if (stage === 'infusing') return secs(wizMarks.start, now);
+  if (stage === 'resting') return secs(wizMarks.pressure, now);
+  if (stage === 'pulling') return secs(wizMarks.pull, now);
+  if (stage === 'done') return secs(wizMarks.pull, wizMarks.stop);
+  return 0;
+}
 
-  if (stage === 'idle' || stage === 'done') {
-    prepMarks = { start: now, pressure: null, pull: null };
-    renderPrepStage('infusing');
-  } else if (stage === 'infusing') {
-    prepMarks.pressure = now;
-    $('worked-preinfusion-input').value =
-      ((now - prepMarks.start) / 1000).toFixed(1);
-    renderPrepStage('resting');
-  } else if (stage === 'resting') {
-    prepMarks.pull = now;
-    $('worked-pause-input').value =
-      ((now - prepMarks.pressure) / 1000).toFixed(1);
-    renderPrepStage('done');
+function renderTimer() {
+  const stage = wizTimerStage();
+  const spec = TIMER_STAGES[stage];
+  const phase = $('timer-phase');
+  const prompt = $('timer-prompt');
+  const clock = $('timer-clock');
+  if (phase) phase.textContent = spec.phase;
+  if (prompt) prompt.textContent = spec.prompt;
+  if (clock) clock.textContent = (liveElapsed() ?? 0).toFixed(1);
+
+  const marks = $('timer-marks');
+  if (marks) {
+    const pi = secs(wizMarks.start, wizMarks.pressure);
+    const pause = secs(wizMarks.pressure, wizMarks.pull);
+    const shot = secs(wizMarks.pull, wizMarks.stop);
+    marks.innerHTML = [
+      pi !== null ? `<span class="chip">Pre-infusion ${pi}s</span>` : '',
+      pause !== null ? `<span class="chip">Rest ${pause}s</span>` : '',
+      shot !== null ? `<span class="chip chip-band">Shot ${shot}s</span>` : '',
+    ].join('');
   }
+}
+
+function startTicker() {
+  stopTicker();
+  wizTicker = setInterval(renderTimer, 100);
+}
+function stopTicker() {
+  if (wizTicker) { clearInterval(wizTicker); wizTicker = null; }
+}
+
+function setTimerStage(stage) {
+  const surface = $('timer-surface');
+  if (surface) surface.dataset.stage = stage;
+  if (stage === 'idle' || stage === 'done') stopTicker(); else startTicker();
+  renderTimer();
+  updateWizardChrome();
+}
+
+function advanceTimer() {
+  const now = performance.now();
+  switch (wizTimerStage()) {
+    case 'idle':
+      wizMarks = { start: now, pressure: null, pull: null, stop: null };
+      setTimerStage('infusing');
+      break;
+    case 'infusing':
+      wizMarks.pressure = now;
+      setTimerStage('resting');
+      break;
+    case 'resting':
+      wizMarks.pull = now;
+      setTimerStage('pulling');
+      break;
+    case 'pulling':
+      wizMarks.stop = now;
+      setTimerStage('done');
+      break;
+    default:
+      break;    // 'done' — use Next; another tap must not restart the shot
+  }
+}
+
+/* Straight to the pull: no pre-infusion on this shot, or the method has none. */
+function skipToPull() {
+  wizMarks = { start: null, pressure: null, pull: performance.now(), stop: null };
+  setTimerStage('pulling');
+}
+
+function resetTimer() {
+  wizMarks = { start: null, pressure: null, pull: null, stop: null };
+  setTimerStage('idle');
+}
+
+function wizTimedShot() {
+  return {
+    preinfusion_s: secs(wizMarks.start, wizMarks.pressure),
+    pause_s: secs(wizMarks.pressure, wizMarks.pull),
+    time_s: secs(wizMarks.pull, wizMarks.stop),
+  };
+}
+
+function showWizStep(step) {
+  wizStep = step;
+  [1, 2, 3].forEach((n) => {
+    const pane = $(`wizard-step-${n}`);
+    if (pane) pane.classList.toggle('hidden', n !== step);
+  });
+  const titles = { 1: 'Grind & dose', 2: 'Time the shot', 3: 'What came out' };
+  const title = $('wizard-title');
+  const label = $('wizard-step-label');
+  if (title) title.textContent = titles[step];
+  if (label) label.textContent = `Step ${step} of 3`;
+
+  if (step === 3) {
+    // Carry the timed shot forward, but leave it editable.
+    const timed = wizTimedShot();
+    const timeField = $('wiz-time');
+    if (timeField && timed.time_s !== null) timeField.value = String(timed.time_s);
+    const hint = $('wiz-time-hint');
+    if (hint) {
+      hint.textContent = timed.time_s !== null
+        ? 'Taken from the timer — adjust if you stopped it late.'
+        : 'Not timed. Type the shot time if you know it, or leave it blank.';
+    }
+  }
+  updateWizardChrome();
+}
+
+function updateWizardChrome() {
+  const back = $('btn-wiz-back');
+  const next = $('btn-wiz-next');
+  if (back) back.classList.toggle('hidden', wizStep === 1);
+  if (!next) return;
+  if (wizStep === 3) { next.textContent = 'Log this shot'; return; }
+  if (wizStep === 2) {
+    const stage = wizTimerStage();
+    // Nudge toward finishing the shot rather than skipping past it.
+    next.textContent = stage === 'done' ? 'Next' : 'Skip timing';
+    return;
+  }
+  next.textContent = 'Next';
+}
+
+function openShotWizard() {
+  if (!currentCoffeeData && !currentBeanId) {
+    showToast('Nothing to log — pick a coffee first');
+    return;
+  }
+  const dose = currentScanDose() ?? currentCoffeeData?.preferred_dose_g ?? '';
+  $('wiz-grind').value = currentRecipe?.grind_clicks ?? '';
+  $('wiz-dose').value = dose === '' ? '' : String(dose);
+  $('wiz-yield').value = currentRecipe?.yield_g ?? currentRecipe?.water_g ?? '';
+  $('wiz-time').value = '';
+  $('wiz-astringent').checked = false;
+  wizTaste = null;
+  document.querySelectorAll('#taste-scale .taste-btn')
+    .forEach((b) => b.classList.remove('is-selected'));
+
+  const label = $('wiz-yield-label');
+  if (label) {
+    label.textContent =
+      currentRecipe && currentRecipe.method !== 'espresso' ? 'Water in (g)' : 'Out (g)';
+  }
+  const skip = $('btn-timer-skip');
+  if (skip) skip.hidden = false;
+
+  resetTimer();
+  // No low-pressure phase to hold on a moka pot: start at the pull.
+  if (currentRecipe?.method === 'moka') {
+    skipToPull();
+    if (skip) skip.hidden = true;
+  }
+
+  showWizStep(1);
+  $('shot-wizard').classList.remove('hidden');
+  document.body.classList.add('modal-open');
+}
+
+function closeShotWizard() {
+  stopTicker();
+  $('shot-wizard')?.classList.add('hidden');
+  syncModalScrollLock();
+}
+
+on('timer-surface', 'click', () => advanceTimer());
+on('btn-timer-skip', 'click', (e) => { e.stopPropagation(); skipToPull(); });
+on('btn-timer-reset', 'click', (e) => { e.stopPropagation(); resetTimer(); });
+on('btn-wizard-exit', 'click', () => closeShotWizard());
+on('btn-wiz-back', 'click', () => showWizStep(Math.max(1, wizStep - 1)));
+
+on('btn-wiz-next', 'click', () => {
+  if (wizStep < 3) { showWizStep(wizStep + 1); return; }
+  const timed = wizTimedShot();
+  const typedTime = parseFloat($('wiz-time').value);
+  saveFeedback({
+    grind: $('wiz-grind').value.trim(),
+    dose: parseFloat($('wiz-dose').value),
+    yield_g: parseFloat($('wiz-yield').value),
+    time_s: Number.isFinite(typedTime) ? typedTime : timed.time_s,
+    preinfusion_s: timed.preinfusion_s,
+    pause_s: timed.pause_s,
+    taste_axis: wizTaste,
+    astringent: $('wiz-astringent').checked,
+  });
 });
-
-on('prep-reset-btn', 'click', () => resetPrepTimer());
-
-/* ── Feedback: log the shot ─────────────────────────────────────────────── */
-/* The grind number comes from the engine's structured recipe. It used to be
-   regexed back out of the recommendation prose, which meant a generated
-   number could be logged as if it were something the user had measured. */
-let selectedTaste = null;
 
 document.querySelectorAll('#taste-scale .taste-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     const value = btn.dataset.taste;
-    selectedTaste = selectedTaste === value ? null : value;
+    wizTaste = wizTaste === value ? null : value;
     document.querySelectorAll('#taste-scale .taste-btn').forEach((b) => {
-      b.classList.toggle('is-selected', b.dataset.taste === selectedTaste);
+      b.classList.toggle('is-selected', b.dataset.taste === wizTaste);
     });
   });
 });
 
-on('btn-worked', 'click', () => {
-  const dose = currentScanDose() ?? currentCoffeeData?.preferred_dose_g ?? '';
-  $('worked-dose-input').value = dose === '' ? '' : String(dose);
-  $('grind-input').value = currentRecipe?.grind_clicks ?? '';
-  $('worked-yield-input').value = currentRecipe?.yield_g ?? currentRecipe?.water_g ?? '';
-  $('worked-time-input').value = '';
-  $('worked-astringent-input').checked = false;
-  resetPrepTimer();
-  // Pre-infusion only applies where you can hold the puck at low pressure.
-  $('prep-timer-field').hidden = currentRecipe?.method === 'moka';
-  selectedTaste = null;
-  document.querySelectorAll('#taste-scale .taste-btn')
-    .forEach((b) => b.classList.remove('is-selected'));
-  // Pour-over and moka are measured by water in, not beverage out.
-  $('yield-label').textContent =
-    currentRecipe && currentRecipe.method !== 'espresso' ? 'Water in (g)' : 'Out (g)';
-  openDialog('grind-dialog');
-});
+on('btn-worked', 'click', () => openShotWizard());
 
-on('btn-save-grind', 'click', () => saveFeedback({
-  grind: $('grind-input').value.trim(),
-  dose: parseFloat($('worked-dose-input').value),
-  yield_g: parseFloat($('worked-yield-input').value),
-  time_s: parseInt($('worked-time-input').value, 10),
-  taste_axis: selectedTaste,
-  astringent: $('worked-astringent-input').checked,
-  preinfusion_s: parseFloat($('worked-preinfusion-input').value),
-  pause_s: parseFloat($('worked-pause-input').value),
-}));
-on('btn-skip-grind', 'click', () => closeDialog('grind-dialog'));
 
 async function saveFeedback(worked) {
   if (!currentCoffeeData && !currentBeanId) {
@@ -1056,7 +1197,7 @@ async function saveFeedback(worked) {
     showToast('Nothing to log — pick a coffee first');
     return;
   }
-  closeDialog('grind-dialog');
+  closeShotWizard();
 
   const actualGrind = worked && worked.grind ? worked.grind : null;
   const doseUsed = worked && worked.dose > 0
