@@ -973,7 +973,29 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             raise HTTPException(status_code=404, detail="Bean not found")
 
         try:
-            db.query(DialInLog).filter(DialInLog.bean_id == bean_id).delete()
+            # Order matters: dial_in_logs point at recommendations, and
+            # recommendations point at the bean. Clearing only the logs left
+            # the recommendations behind, and the foreign key then refused the
+            # bean delete -- which is why a coffee became undeletable as soon
+            # as it had been opened for a recommendation.
+            db.query(DialInLog).filter(DialInLog.bean_id == bean_id).delete(
+                synchronize_session=False
+            )
+            doomed = [
+                row.id
+                for row in db.query(Recommendation.id)
+                .filter(Recommendation.bean_id == bean_id)
+                .all()
+            ]
+            if doomed:
+                # A shot on another coffee could reference one of these; drop
+                # the link rather than the shot.
+                db.query(DialInLog).filter(
+                    DialInLog.recommendation_id.in_(doomed)
+                ).update({DialInLog.recommendation_id: None}, synchronize_session=False)
+                db.query(Recommendation).filter(
+                    Recommendation.bean_id == bean_id
+                ).delete(synchronize_session=False)
             db.delete(bean)
             db.commit()
         except Exception as exc:

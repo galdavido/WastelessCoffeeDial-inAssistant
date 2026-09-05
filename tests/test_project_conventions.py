@@ -26,6 +26,47 @@ class TestProjectConventions(unittest.TestCase):
         content = (_ROOT / ".env.example").read_text(encoding="utf-8")
         self.assertNotIn("AIzaSy", content, "Gemini API key committed to .env.example")
 
+    def test_bean_delete_handles_every_table_that_references_beans(self) -> None:
+        """Adding a table with a link to beans must not make coffees undeletable.
+
+        This is exactly how the recommendations table broke deletion: the
+        route cleared the shot logs and then the bean, the new foreign key
+        refused, and the coffee could not be removed at all.
+        """
+        import inspect
+
+        from core import web_routes
+        from database.models import Base
+
+        source = inspect.getsource(web_routes)
+        start = source.index('@app.delete("/api/logs/{bean_id}")')
+        delete_source = source[start : start + 2000]
+
+        referencing = {
+            table.name
+            for table in Base.metadata.tables.values()
+            for fk in table.foreign_keys
+            if fk.column.table.name == "beans" and table.name != "beans"
+        }
+        self.assertIn("dial_in_logs", referencing, "test is not finding the FKs")
+
+        # Model class names are what the route actually queries.
+        handled = {
+            table.name
+            for table in Base.metadata.tables.values()
+            for cls in Base.registry.mappers
+            if cls.local_table is not None
+            and cls.local_table.name == table.name
+            and cls.class_.__name__ in delete_source
+        }
+        missing = referencing - handled
+        self.assertEqual(
+            missing,
+            set(),
+            f"tables reference beans but are not handled when deleting one: "
+            f"{sorted(missing)} — a coffee with such a row cannot be deleted",
+        )
+
     def test_frontend_javascript_parses(self) -> None:
         """A syntax error in app.js ships a completely blank app.
 
