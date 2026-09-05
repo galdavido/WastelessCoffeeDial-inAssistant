@@ -41,6 +41,7 @@ def _shot(
     pause_s: float | None = None,
     taste: str | None = None,
     rating: int | None = None,
+    brew_temp_c: float | None = None,
 ) -> ShotRecord:
     return ShotRecord(
         method="espresso",
@@ -50,6 +51,7 @@ def _shot(
         time_s=time_s,
         preinfusion_s=preinfusion_s,
         pause_s=pause_s,
+        brew_temp_c=brew_temp_c,
         taste_axis=taste,  # type: ignore[arg-type]
         rating=rating,
     )
@@ -84,6 +86,24 @@ class TestComparability(unittest.TestCase):
         """Otherwise nothing compares for a user who doesn't record it."""
         a = _shot(33, 28.0)
         b = _shot(35, 24.0, preinfusion_s=8.0)
+        self.assertTrue(prep_comparable(a, b))
+
+    def test_different_brew_temperature_is_not_comparable(self) -> None:
+        """Hotter water extracts faster, which is not the grinder's doing."""
+        a = _shot(33, 28.0, brew_temp_c=92.0)
+        b = _shot(35, 24.0, brew_temp_c=96.0)
+        self.assertFalse(prep_comparable(a, b))
+
+    def test_small_temperature_differences_still_compare(self) -> None:
+        """Without a PID the figure is what you set, not what reached the
+        coffee, so treating half a degree as meaningful is false precision."""
+        a = _shot(33, 28.0, brew_temp_c=93.0)
+        b = _shot(35, 24.0, brew_temp_c=93.5)
+        self.assertTrue(prep_comparable(a, b))
+
+    def test_unknown_temperature_counts_as_comparable(self) -> None:
+        a = _shot(33, 28.0, brew_temp_c=93.0)
+        b = _shot(35, 24.0)
         self.assertTrue(prep_comparable(a, b))
 
 

@@ -146,6 +146,14 @@ CONSTANTS: dict[str, Constant] = {
     "max_move_fraction": Constant(
         0.25, "fraction", "HEURISTIC", "#channeling-detection"
     ),
+    "temp_tolerance_c": Constant(
+        1.0,
+        "C",
+        "HEURISTIC",
+        "#temp-covariate",
+        "brew-temperature difference beyond which two shots stop being "
+        "comparable as grind evidence",
+    ),
     "prep_tolerance_s": Constant(
         2.0,
         "s",
@@ -496,7 +504,17 @@ def prep_comparable(a: ShotRecord, b: ShotRecord) -> bool:
     for lhs, rhs in ((a.preinfusion_s, b.preinfusion_s), (a.pause_s, b.pause_s)):
         if lhs is not None and rhs is not None and abs(lhs - rhs) > tolerance:
             return False
-    return True
+
+    # Temperature is a covariate for the same reason. Hotter water is less
+    # viscous and extracts faster, so it shortens the shot and shifts the
+    # taste independently of the grind. Comparing shots pulled at different
+    # temperatures puts that difference into the grind slope.
+    temp_tolerance = value_of("temp_tolerance_c")
+    return not (
+        a.brew_temp_c is not None
+        and b.brew_temp_c is not None
+        and abs(a.brew_temp_c - b.brew_temp_c) > temp_tolerance
+    )
 
 
 def is_finer(a: float, b: float, caps: GrinderCaps) -> bool:

@@ -962,6 +962,10 @@ let wizTaste = null;
    pressurised phase and therefore the shot time the grind law wants. */
 let wizMarks = { start: null, pressure: null, pull: null, stop: null };
 let wizTicker = null;
+/* Last temperature used, so it carries to the next shot rather than being
+   retyped. Temperature is a covariate on every comparison, so a blank one
+   costs the engine real information. */
+let lastBrewTempC = null;
 
 const TIMER_STAGES = {
   idle:     { phase: 'Pre-infusion', prompt: 'Tap anywhere to start' },
@@ -1125,6 +1129,16 @@ function openShotWizard() {
   $('wiz-dose').value = dose === '' ? '' : String(dose);
   $('wiz-yield').value = currentRecipe?.yield_g ?? currentRecipe?.water_g ?? '';
   $('wiz-time').value = '';
+  // The engine's target if it recommends one, else whatever you used last.
+  const temp = currentRecipe?.brew_temp_c ?? lastBrewTempC;
+  $('wiz-temp').value = temp === null || temp === undefined ? '' : String(temp);
+  const tempHint = $('wiz-temp-hint');
+  if (tempHint) {
+    tempHint.textContent = currentRecipe?.brew_temp_c != null
+      ? 'Suggested for this roast.'
+      : 'Recorded either way — shots at different temperatures are not '
+        + 'compared as evidence about the grind.';
+  }
   $('wiz-astringent').checked = false;
   wizTaste = null;
   document.querySelectorAll('#taste-scale .taste-btn')
@@ -1175,6 +1189,7 @@ on('btn-wiz-next', 'click', () => {
     pause_s: timed.pause_s,
     taste_axis: wizTaste,
     astringent: $('wiz-astringent').checked,
+    brew_temp_c: parseFloat($('wiz-temp').value),
   });
 });
 
@@ -1204,6 +1219,7 @@ async function saveFeedback(worked) {
     ? worked.dose
     : (currentScanDose() ?? currentCoffeeData.preferred_dose_g ?? null);
   const num = (v) => (Number.isFinite(v) && v > 0 ? v : null);
+  if (num(worked?.brew_temp_c) !== null) lastBrewTempC = worked.brew_temp_c;
 
   try {
     const res = await fetch('/api/feedback', {
@@ -1222,6 +1238,7 @@ async function saveFeedback(worked) {
         astringent:     worked?.astringent ?? null,
         preinfusion_s:  num(worked?.preinfusion_s),
         pause_s:        num(worked?.pause_s),
+        brew_temp_c:    num(worked?.brew_temp_c),
         recommendation_id: currentRecommendationId,
         image_name:     currentCoffeeData?.image_name ?? null,
       }),

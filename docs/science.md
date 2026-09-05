@@ -367,7 +367,31 @@ pre-infusion duration ever recorded, the engine reports back the user's own
 routine and says that keeping it constant is what makes the grind evidence
 readable. It does not propose an optimum it has not measured.
 
-### 5.6 Channeling detection thresholds {#channeling-detection}
+### 5.6 Brew temperature as a covariate {#temp-covariate}
+
+Hotter water is less viscous and extracts faster, so raising the brew
+temperature shortens the shot and moves the taste toward the bitter end
+without the grind changing at all. Two shots pulled at different temperatures
+are therefore not clean evidence about the grinder, for the same reason two
+shots with different pre-infusion are not ([#preinfusion](#preinfusion)).
+
+Shots whose recorded temperatures differ by more than `temp_tolerance_c` are
+excluded from each other's pairwise comparison in the Theil–Sen slope and in
+channeling detection. As with pre-infusion, an unknown temperature on either
+side counts as comparable — otherwise nothing would compare for a user who
+does not record it.
+
+The tolerance is deliberately loose. On a machine without a PID the recorded
+figure is what the user set or believes, not what reached the coffee
+([#limits](#limits)), so treating small differences as meaningful would be
+false precision.
+
+Temperature only becomes a *lever* the engine will move when the machine is
+marked temperature-controllable; otherwise it is recorded and used for
+comparability but never recommended, because advising a change you cannot make
+is noise.
+
+### 5.7 Channeling detection thresholds {#channeling-detection}
 
 Variance ratio 2.0 between fine and coarse subsets (n ≥ 6 before it may fire);
 never suggest more than 2 steps finer than the finest historically acceptable

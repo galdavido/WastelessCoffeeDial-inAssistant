@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=23" />
+  <link rel="stylesheet" href="/static/style.css?v=24" />
 </head>
 <body>
   <div id="app">
@@ -346,7 +346,12 @@
           <span class="field-label">Dose in (g)</span>
           <input class="input" type="number" id="wiz-dose" step="0.1" min="1" max="40" inputmode="decimal" placeholder="18" />
         </label>
+        <label class="field">
+          <span class="field-label">Brew temperature (°C)</span>
+          <input class="input" type="number" id="wiz-temp" step="0.5" min="70" max="105" inputmode="decimal" placeholder="93" />
+        </label>
         <p class="dialog-hint" id="wiz-step1-hint">Pre-filled from the recipe. Change it to whatever you actually set.</p>
+        <p class="dialog-hint" id="wiz-temp-hint"></p>
       </section>
 
       <!-- Step 2 — the timer. The pane itself is the button. -->
@@ -573,6 +578,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=23"></script>
+  <script src="/static/app.js?v=24"></script>
 </body>
 </html>
