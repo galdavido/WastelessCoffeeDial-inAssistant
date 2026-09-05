@@ -202,12 +202,30 @@ def ensure_default_equipment(db: Any) -> tuple[Any, Any]:
     return grinder, machine
 
 
+def _as_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
 def serialize_equipment(item: Equipment) -> dict[str, Any]:
     return {
         "id": item.id,
         "type": item.type,
         "brand": item.brand,
         "model": item.model,
+        # Capability data. Nulls are meaningful: where these are unknown the
+        # engine abstains rather than guessing, so the UI shows them as gaps
+        # worth filling rather than hiding them.
+        "grind_min_clicks": _as_float(item.grind_min_clicks),
+        "grind_max_clicks": _as_float(item.grind_max_clicks),
+        "grind_step_clicks": _as_float(item.grind_step_clicks),
+        "grind_um_per_click": _as_float(item.grind_um_per_click),
+        "finer_direction": item.finer_direction,
+        "burr_type": item.burr_type,
+        "basket_size_g": _as_float(item.basket_size_g),
+        "temp_min_c": _as_float(item.temp_min_c),
+        "temp_max_c": _as_float(item.temp_max_c),
+        "temp_controllable": bool(item.temp_controllable),
+        "spec_source": item.spec_source,
     }
 
 
@@ -259,6 +277,7 @@ def serialize_setup(setup: BrewSetup) -> dict[str, Any]:
     return {
         "id": setup.id,
         "name": setup.name,
+        "method": setup.method,
         "grinder": serialize_equipment(setup.grinder),
         "machine": serialize_equipment(setup.machine),
     }

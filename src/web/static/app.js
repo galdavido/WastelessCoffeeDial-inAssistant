@@ -1006,12 +1006,37 @@ function closeEquipmentManager() {
   closeDialog('equipment-manager-dialog');
 }
 
+/* Capability fields, mapped to their inputs. Blank means "unknown", which the
+   engine treats as a reason to abstain rather than a reason to guess. */
+const CAP_FIELDS = {
+  grind_min_clicks: 'equipment-form-grind-min',
+  grind_max_clicks: 'equipment-form-grind-max',
+  grind_step_clicks: 'equipment-form-grind-step',
+  grind_um_per_click: 'equipment-form-grind-um',
+  finer_direction: 'equipment-form-finer-direction',
+  burr_type: 'equipment-form-burr-type',
+  basket_size_g: 'equipment-form-basket',
+  temp_min_c: 'equipment-form-temp-min',
+  temp_max_c: 'equipment-form-temp-max',
+  spec_source: 'equipment-form-spec-source',
+};
+
+function showCapsFor(type) {
+  // A grinder has no basket; a brewer has no burrs.
+  $('equipment-grinder-caps').style.display = type === 'grinder' ? '' : 'none';
+  $('equipment-machine-caps').style.display = type === 'grinder' ? 'none' : '';
+}
+
 function clearEquipmentForm() {
   equipmentEditingId = null;
   $('equipment-form-title').textContent = 'Add equipment';
   $('equipment-form-type').value = 'grinder';
   $('equipment-form-brand').value = '';
   $('equipment-form-model').value = '';
+  Object.values(CAP_FIELDS).forEach((id) => { $(id).value = ''; });
+  $('equipment-form-finer-direction').value = 'lower_is_finer';
+  $('equipment-form-temp-controllable').checked = false;
+  showCapsFor('grinder');
   $('btn-cancel-equipment-edit').hidden = true;
 }
 
@@ -1021,12 +1046,21 @@ function populateEquipmentForm(item) {
   $('equipment-form-type').value = item.type || 'grinder';
   $('equipment-form-brand').value = item.brand || '';
   $('equipment-form-model').value = item.model || '';
+  Object.entries(CAP_FIELDS).forEach(([key, id]) => {
+    $(id).value = item[key] ?? '';
+  });
+  $('equipment-form-finer-direction').value = item.finer_direction || 'lower_is_finer';
+  $('equipment-form-temp-controllable').checked = Boolean(item.temp_controllable);
+  showCapsFor(item.type || 'grinder');
   $('btn-cancel-equipment-edit').hidden = false;
   $('equipment-form-title').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
+$('equipment-form-type').addEventListener('change', (e) => showCapsFor(e.target.value));
+
 function clearSetupForm() {
   $('setup-form-name').value = '';
+  $('setup-form-method').value = '';
   const grinderSelect = $('setup-form-grinder-id');
   const machineSelect = $('setup-form-machine-id');
   if (grinderSelect) grinderSelect.value = grinderSelect.options[0]?.value || '';
@@ -1039,6 +1073,7 @@ function populateSetupForm(setup) {
   $('setup-form-name').value = setup.name || '';
   $('setup-form-grinder-id').value = String(setup.grinder?.id || '');
   $('setup-form-machine-id').value = String(setup.machine?.id || '');
+  $('setup-form-method').value = setup.method || '';
 }
 
 async function saveSetupFromForm() {
@@ -1046,6 +1081,8 @@ async function saveSetupFromForm() {
     name: $('setup-form-name').value.trim(),
     grinder_id: Number($('setup-form-grinder-id').value),
     machine_id: Number($('setup-form-machine-id').value),
+    // Blank means "work it out from the brewer".
+    method: $('setup-form-method').value || null,
   };
 
   if (!payload.name || !payload.grinder_id || !payload.machine_id) {
@@ -1079,7 +1116,18 @@ async function saveEquipmentFromForm() {
     type: $('equipment-form-type').value,
     brand: $('equipment-form-brand').value.trim(),
     model: $('equipment-form-model').value.trim(),
+    temp_controllable: $('equipment-form-temp-controllable').checked,
   };
+
+  // Only send what was actually filled in. A blank stays unknown rather than
+  // being sent as a zero the engine would treat as a real limit.
+  Object.entries(CAP_FIELDS).forEach(([key, id]) => {
+    const raw = $(id).value;
+    if (raw === '' || raw === null) return;
+    const numeric = key !== 'finer_direction' && key !== 'burr_type'
+      && key !== 'spec_source';
+    payload[key] = numeric ? Number(raw) : raw.trim();
+  });
 
   if (!payload.brand || !payload.model) {
     showToast('Enter brand and model');

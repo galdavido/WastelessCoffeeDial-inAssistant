@@ -46,6 +46,9 @@ class SetupInput(BaseModel):
     name: str
     grinder_id: int
     machine_id: int
+    # Drives the target bands and which levers the engine may move. Left
+    # unset, the engine falls back to espresso.
+    method: Literal["espresso", "pourover", "moka"] | None = None
 
 
 class SetupSelectInput(BaseModel):
@@ -53,13 +56,35 @@ class SetupSelectInput(BaseModel):
     active_setup_id: int | None = None
 
 
-class EquipmentLibraryCreateInput(BaseModel):
+class EquipmentCapabilityFields(BaseModel):
+    """What the hardware can physically do.
+
+    All optional. Where the engine has no capability data it abstains from
+    recommending a value rather than guessing one, so a blank field is a
+    safe answer -- but spec_source should carry a citation whenever the
+    numbers are filled in, since an uncited capability row is a guess.
+    """
+
+    grind_min_clicks: float | None = None
+    grind_max_clicks: float | None = None
+    grind_step_clicks: float | None = None
+    grind_um_per_click: float | None = None
+    finer_direction: Literal["lower_is_finer", "higher_is_finer"] | None = None
+    burr_type: str | None = None
+    basket_size_g: float | None = None
+    temp_min_c: float | None = None
+    temp_max_c: float | None = None
+    temp_controllable: bool | None = None
+    spec_source: str | None = None
+
+
+class EquipmentLibraryCreateInput(EquipmentCapabilityFields):
     type: str
     brand: str
     model: str
 
 
-class EquipmentLibraryUpdateInput(BaseModel):
+class EquipmentLibraryUpdateInput(EquipmentCapabilityFields):
     type: str
     brand: str
     model: str

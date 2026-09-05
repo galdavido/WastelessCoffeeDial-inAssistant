@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 import uuid
 from typing import Any
@@ -68,6 +69,52 @@ def _server_error(exc: Exception, action: str) -> HTTPException:
     """Log the real error server-side, return a generic message to the client."""
     logger.exception("Error while %s: %s", action, exc)
     return HTTPException(status_code=500, detail=f"Could not {action}.")
+
+
+_POUROVER_MODELS = re.compile(r"v60|kalita|chemex|origami|switch|dripper", re.I)
+_MOKA_MODELS = re.compile(r"moka|kotyog|bialetti|brikka", re.I)
+
+
+def _infer_method(machine: Equipment) -> str:
+    """Best guess at brew method from the paired brewer.
+
+    Only a default: the user can override it in Settings, and the engine's
+    target bands and available levers follow whatever is stored.
+    """
+    if machine.type == "espresso_machine":
+        return "espresso"
+    if _MOKA_MODELS.search(machine.model or ""):
+        return "moka"
+    if machine.type == "filter" or _POUROVER_MODELS.search(machine.model or ""):
+        return "pourover"
+    return "espresso"
+
+
+_CAPABILITY_FIELDS = (
+    "grind_min_clicks",
+    "grind_max_clicks",
+    "grind_step_clicks",
+    "grind_um_per_click",
+    "finer_direction",
+    "burr_type",
+    "basket_size_g",
+    "temp_min_c",
+    "temp_max_c",
+    "temp_controllable",
+    "spec_source",
+)
+
+
+def _apply_capabilities(item: Equipment, body: Any) -> None:
+    """Copy any supplied capability values onto the equipment row.
+
+    Only fields actually sent are written, so a partially-filled form does
+    not blank out values that were already known.
+    """
+    for field_name in _CAPABILITY_FIELDS:
+        value = getattr(body, field_name, None)
+        if value is not None:
+            setattr(item, field_name, value)
 
 
 def _bean_for(db: Session, coffee_data: dict[str, Any]) -> Bean | None:
@@ -425,6 +472,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 brand=as_non_empty_text(body.brand),
                 model=as_non_empty_text(body.model),
             )
+            _apply_capabilities(item, body)
             db.add(item)
             db.commit()
             db.refresh(item)
@@ -472,6 +520,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             item.type = eq_type
             item.brand = as_non_empty_text(body.brand)
             item.model = as_non_empty_text(body.model)
+            _apply_capabilities(item, body)
             db.commit()
             db.refresh(item)
         except Exception as exc:
@@ -549,6 +598,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 name=as_non_empty_text(body.name),
                 grinder_id=grinder.id,
                 machine_id=machine.id,
+                method=body.method or _infer_method(machine),
             )
             db.add(setup)
             db.commit()
@@ -599,6 +649,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             setup.name = as_non_empty_text(body.name)
             setup.grinder_id = grinder.id
             setup.machine_id = machine.id
+            setup.method = body.method or setup.method or _infer_method(machine)
             db.commit()
             db.refresh(setup)
         except Exception as exc:
