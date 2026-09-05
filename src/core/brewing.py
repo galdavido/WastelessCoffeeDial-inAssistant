@@ -13,6 +13,8 @@ See docs/science.md for the derivations and the honest limits.
 from __future__ import annotations
 
 import math
+import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -410,3 +412,464 @@ def snap_to_step(clicks: float, caps: GrinderCaps) -> float:
     if step <= 0:
         return clicks
     return round(clicks / step) * step
+
+
+def is_finer(a: float, b: float, caps: GrinderCaps) -> bool:
+    """True when setting `a` grinds finer than setting `b` on this grinder."""
+    return (a - b) * caps.finer_sign > 0
+
+
+def finer_by(clicks: float, steps: float, caps: GrinderCaps) -> float:
+    """The setting `steps` grinder steps finer than `clicks`."""
+    return clicks + steps * caps.step_clicks * caps.finer_sign
+
+
+# --------------------------------------------------------------------------
+# The anti-channeling floor -- docs/science.md#cameron
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FinenessLimit:
+    """The finest setting the engine is willing to recommend, and why."""
+
+    clicks: float | None
+    reason: str | None
+
+
+def finest_useful_clicks(
+    history: Sequence[ShotRecord],
+    caps: GrinderCaps,
+    target: Target | None = None,
+) -> FinenessLimit:
+    """Where to stop grinding finer.
+
+    Extraction yield peaks and then *declines* at fine settings, because flow
+    goes inhomogeneous (docs/science.md#cameron). Past that peak, "the shot
+    ran long, grind finer" makes extraction worse and less repeatable -- and
+    that reflex was hardcoded into this app's previous prompt.
+
+    Five independent triggers, all deterministic and all derived from the
+    user's own shots or their hardware. The finest of the resulting limits
+    wins, i.e. the most permissive bound that every trigger agrees on.
+    """
+    candidates: list[tuple[float, str]] = []
+
+    measured = [
+        s
+        for s in history
+        if s.grind_clicks is not None and normalised_time(s) is not None
+    ]
+
+    # 1. Empirical peak. Under homogeneous flow a finer grind is always
+    #    slower. A finer setting that ran *faster* means flow bypassed the
+    #    bed. Two shots are enough to catch it.
+    for a in measured:
+        for b in measured:
+            if a is b or a.grind_clicks is None or b.grind_clicks is None:
+                continue
+            if not is_finer(a.grind_clicks, b.grind_clicks, caps):
+                continue
+            tr_a, tr_b = normalised_time(a), normalised_time(b)
+            if tr_a is None or tr_b is None:
+                continue
+            if tr_a <= tr_b:
+                candidates.append(
+                    (
+                        b.grind_clicks,
+                        f"at {a.grind_clicks:g} the shot ran no slower than at "
+                        f"{b.grind_clicks:g}, which means the water is finding "
+                        f"a channel rather than soaking the puck evenly",
+                    )
+                )
+
+    # 2. Reproducibility collapse: variance of ln(T_r) blowing up on the fine
+    #    side. Needs a real spread of data before it can say anything.
+    if len(measured) >= int(value_of("channeling_min_shots")):
+        ratio_limit = value_of("channeling_variance_ratio")
+        for pivot in measured:
+            if pivot.grind_clicks is None:
+                continue
+            fine: list[float] = []
+            coarse: list[float] = []
+            for s in measured:
+                if s.grind_clicks is None:
+                    continue
+                tr = normalised_time(s)
+                if tr is None or tr <= 0:
+                    continue
+                bucket = (
+                    fine
+                    if not is_finer(pivot.grind_clicks, s.grind_clicks, caps)
+                    else coarse
+                )
+                bucket.append(math.log(tr))
+            if len(fine) >= 3 and len(coarse) >= 3:
+                var_fine = statistics.pvariance(fine)
+                var_coarse = statistics.pvariance(coarse)
+                if var_coarse > 0 and var_fine / var_coarse > ratio_limit:
+                    candidates.append(
+                        (
+                            pivot.grind_clicks,
+                            "shots at and below this setting vary far more than "
+                            "the coarser ones, which is what channeling looks "
+                            "like in the data",
+                        )
+                    )
+
+    # 3. Long *and* sour: the bypass signature. Water spent a long time in the
+    #    basket and still under-extracted, so it was not passing through the
+    #    coffee. Going finer here makes it worse.
+    if target is not None and target.tr_hi is not None:
+        for s in measured:
+            tr = normalised_time(s)
+            if s.grind_clicks is None or tr is None:
+                continue
+            if tr > target.tr_hi and s.taste_axis in ("sour", "very_sour"):
+                candidates.append(
+                    (
+                        s.grind_clicks,
+                        f"{s.grind_clicks:g} produced a long shot that still "
+                        f"tasted sour -- the water is channeling, so finer "
+                        f"would make it worse",
+                    )
+                )
+
+    # (The hardware end-stop is deliberately *not* a trigger here. It is a
+    # different kind of limit and apply_guardrails applies it separately, so
+    # that "your grinder won't go finer" is never mislabelled to the user as
+    # "your shots are channeling".)
+
+    # 4. Never leap far below the finest setting that has actually worked.
+    acceptable = [
+        s.grind_clicks
+        for s in history
+        if s.grind_clicks is not None
+        and ((s.rating is not None and s.rating >= 4) or s.taste_axis == "balanced")
+    ]
+    if acceptable:
+        finest_good = min(acceptable) if caps.finer_sign < 0 else max(acceptable)
+        candidates.append(
+            (
+                finer_by(finest_good, value_of("max_steps_finer_than_best"), caps),
+                "more than a couple of steps finer than anything that has "
+                "worked before is a guess, not a correction",
+            )
+        )
+
+    if not candidates:
+        return FinenessLimit(None, None)
+
+    # The binding limit is the coarsest of the candidate floors.
+    coarsest = candidates[0]
+    for candidate in candidates[1:]:
+        if is_finer(coarsest[0], candidate[0], caps):
+            coarsest = candidate
+    return FinenessLimit(coarsest[0], coarsest[1])
+
+
+# --------------------------------------------------------------------------
+# Recipe and guardrails
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Recipe:
+    """What the engine recommends. Every number here is arithmetic, not prose."""
+
+    method: Method
+    dose_g: float
+    grind_clicks: float | None = None
+    yield_g: float | None = None
+    water_g: float | None = None
+    brew_temp_c: float | None = None
+    target_time_s: float | None = None
+    basis: Literal["prior", "history", "calibrated"] = "prior"
+    confidence: float = 0.0
+    guardrails_hit: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def numeric_tokens(self) -> set[str]:
+        """Every number this recipe legitimately contains.
+
+        The rationale writer's output is checked against this set, so the LLM
+        cannot introduce a number the engine did not produce.
+        """
+        tokens: set[str] = set()
+        for value in (
+            self.dose_g,
+            self.grind_clicks,
+            self.yield_g,
+            self.water_g,
+            self.brew_temp_c,
+            self.target_time_s,
+        ):
+            if value is None:
+                continue
+            tokens.add(f"{value:g}")
+            tokens.add(f"{value:.1f}")
+            tokens.add(f"{round(value)}")
+        return tokens
+
+
+def correct(
+    last: ShotRecord,
+    target: Target,
+    beta: float | None,
+    grinder: GrinderCaps,
+    machine: MachineCaps,
+    days_since_roast: int | None = None,
+    roast_level_ord: int | None = None,
+) -> Recipe:
+    """Propose the next recipe from the last measured shot.
+
+    One lever at a time, in priority order: the first rule that fires decides
+    the change, and the rest are recorded as what to try next. Changing two
+    things at once means learning nothing from the result.
+    """
+    notes: list[str] = []
+    dose = last.dose_g
+    ratio = brew_ratio(last)
+    tr = normalised_time(last)
+    grind = last.grind_clicks
+    temp_lo, temp_hi = temp_band_for_roast(roast_level_ord)
+    temp = (
+        min(max(last.brew_temp_c or (temp_lo + temp_hi) / 2, temp_lo), temp_hi)
+        if machine.temp_controllable
+        else None
+    )
+
+    fresh = days_since_roast is not None and days_since_roast < value_of(
+        "degas_rest_days"
+    )
+    if fresh:
+        notes.append(
+            f"this coffee is {days_since_roast} days off roast; it is still "
+            f"releasing CO2, so flow will be erratic and the target will move "
+            f"until about day {value_of('degas_rest_days'):.0f}"
+        )
+
+    def build(**overrides: object) -> Recipe:
+        base: dict[str, object] = {
+            "method": last.method,
+            "dose_g": dose,
+            "grind_clicks": grind,
+            "yield_g": round(target.ratio_aim * dose, 1)
+            if last.method == "espresso"
+            else None,
+            "water_g": round(target.ratio_aim * dose, 1)
+            if last.method != "espresso"
+            else None,
+            "brew_temp_c": temp,
+            "target_time_s": target.time_hi,
+            "notes": tuple(notes),
+        }
+        base.update(overrides)
+        return Recipe(**base)  # type: ignore[arg-type]
+
+    # 1. Ratio first: it is measured, not inferred, and T_r normalises it out
+    #    of the time comparison anyway.
+    if ratio is not None and not (target.ratio_lo <= ratio <= target.ratio_hi):
+        notes.append(
+            f"your ratio was 1:{ratio:.1f}; aiming for 1:{target.ratio_aim:g} "
+            f"first, since that is the number you measured directly"
+        )
+        return build()
+
+    # 2. Time out of band -> grind is the lever. Espresso and pour-over only:
+    #    for moka, brew time is stove heat, not grind.
+    if beta is not None and tr is not None and target.tr_lo is not None:
+        tr_lo, tr_hi = target.tr_lo, target.tr_hi
+        assert tr_hi is not None
+        if fresh:
+            widen = value_of("fresh_band_widening")
+            centre = (tr_lo + tr_hi) / 2
+            tr_lo = centre - (centre - tr_lo) * widen
+            tr_hi = centre + (tr_hi - centre) * widen
+        if grind is not None and not (tr_lo <= tr <= tr_hi):
+            tr_aim = (tr_lo + tr_hi) / 2
+            proposed = solve_grind(grind, tr, tr_aim, beta)
+            move = proposed - grind
+            cap = value_of("max_move_fraction") * abs(1.0 / beta)
+            if abs(move) > cap:
+                move = math.copysign(cap, move)
+                notes.append(
+                    "moving in a smaller step than the maths suggests, because "
+                    "a big jump teaches you nothing about which way to go next"
+                )
+            if fresh:
+                move *= value_of("fresh_correction_damping")
+            direction = "finer" if is_finer(grind + move, grind, grinder) else "coarser"
+            notes.append(
+                f"your shot ran {'long' if tr > tr_hi else 'fast'} for the "
+                f"ratio, so go {direction}"
+            )
+            return build(grind_clicks=snap_to_step(grind + move, grinder))
+
+    # 3. Time is fine but it does not taste right.
+    offset = taste_offset(last.taste_axis)
+    if offset:
+        if offset < 0:  # sour: under-extracted
+            if machine.temp_controllable and temp is not None and temp < temp_hi:
+                notes.append("tasted sour, so extract a little harder: up 1 C")
+                return build(brew_temp_c=min(temp + 1.0, temp_hi))
+            longer = min(target.ratio_aim * 1.15, target.ratio_hi)
+            notes.append(
+                "tasted sour with the timing on target, so let it run a little "
+                "longer rather than changing the grind"
+            )
+            return build(
+                yield_g=round(longer * dose, 1) if last.method == "espresso" else None,
+                water_g=round(longer * dose, 1) if last.method != "espresso" else None,
+            )
+        # bitter
+        if not last.astringent:
+            # Bitter without astringency is usually roast character, not
+            # over-extraction. Moving the grind here is the most common false
+            # correction in dial-in advice. See docs/science.md#taste-mapping.
+            shorter = max(target.ratio_aim * 0.9, target.ratio_lo)
+            notes.append(
+                "bitter but not drying, which usually means roast character "
+                "rather than over-extraction -- shortening the shot instead of "
+                "touching the grind"
+            )
+            return build(
+                yield_g=round(shorter * dose, 1) if last.method == "espresso" else None,
+                water_g=round(shorter * dose, 1) if last.method != "espresso" else None,
+            )
+        if machine.temp_controllable and temp is not None and temp > temp_lo:
+            notes.append("drying and bitter: over-extracted, so down 1 C")
+            return build(brew_temp_c=max(temp - 1.0, temp_lo))
+        if grind is not None:
+            notes.append(
+                "drying and bitter with the timing on target: one step coarser"
+            )
+            return build(
+                grind_clicks=snap_to_step(finer_by(grind, -1, grinder), grinder)
+            )
+
+    notes.append("this one looks on target -- keep it the same and repeat it")
+    return build()
+
+
+def propose_dose_reduction(dose_g: float) -> tuple[float, str]:
+    """The Cameron reproducibility move. docs/science.md#cameron-reproducibility.
+
+    When channeling keeps recurring, stop chasing the grind: use less coffee
+    and grind coarser. A shallower bed drops less pressure and channels less,
+    and it uses a fifth less coffee for a better, more repeatable shot.
+    """
+    reduced = round(dose_g * (1.0 - value_of("cameron_dose_reduction")), 1)
+    return (
+        reduced,
+        f"channeling keeps recurring at this dose. Rather than chasing it with "
+        f"the grinder, try {reduced:g} g instead of {dose_g:g} g and grind a "
+        f"little coarser -- a shallower puck channels less, and you use less "
+        f"coffee for a better shot",
+    )
+
+
+def temp_band_for_roast(roast_level_ord: int | None) -> tuple[float, float]:
+    """Brew temperature window by roast level. docs/science.md#temp-by-roast."""
+    if roast_level_ord is not None and roast_level_ord <= 2:
+        return value_of("temp_light_lo"), value_of("temp_light_hi")
+    if roast_level_ord is not None and roast_level_ord >= 4:
+        return value_of("temp_dark_lo"), value_of("temp_dark_hi")
+    return value_of("temp_medium_lo"), value_of("temp_medium_hi")
+
+
+def apply_guardrails(
+    recipe: Recipe,
+    grinder: GrinderCaps,
+    machine: MachineCaps,
+    history: Sequence[ShotRecord] = (),
+    target: Target | None = None,
+) -> Recipe:
+    """Clamp every field to what the hardware and the user's history allow.
+
+    Runs on numbers, before any language model sees them. Every clamp is
+    recorded in guardrails_hit so the UI can show it rather than silently
+    changing what the user asked for.
+    """
+    hits = list(recipe.guardrails_hit)
+    notes = list(recipe.notes)
+    grind = recipe.grind_clicks
+    dose = recipe.dose_g
+    temp = recipe.brew_temp_c
+    yield_g = recipe.yield_g
+
+    # --- grind ---------------------------------------------------------
+    if grind is not None:
+        limit = finest_useful_clicks(history, grinder, target)
+        if limit.clicks is not None and is_finer(grind, limit.clicks, grinder):
+            grind = limit.clicks
+            hits.append("grind_channeling_floor")
+            if limit.reason:
+                notes.append(limit.reason)
+
+        if grinder.min_clicks is not None and grind < grinder.min_clicks:
+            grind = grinder.min_clicks
+            hits.append("grind_hardware_min")
+        if grinder.max_clicks is not None and grind > grinder.max_clicks:
+            grind = grinder.max_clicks
+            hits.append("grind_hardware_max")
+
+        snapped = snap_to_step(grind, grinder)
+        if snapped != grind:
+            hits.append("grind_snapped_to_step")
+            grind = snapped
+
+    # --- dose ----------------------------------------------------------
+    if machine.basket_size_g is not None:
+        lo = machine.basket_size_g * value_of("basket_fill_lo")
+        hi = machine.basket_size_g * value_of("basket_fill_hi")
+        if dose < lo or dose > hi:
+            dose = min(max(dose, lo), hi)
+            hits.append("dose_basket_capacity")
+            notes.append(f"your basket holds about {machine.basket_size_g:g} g")
+    else:
+        lo, hi = value_of("dose_min_g"), value_of("dose_max_g")
+        if dose < lo or dose > hi:
+            dose = min(max(dose, lo), hi)
+            hits.append("dose_plausible_range")
+
+    # --- ratio / yield -------------------------------------------------
+    if target is not None and yield_g is not None and dose > 0:
+        ratio = yield_g / dose
+        if ratio < target.ratio_lo or ratio > target.ratio_hi:
+            ratio = min(max(ratio, target.ratio_lo), target.ratio_hi)
+            yield_g = round(ratio * dose, 1)
+            hits.append("ratio_out_of_band")
+    if yield_g is not None and yield_g <= dose:
+        # Not a preference: a beverage lighter than the dry coffee is a
+        # logging error, not a recipe.
+        yield_g = None
+        hits.append("yield_below_dose_rejected")
+
+    # --- temperature ---------------------------------------------------
+    if temp is not None and not machine.temp_controllable:
+        # Telling someone with a fixed-temperature machine to change the
+        # temperature is noise.
+        temp = None
+        hits.append("temp_not_controllable")
+    elif temp is not None:
+        lo = machine.temp_min_c if machine.temp_min_c is not None else temp
+        hi = machine.temp_max_c if machine.temp_max_c is not None else temp
+        clamped = min(max(temp, lo), hi)
+        if clamped != temp:
+            temp = clamped
+            hits.append("temp_machine_range")
+
+    return Recipe(
+        method=recipe.method,
+        dose_g=round(dose, 1),
+        grind_clicks=grind,
+        yield_g=yield_g,
+        water_g=recipe.water_g,
+        brew_temp_c=temp,
+        target_time_s=recipe.target_time_s,
+        basis=recipe.basis,
+        confidence=recipe.confidence,
+        guardrails_hit=tuple(hits),
+        notes=tuple(notes),
+    )

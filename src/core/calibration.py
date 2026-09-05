@@ -1,0 +1,174 @@
+"""Fit the grind law to the user's own shots.
+
+Pure functions over ShotRecord lists -- no database, no network, so this stays
+in the DB-free test path.
+
+Two design choices carry most of the weight here:
+
+* **Theil-Sen, not least squares.** With four to eight shots a single
+  mis-logged one (forgot to tare, stopped the timer late) drags an OLS fit
+  badly. Theil-Sen takes the median of pairwise slopes and tolerates roughly
+  29% bad points, needs no distributional assumptions, and is ten lines of
+  stdlib.
+
+* **The slope is a property of the grinder, the intercept of the bean.**
+  beta (how much a click moves the time) is fitted across every bean on a
+  setup, where data accumulates fastest; delta_bean is a single scalar offset
+  per coffee. So one shot on a new bag is immediately useful while beta keeps
+  improving globally -- which is the only way this works at the handful of
+  shots per bean a real person logs.
+
+Shrinkage starts at 100% prior, which is the correct state for a user who has
+logged nothing yet. See docs/science.md#shrinkage.
+"""
+
+from __future__ import annotations
+
+import math
+import statistics
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from .brewing import (
+    GrinderCaps,
+    Method,
+    ShotRecord,
+    normalised_time,
+    value_of,
+)
+
+
+@dataclass(frozen=True)
+class Calibration:
+    """A fitted (or wholly prior) grind law for one setup."""
+
+    beta: float | None
+    beta_source: str  # 'prior' | 'shrunk' | 'none'
+    alpha: float | None = None
+    delta_bean: float = 0.0
+    n_eff: int = 0
+    click_span: float = 0.0
+    confidence: float = 0.0
+
+    @property
+    def is_fitted(self) -> bool:
+        return self.beta_source == "shrunk"
+
+
+def theil_sen_slope(points: Sequence[tuple[float, float]]) -> float | None:
+    """Median of pairwise slopes. Robust to a minority of bad measurements."""
+    slopes = [
+        (y2 - y1) / (x2 - x1)
+        for i, (x1, y1) in enumerate(points)
+        for (x2, y2) in points[i + 1 :]
+        if x2 != x1
+    ]
+    if not slopes:
+        return None
+    return statistics.median(slopes)
+
+
+def _usable(shots: Sequence[ShotRecord]) -> list[tuple[float, float]]:
+    """(clicks, ln T_r) for shots that carry both."""
+    out: list[tuple[float, float]] = []
+    for shot in shots:
+        tr = normalised_time(shot)
+        if shot.grind_clicks is None or tr is None or tr <= 0:
+            continue
+        out.append((shot.grind_clicks, math.log(tr)))
+    return out
+
+
+def fit_setup(
+    shots: Sequence[ShotRecord],
+    method: Method,
+    caps: GrinderCaps,
+    beta_prior_value: float | None,
+    bean_id: int | None = None,
+) -> Calibration:
+    """Fit the grind law for one setup, shrunk toward the physical prior."""
+    if beta_prior_value is None:
+        # Moka: brew time is stove heat, not permeability. There is no grind
+        # law to fit and pretending otherwise would invent a lever.
+        return Calibration(beta=None, beta_source="none", confidence=0.0)
+
+    points = _usable(shots)
+    distinct = sorted({clicks for clicks, _ in points})
+    # Shots at one setting carry no slope information however many there are.
+    n_eff = len(distinct)
+    span = (distinct[-1] - distinct[0]) if len(distinct) >= 2 else 0.0
+
+    kappa = value_of("kappa_espresso" if method == "espresso" else "kappa_pourover")
+
+    fitted: float | None = None
+    min_span = 3.0 * (caps.step_clicks or 1.0)
+    if n_eff >= 3 and span >= min_span:
+        fitted = theil_sen_slope(points)
+        # A fit whose sign disagrees with the physics is not a better estimate
+        # of the slope -- it is the channeling signature. Discard it and let
+        # the guardrail in brewing.finest_useful_clicks deal with it.
+        if fitted is not None and fitted * beta_prior_value <= 0:
+            fitted = None
+
+    if fitted is None:
+        beta, source, weight = beta_prior_value, "prior", 0.0
+    else:
+        weight = n_eff / (n_eff + kappa)
+        beta = weight * fitted + (1.0 - weight) * beta_prior_value
+        source = "shrunk"
+
+    alpha = None
+    if points and beta:
+        alpha = statistics.median(y - beta * x for x, y in points)
+
+    delta = 0.0
+    if bean_id is not None and alpha is not None and beta:
+        residuals = [
+            y - (alpha + beta * x)
+            for shot, (x, y) in zip(
+                [s for s in shots if normalised_time(s) and s.grind_clicks is not None],
+                points,
+                strict=False,
+            )
+            if shot.bean_id == bean_id
+        ]
+        if residuals:
+            kappa_bean = value_of("kappa_bean")
+            shrink = len(residuals) / (len(residuals) + kappa_bean)
+            delta = shrink * statistics.median(residuals)
+
+    cap = 1.0
+    if method == "pourover":
+        cap = value_of("confidence_cap_pourover")
+    elif method == "moka":
+        cap = value_of("confidence_cap_moka")
+    confidence = weight * min(1.0, n_eff / 8.0) * cap
+
+    return Calibration(
+        beta=beta,
+        beta_source=source,
+        alpha=alpha,
+        delta_bean=delta,
+        n_eff=n_eff,
+        click_span=span,
+        confidence=round(confidence, 2),
+    )
+
+
+def confidence_label(calibration: Calibration) -> str:
+    """Plain-language confidence, shown next to the numbers.
+
+    Saying "based on general guidance, not your history" when that is the
+    truth matters more than sounding certain.
+    """
+    c = calibration.confidence
+    if c <= 0.0:
+        return "First shot - this is a starting bracket to measure from"
+    if c < 0.3:
+        return "Low - based on general guidance rather than your own shots"
+    if c < 0.6:
+        return f"Medium - learning from {calibration.n_eff} settings on this setup"
+    return (
+        f"Good - calibrated to your grinder across {calibration.n_eff} "
+        f"different settings"
+    )
