@@ -318,7 +318,56 @@ Under 7 days off roast, acceptance bands are doubled and correction magnitudes
 halved, and the user is told the target is moving. Rationale in
 [#degassing](#degassing); the factors themselves are guesses.
 
-### 5.5 Channeling detection thresholds {#channeling-detection}
+### 5.5 Pre-infusion and the rest before the pull {#preinfusion}
+
+Pre-infusion wets the puck at low pressure so it swells and settles before
+full pressure arrives; the pause afterwards lets water finish distributing by
+capillary action and lets CO₂ escape. Both exist to make the bed uniformly
+saturated, and an evenly saturated bed is the standard mitigation for
+channeling — the same failure mode as [#cameron](#cameron).
+
+This is well-established practice rather than peer-reviewed measurement. The
+mechanism is not in dispute; the magnitudes below are ours.
+
+**Why pre-infusion time is deliberately excluded from `T_r`.** The grind law
+([#beta-law](#beta-law)) is Darcy's law, which describes *pressurised* flow.
+`T_r` must therefore be the pressurised pull only. Folding pre-infusion
+seconds into it would put a non-Darcy phase inside a Darcy model and corrupt
+β. Machines that restart their timer when the pull begins are, for this
+purpose, doing the right thing.
+
+**Why it must still be recorded.** A shot with longer pre-infusion reaches
+full pressure with the bed already wet, so it pulls *faster*. Unrecorded, that
+is indistinguishable from — and will be attributed to — a coarser grind. Worse,
+a finer shot that ran faster is precisely trigger 1 of
+[#channeling-detection](#channeling-detection), so an unrecorded pre-infusion
+difference can **fake the channeling signature** and stop the engine going
+finer when nothing is wrong. Pairs whose pre-infusion or pause differ by more
+than `prep_tolerance_s` are therefore excluded from the Theil–Sen slope and
+from channeling detection. Because Theil–Sen is built from pairwise slopes,
+dropping an incomparable pair is one term removed and nothing else changes.
+
+**Time to first pressure as a second resistance reading.** On a machine with a
+gauge, the interval between the pump starting and the needle first moving is
+how long it takes to fill the headspace and saturate the bed — a measurement
+of puck resistance taken *before* the shot runs. Grind moves it and the pull
+time together. When they disagree by more than
+`resistance_disagreement_ratio`, the bed's resistance changed after it was
+wetted, which points at distribution, tamp or channeling rather than at the
+grinder — a distinction the pull time alone cannot make.
+
+**Fineness relief.** Where pre-infusion is used consistently and is long
+enough to matter, the channeling floor is relaxed by
+`preinfusion_channeling_relief` of one grinder step, because a properly
+saturated puck tolerates a finer grind than a dry one. Consistency is required
+before the relief applies: an inconsistent routine provides no such protection.
+
+**Advice is gated.** Below `min_shots_for_prep_advice`, or with only one
+pre-infusion duration ever recorded, the engine reports back the user's own
+routine and says that keeping it constant is what makes the grind evidence
+readable. It does not propose an optimum it has not measured.
+
+### 5.6 Channeling detection thresholds {#channeling-detection}
 
 Variance ratio 2.0 between fine and coarse subsets (n ≥ 6 before it may fire);
 never suggest more than 2 steps finer than the finest historically acceptable

@@ -370,6 +370,8 @@ def save_dial_in_log(
     taste_axis: str | None = None,
     astringent: bool | None = None,
     brew_temp_c: float | None = None,
+    preinfusion_s: float | None = None,
+    pause_s: float | None = None,
     recommendation_id: int | None = None,
 ) -> None:
     db = SessionLocal()
@@ -434,6 +436,8 @@ def save_dial_in_log(
                 taste_axis=taste_axis,
                 astringent=astringent,
                 brew_temp_c=brew_temp_c,
+                preinfusion_s=preinfusion_s,
+                pause_s=pause_s,
                 rating=None,
                 tasting_notes=None,
                 recommendation_id=recommendation_id,

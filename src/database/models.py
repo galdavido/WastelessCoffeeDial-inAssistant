@@ -150,7 +150,12 @@ class DialInLog(Base):
     taste_axis: Mapped[str | None] = mapped_column(String, nullable=True)
     astringent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     brew_temp_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    # Pre-infusion duration, and the rest between cutting it and pulling.
+    # Kept out of time_s on purpose: the grind law governs pressurised flow,
+    # so folding these in would corrupt it. They are covariates, not part of
+    # the shot time.
     preinfusion_s: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
+    pause_s: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
     # Optional forever: no code path may require a refractometer.
     tds_pct: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
     # 'measured' | 'partial' | 'synthetic' | 'imported'.

@@ -321,6 +321,8 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 taste_axis=body.taste_axis,
                 astringent=body.astringent,
                 brew_temp_c=body.brew_temp_c,
+                preinfusion_s=body.preinfusion_s,
+                pause_s=body.pause_s,
                 recommendation_id=body.recommendation_id,
             )
         except Exception as exc:

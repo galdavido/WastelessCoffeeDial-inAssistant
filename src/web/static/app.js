@@ -636,6 +636,8 @@ function renderRecipe(data) {
       ['Time', r.target_time_s != null ? `${r.target_time_s} s` : '—'],
     ];
     if (r.brew_temp_c != null) fields.push(['Temp', `${r.brew_temp_c} °C`]);
+    if (r.preinfusion_s != null) fields.push(['Pre-inf', `${r.preinfusion_s} s`]);
+    if (r.pause_s != null) fields.push(['Rest', `${r.pause_s} s`]);
     fields.forEach(([label, value]) => {
       const cell = document.createElement('div');
       cell.className = 'recipe-cell';
@@ -663,6 +665,56 @@ function renderRecipe(data) {
   $('recipe-confidence').textContent = data.confidence_label || '';
 }
 
+/* ── Pre-infusion tap timer ─────────────────────────────────────────────── */
+/* Three taps mark the two intervals the engine needs. Both fields stay
+   editable, so a missed tap doesn't cost you the shot. */
+const PREP_STAGES = {
+  idle:      { label: 'Start pre-infusion', hint: 'tap when the pump goes on' },
+  infusing:  { label: 'Gauge is moving',    hint: 'tap when the needle first lifts' },
+  resting:   { label: 'Pull started',       hint: 'tap when you open it up' },
+  done:      { label: 'Timed ✓',            hint: 'tap Reset to time another' },
+};
+let prepMarks = { start: null, pressure: null, pull: null };
+
+function renderPrepStage(stage) {
+  const btn = $('prep-step-btn');
+  btn.dataset.stage = stage;
+  btn.querySelector('.prep-step-label').textContent = PREP_STAGES[stage].label;
+  btn.querySelector('.prep-step-hint').textContent = PREP_STAGES[stage].hint;
+  btn.classList.toggle('is-running', stage === 'infusing' || stage === 'resting');
+}
+
+function resetPrepTimer({ clearFields = true } = {}) {
+  prepMarks = { start: null, pressure: null, pull: null };
+  renderPrepStage('idle');
+  if (clearFields) {
+    $('worked-preinfusion-input').value = '';
+    $('worked-pause-input').value = '';
+  }
+}
+
+$('prep-step-btn').addEventListener('click', () => {
+  const now = performance.now();
+  const stage = $('prep-step-btn').dataset.stage;
+
+  if (stage === 'idle' || stage === 'done') {
+    prepMarks = { start: now, pressure: null, pull: null };
+    renderPrepStage('infusing');
+  } else if (stage === 'infusing') {
+    prepMarks.pressure = now;
+    $('worked-preinfusion-input').value =
+      ((now - prepMarks.start) / 1000).toFixed(1);
+    renderPrepStage('resting');
+  } else if (stage === 'resting') {
+    prepMarks.pull = now;
+    $('worked-pause-input').value =
+      ((now - prepMarks.pressure) / 1000).toFixed(1);
+    renderPrepStage('done');
+  }
+});
+
+$('prep-reset-btn').addEventListener('click', () => resetPrepTimer());
+
 /* ── Feedback: log the shot ─────────────────────────────────────────────── */
 /* The grind number comes from the engine's structured recipe. It used to be
    regexed back out of the recommendation prose, which meant a generated
@@ -686,6 +738,9 @@ $('btn-worked').addEventListener('click', () => {
   $('worked-yield-input').value = currentRecipe?.yield_g ?? currentRecipe?.water_g ?? '';
   $('worked-time-input').value = '';
   $('worked-astringent-input').checked = false;
+  resetPrepTimer();
+  // Pre-infusion only applies where you can hold the puck at low pressure.
+  $('prep-timer-field').hidden = currentRecipe?.method === 'moka';
   selectedTaste = null;
   document.querySelectorAll('#taste-scale .taste-btn')
     .forEach((b) => b.classList.remove('is-selected'));
@@ -702,6 +757,8 @@ $('btn-save-grind').addEventListener('click', () => saveFeedback({
   time_s: parseInt($('worked-time-input').value, 10),
   taste_axis: selectedTaste,
   astringent: $('worked-astringent-input').checked,
+  preinfusion_s: parseFloat($('worked-preinfusion-input').value),
+  pause_s: parseFloat($('worked-pause-input').value),
 }));
 $('btn-skip-grind').addEventListener('click', () => closeDialog('grind-dialog'));
 
@@ -730,6 +787,8 @@ async function saveFeedback(worked) {
         time_s:         num(worked?.time_s),
         taste_axis:     worked?.taste_axis ?? null,
         astringent:     worked?.astringent ?? null,
+        preinfusion_s:  num(worked?.preinfusion_s),
+        pause_s:        num(worked?.pause_s),
         recommendation_id: currentRecommendationId,
         image_name:     currentCoffeeData.image_name ?? null,
       }),

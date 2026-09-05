@@ -146,6 +146,31 @@ CONSTANTS: dict[str, Constant] = {
     "max_move_fraction": Constant(
         0.25, "fraction", "HEURISTIC", "#channeling-detection"
     ),
+    "prep_tolerance_s": Constant(
+        2.0,
+        "s",
+        "HEURISTIC",
+        "#preinfusion",
+        "pre-infusion/pause difference beyond which two shots stop being "
+        "comparable as grind evidence",
+    ),
+    "preinfusion_channeling_relief": Constant(
+        1.0,
+        "steps",
+        "HEURISTIC",
+        "#preinfusion",
+        "grinder steps of extra fineness a consistently pre-infused puck tolerates",
+    ),
+    "preinfusion_min_for_relief_s": Constant(4.0, "s", "HEURISTIC", "#preinfusion"),
+    "resistance_disagreement_ratio": Constant(
+        1.6,
+        "ratio",
+        "HEURISTIC",
+        "#preinfusion",
+        "gap between pull-time and time-to-pressure resistance beyond which "
+        "the cause is prep rather than grind",
+    ),
+    "min_shots_for_prep_advice": Constant(8.0, "shots", "HEURISTIC", "#preinfusion"),
     "dose_min_g": Constant(12.0, "g", "HEURISTIC", "#limits"),
     "dose_max_g": Constant(22.0, "g", "HEURISTIC", "#limits"),
     "basket_fill_lo": Constant(0.75, "fraction", "HEURISTIC", "#limits"),
@@ -215,6 +240,11 @@ class ShotRecord:
     rating: int | None = None
     days_since_roast: int | None = None
     created_at: datetime | None = None
+    # Pre-infusion duration and the rest before the pull. Deliberately not
+    # part of time_s -- see docs/science.md#preinfusion. They are covariates:
+    # two shots are only comparable as grind evidence if these match.
+    preinfusion_s: float | None = None
+    pause_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -446,6 +476,29 @@ def snap_to_step(clicks: float, caps: GrinderCaps) -> float:
     return round(clicks / step) * step
 
 
+def prep_comparable(a: ShotRecord, b: ShotRecord) -> bool:
+    """Can these two shots be compared as evidence about grind?
+
+    Only if they were prepared the same way. A shot with longer pre-infusion
+    arrives at full pressure with the bed already saturated and runs faster
+    once pulling, so comparing it against a shorter one attributes a
+    preparation difference to the grinder.
+
+    That is not merely noise: a finer shot that ran *faster* is exactly the
+    channeling fingerprint, so an unrecorded pre-infusion difference can fake
+    it and make the engine refuse to go finer for no reason. See
+    docs/science.md#preinfusion.
+
+    Unknown on either side counts as comparable -- otherwise nothing would
+    ever be comparable for a user who does not record it.
+    """
+    tolerance = value_of("prep_tolerance_s")
+    for lhs, rhs in ((a.preinfusion_s, b.preinfusion_s), (a.pause_s, b.pause_s)):
+        if lhs is not None and rhs is not None and abs(lhs - rhs) > tolerance:
+            return False
+    return True
+
+
 def is_finer(a: float, b: float, caps: GrinderCaps) -> bool:
     """True when setting `a` grinds finer than setting `b` on this grinder."""
     return (a - b) * caps.finer_sign > 0
@@ -501,6 +554,11 @@ def finest_useful_clicks(
             if a is b or a.grind_clicks is None or b.grind_clicks is None:
                 continue
             if not is_finer(a.grind_clicks, b.grind_clicks, caps):
+                continue
+            # Only compare shots prepared the same way. Otherwise a longer
+            # pre-infusion -- which saturates the bed and speeds up the pull --
+            # is mistaken for channeling.
+            if not prep_comparable(a, b):
                 continue
             tr_a, tr_b = normalised_time(a), normalised_time(b)
             if tr_a is None or tr_b is None:
@@ -597,7 +655,32 @@ def finest_useful_clicks(
     for candidate in candidates[1:]:
         if is_finer(coarsest[0], candidate[0], caps):
             coarsest = candidate
-    return FinenessLimit(coarsest[0], coarsest[1])
+
+    limit, reason = coarsest
+
+    # A consistently pre-infused, rested puck saturates evenly before full
+    # pressure arrives, which is the standard channeling mitigation. Where the
+    # user does that every time, the floor genuinely sits finer than it would
+    # otherwise -- so give back a step rather than holding them at a limit
+    # measured under worse conditions.
+    if _preinfuses_consistently(measured):
+        limit = finer_by(limit, value_of("preinfusion_channeling_relief"), caps)
+        reason = (
+            f"{reason}. Your pre-infusion is consistent, which lets the puck "
+            f"take a slightly finer grind than it otherwise would"
+        )
+
+    return FinenessLimit(limit, reason)
+
+
+def _preinfuses_consistently(shots: Sequence[ShotRecord]) -> bool:
+    """True when every recorded shot used a real and similar pre-infusion."""
+    values = [s.preinfusion_s for s in shots if s.preinfusion_s is not None]
+    if len(values) < 2 or len(values) < len(shots):
+        return False
+    if min(values) < value_of("preinfusion_min_for_relief_s"):
+        return False
+    return (max(values) - min(values)) <= value_of("prep_tolerance_s")
 
 
 # --------------------------------------------------------------------------
@@ -616,6 +699,10 @@ class Recipe:
     water_g: float | None = None
     brew_temp_c: float | None = None
     target_time_s: float | None = None
+    # Suggested preparation. Echoes the user's own consistent routine until
+    # there is enough variation to say whether changing it helps.
+    preinfusion_s: float | None = None
+    pause_s: float | None = None
     basis: Literal["prior", "history", "calibrated"] = "prior"
     confidence: float = 0.0
     guardrails_hit: tuple[str, ...] = ()
@@ -635,6 +722,8 @@ class Recipe:
             self.water_g,
             self.brew_temp_c,
             self.target_time_s,
+            self.preinfusion_s,
+            self.pause_s,
         ):
             if value is None:
                 continue
@@ -798,6 +887,137 @@ def propose_dose_reduction(dose_g: float) -> tuple[float, str]:
         f"the grinder, try {reduced:g} g instead of {dose_g:g} g and grind a "
         f"little coarser -- a shallower puck channels less, and you use less "
         f"coffee for a better shot",
+    )
+
+
+def resistance_disagreement(
+    shot: ShotRecord, reference: Sequence[ShotRecord]
+) -> str | None:
+    """Check the pull time against the time it took pressure to build.
+
+    Time from pump-on to the gauge first moving is a second, independent
+    reading of how hard the puck is to push water through -- taken before the
+    shot even runs. Grind moves both readings together: a finer puck is slower
+    to pressurise *and* slower to pull.
+
+    When they disagree -- normal time-to-pressure but a long pull, or the
+    reverse -- the bed's resistance changed after it was wetted, which points
+    at distribution, tamp or channeling rather than at the grinder. Returns a
+    plain-language note, or None when the two agree or there is nothing to
+    compare against.
+    """
+    if shot.preinfusion_s is None or shot.preinfusion_s <= 0:
+        return None
+    tr = normalised_time(shot)
+    if tr is None:
+        return None
+
+    peers = [
+        s
+        for s in reference
+        if s is not shot
+        and s.preinfusion_s is not None
+        and s.preinfusion_s > 0
+        and normalised_time(s) is not None
+        and s.grind_clicks == shot.grind_clicks
+    ]
+    if not peers:
+        return None
+
+    baseline_pi = statistics.median(
+        [s.preinfusion_s for s in peers if s.preinfusion_s is not None]
+    )
+    baseline_tr = statistics.median(
+        [t for t in (normalised_time(s) for s in peers) if t is not None]
+    )
+    if baseline_pi <= 0 or baseline_tr <= 0:
+        return None
+
+    pressure_ratio = shot.preinfusion_s / baseline_pi
+    pull_ratio = tr / baseline_tr
+    threshold = value_of("resistance_disagreement_ratio")
+
+    # Grind moves both readings together, so it is the *gap* between them that
+    # carries information -- not either one on its own.
+    if pull_ratio > threshold * pressure_ratio:
+        return (
+            "the puck took the usual time to come up to pressure but then "
+            "pulled slowly, so the resistance appeared after it was wetted -- "
+            "that points at distribution or tamp rather than the grind"
+        )
+    if pressure_ratio > threshold * pull_ratio:
+        return (
+            "pressure took much longer to build than usual but the shot then "
+            "ran normally, which usually means the puck was denser at the top "
+            "than through its depth"
+        )
+    return None
+
+
+def prep_advice(
+    shots: Sequence[ShotRecord],
+) -> tuple[float | None, float | None, str]:
+    """Suggest pre-infusion and pause durations, or explain why it can't yet.
+
+    Gated on data like every other learned quantity. Below the threshold this
+    reports back the user's own most consistent routine, which is genuinely
+    useful -- keeping preparation identical is what makes the grind evidence
+    readable -- without pretending to know an optimum it has not measured.
+    """
+    recorded = [s for s in shots if s.preinfusion_s is not None and s.preinfusion_s > 0]
+    if not recorded:
+        return (
+            None,
+            None,
+            (
+                "Pre-infusion is not recorded yet. Timing it is what stops a "
+                "preparation difference being mistaken for a grind difference."
+            ),
+        )
+
+    pi = statistics.median([s.preinfusion_s for s in recorded if s.preinfusion_s])
+    pauses = [s.pause_s for s in recorded if s.pause_s is not None]
+    pause = statistics.median(pauses) if pauses else None
+
+    if len(recorded) < value_of("min_shots_for_prep_advice"):
+        return (
+            pi,
+            pause,
+            (
+                f"Keeping pre-infusion at about your usual {pi:g} s keeps these "
+                f"shots comparable. Once there are more of them, and at more than "
+                f"one duration, the engine can start telling you whether changing "
+                f"it actually helps."
+            ),
+        )
+
+    distinct = {round(s.preinfusion_s) for s in recorded if s.preinfusion_s}
+    if len(distinct) < 2:
+        return (
+            pi,
+            pause,
+            (
+                f"You have always pre-infused for about {pi:g} s, so there is "
+                f"nothing to compare it against. Trying a longer one on a few "
+                f"shots would tell us whether it helps this coffee."
+            ),
+        )
+
+    best = max(
+        recorded,
+        key=lambda s: (
+            (s.rating or 0),
+            -abs(TASTE_SCALE.get(s.taste_axis or "balanced", 0)),
+        ),
+    )
+    return (
+        best.preinfusion_s,
+        best.pause_s,
+        (
+            f"Your best-rated shots pre-infuse for about {best.preinfusion_s:g} s"
+            + (f" with a {best.pause_s:g} s rest" if best.pause_s else "")
+            + "."
+        ),
     )
 
 

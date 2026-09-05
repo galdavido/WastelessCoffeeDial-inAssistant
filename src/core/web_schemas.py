@@ -21,6 +21,10 @@ class FeedbackRequest(BaseModel):
     ) = None
     astringent: bool | None = None
     brew_temp_c: float | None = None
+    # Pre-infusion duration and the rest before the pull. Covariates, not
+    # part of time_s -- see docs/science.md#preinfusion.
+    preinfusion_s: float | None = None
+    pause_s: float | None = None
     recommendation_id: int | None = None
 
 

@@ -152,6 +152,10 @@ def _to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRe
         taste_axis=log.taste_axis,  # type: ignore[arg-type]
         astringent=log.astringent,
         brew_temp_c=float(log.brew_temp_c) if log.brew_temp_c is not None else None,
+        preinfusion_s=(
+            float(log.preinfusion_s) if log.preinfusion_s is not None else None
+        ),
+        pause_s=float(log.pause_s) if log.pause_s is not None else None,
         rating=log.rating,
         days_since_roast=days,
         created_at=log.created_at,

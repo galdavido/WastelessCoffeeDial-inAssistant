@@ -34,6 +34,7 @@ from .brewing import (
     Method,
     ShotRecord,
     normalised_time,
+    prep_comparable,
     value_of,
 )
 
@@ -63,6 +64,38 @@ def theil_sen_slope(points: Sequence[tuple[float, float]]) -> float | None:
         for (x2, y2) in points[i + 1 :]
         if x2 != x1
     ]
+    if not slopes:
+        return None
+    return statistics.median(slopes)
+
+
+def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
+    """Theil-Sen over shot pairs that were actually prepared the same way.
+
+    Because the estimator is built from pairwise slopes, excluding an
+    incomparable pair is exactly one term dropped -- no reweighting, no model
+    change. A pair whose pre-infusion differs measures preparation as much as
+    grind, and including it would put that difference into the slope.
+    """
+    slopes: list[float] = []
+    usable = [
+        (s, normalised_time(s))
+        for s in shots
+        if s.grind_clicks is not None and normalised_time(s) not in (None, 0)
+    ]
+    for i, (a, tr_a) in enumerate(usable):
+        for b, tr_b in usable[i + 1 :]:
+            if a.grind_clicks is None or b.grind_clicks is None:
+                continue
+            if a.grind_clicks == b.grind_clicks:
+                continue
+            if not prep_comparable(a, b):
+                continue
+            if tr_a is None or tr_b is None or tr_a <= 0 or tr_b <= 0:
+                continue
+            slopes.append(
+                (math.log(tr_b) - math.log(tr_a)) / (b.grind_clicks - a.grind_clicks)
+            )
     if not slopes:
         return None
     return statistics.median(slopes)
@@ -103,7 +136,9 @@ def fit_setup(
     fitted: float | None = None
     min_span = 3.0 * (caps.step_clicks or 1.0)
     if n_eff >= 3 and span >= min_span:
-        fitted = theil_sen_slope(points)
+        # Prefer the prep-aware fit; fall back to the plain one when nothing
+        # records pre-infusion, where every pair counts as comparable anyway.
+        fitted = theil_sen_comparable(shots) or theil_sen_slope(points)
         # A fit whose sign disagrees with the physics is not a better estimate
         # of the slope -- it is the channeling signature. Discard it and let
         # the guardrail in brewing.finest_useful_clicks deal with it.

@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=17" />
+  <link rel="stylesheet" href="/static/style.css?v=18" />
 </head>
 <body>
   <div id="app">
@@ -288,6 +288,32 @@
           <span class="field-label">Shot time (s)</span>
           <input class="input" type="number" id="worked-time-input" step="1" min="1" max="900" inputmode="numeric" placeholder="28" />
         </label>
+        <div class="field" id="prep-timer-field">
+          <span class="field-label">Pre-infusion &amp; rest</span>
+          <div class="prep-timer" id="prep-timer">
+            <button type="button" class="prep-step" id="prep-step-btn" data-stage="idle">
+              <span class="prep-step-label">Start pre-infusion</span>
+              <span class="prep-step-hint">tap when the pump goes on</span>
+            </button>
+            <div class="prep-readout">
+              <div class="prep-cell">
+                <span class="prep-cell-label">Pre-infusion</span>
+                <input class="prep-cell-value" type="number" step="0.1" min="0" max="120"
+                       inputmode="decimal" id="worked-preinfusion-input" placeholder="—" />
+              </div>
+              <div class="prep-cell">
+                <span class="prep-cell-label">Rest</span>
+                <input class="prep-cell-value" type="number" step="0.1" min="0" max="120"
+                       inputmode="decimal" id="worked-pause-input" placeholder="—" />
+              </div>
+              <button type="button" class="prep-reset" id="prep-reset-btn">Reset</button>
+            </div>
+          </div>
+          <p class="dialog-hint">Three taps: pump on, gauge starts moving, pull
+            started. You can also just type the numbers. Keeping these steady is
+            what lets the app tell a grind change from a prep change.</p>
+        </div>
+
         <div class="field">
           <span class="field-label">How did it taste?</span>
           <div class="taste-scale" id="taste-scale" role="group" aria-label="Taste">
@@ -486,6 +512,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=17"></script>
+  <script src="/static/app.js?v=18"></script>
 </body>
 </html>

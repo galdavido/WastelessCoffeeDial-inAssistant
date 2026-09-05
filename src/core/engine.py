@@ -31,6 +31,8 @@ from .brewing import (
     beta_prior,
     cold_start_clicks,
     correct,
+    prep_advice,
+    resistance_disagreement,
     target_for,
 )
 from .calibration import Calibration, confidence_label, fit_setup
@@ -183,6 +185,25 @@ def recommend(
     )
     recipe = apply_guardrails(recipe, caps, machine_caps, history, target)
 
+    # Pre-infusion: a second resistance reading, and advice once there is
+    # enough of it to say anything honest.
+    prep_notes: list[str] = []
+    if history:
+        disagreement = resistance_disagreement(history[0], history)
+        if disagreement:
+            prep_notes.append(disagreement)
+    pi_s, pause_s, prep_note = prep_advice(history)
+    prep_notes.append(prep_note)
+
+    recipe = Recipe(
+        **{
+            **recipe.__dict__,
+            "preinfusion_s": pi_s,
+            "pause_s": pause_s,
+            "notes": recipe.notes + tuple(prep_notes),
+        }
+    )
+
     context_lines = [f"Tier {tier} ({len(history)} measured shots on this setup)."]
     context_lines.extend(recipe.notes)
     if exemplars:
@@ -250,6 +271,8 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
             "water_g": recipe.water_g,
             "brew_temp_c": recipe.brew_temp_c,
             "target_time_s": recipe.target_time_s,
+            "preinfusion_s": recipe.preinfusion_s,
+            "pause_s": recipe.pause_s,
             "basis": recipe.basis,
             "confidence": recipe.confidence,
             "guardrails_hit": list(recipe.guardrails_hit),

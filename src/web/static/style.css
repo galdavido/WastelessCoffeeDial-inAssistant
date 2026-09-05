@@ -932,3 +932,45 @@ select.input { background-image: none; }
   margin: 6px 0 0; font-size: 12px; line-height: 1.5;
   color: var(--text-2); opacity: .8;
 }
+
+/* ── Pre-infusion tap timer ─────────────────────────────────────────────── */
+.prep-timer { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.prep-step {
+  min-height: 56px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  background: rgba(200,134,10,.12);
+  border: 1px solid rgba(200,134,10,.35);
+  border-radius: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 10px 14px;
+}
+.prep-step.is-running {
+  background: rgba(200,134,10,.22);
+  border-color: var(--accent);
+}
+.prep-step[data-stage="done"] { background: rgba(80,180,120,.14); border-color: rgba(80,180,120,.5); color: #6fce9a; }
+.prep-step-label { font-size: 15px; font-weight: 700; }
+.prep-step-hint { font-size: 11px; opacity: .8; }
+.prep-readout { display: flex; align-items: flex-end; gap: 10px; }
+.prep-cell { flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; }
+.prep-cell-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-2); opacity: .8;
+}
+.prep-cell-value {
+  width: 100%;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  color: var(--text-1);
+  font-size: 16px; font-weight: 600;
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.prep-reset {
+  background: none; border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px; color: var(--text-2);
+  font-size: 12px; padding: 9px 12px; cursor: pointer; min-height: 40px;
+}
