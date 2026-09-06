@@ -177,7 +177,7 @@ function getApiErrorMessage(payload, fallback) {
 /* ── Tab navigation ─────────────────────────────────────────────────────── */
 const TAB_LOADERS = {
   'tab-home': () => loadRecents(),
-  'tab-settings': () => { loadSetups(); loadSettings(); loadEquipmentLibrary(); },
+  'tab-settings': () => { loadSetups(); loadSettings(); loadEquipmentLibrary(); loadAccount(); },
   'tab-recipe': () => {},
 };
 
@@ -402,7 +402,7 @@ async function analyzeFile(file) {
   try {
     const res = await fetch('/api/analyze', { method: 'POST', body: form });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Analysis failed'));
 
     currentCoffeeData = data.coffee_data;
     currentBeanId = data.coffee_data?.bean_id ?? null;
@@ -532,7 +532,7 @@ async function loadRecents() {
   try {
     const response = await fetch('/api/logs?limit=20');
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Failed to load coffees');
+    if (!response.ok) throw new Error(getApiErrorMessage(data, 'Failed to load coffees'));
 
     const entries = data.entries || [];
     if (!entries.length) {
@@ -653,7 +653,7 @@ async function saveRecordFromForm() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Save failed');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Save failed'));
 
     closeRecordEditor();
     await loadRecents();
@@ -671,7 +671,7 @@ async function deleteRecord(entry) {
   try {
     const res = await fetch(`/api/logs/${beanId}`, { method: 'DELETE' });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Delete failed');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Delete failed'));
     // If the deleted coffee is the one on the bench, take it off.
     if (currentBeanId === beanId) {
       clearCoffee();
@@ -1212,7 +1212,12 @@ async function saveFeedback(worked) {
     showToast('Nothing to log — pick a coffee first');
     return;
   }
-  closeShotWizard();
+  // The wizard stays open until the save is known to have worked. Closing it
+  // first threw away everything the user had just typed whenever the request
+  // failed, so a failed save cost them the shot as well as the log.
+  const next = $('btn-wiz-next');
+  const nextLabel = next ? next.textContent : '';
+  if (next) { next.disabled = true; next.textContent = 'Saving…'; }
 
   const actualGrind = worked && worked.grind ? worked.grind : null;
   const doseUsed = worked && worked.dose > 0
@@ -1244,10 +1249,13 @@ async function saveFeedback(worked) {
       }),
     });
     if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || 'Save failed');
+      // getApiErrorMessage, not `d.detail`: a 422 sends detail as an array of
+      // objects, and stringifying that is where "❌ [object Object]" came from.
+      const d = await res.json().catch(() => ({}));
+      throw new Error(getApiErrorMessage(d, 'Save failed'));
     }
 
+    closeShotWizard();
     // That recommendation has been consumed. Clearing it here is what stops
     // a second shot being logged against the same recommendation_id.
     clearRecommendation();
@@ -1267,10 +1275,29 @@ async function saveFeedback(worked) {
     }
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save'));
+  } finally {
+    if (next) { next.disabled = false; next.textContent = nextLabel; }
   }
 }
 
 /* ── Settings ───────────────────────────────────────────────────────────── */
+// Who the server says we are. Only meaningful on the shared instance, so the
+// card stays hidden in single-user mode rather than showing a placeholder name.
+async function loadAccount() {
+  const group = $('account-group');
+  if (!group) return;
+  try {
+    const res = await fetch('/api/whoami');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.auth_mode !== 'tailscale' || !data.owner) return;
+    $('account-owner').textContent = data.owner;
+    group.hidden = false;
+  } catch {
+    // Non-fatal: the rest of Settings is still usable without it.
+  }
+}
+
 async function loadSettings() {
   try {
     const [eqRes, setRes] = await Promise.all([
@@ -1299,7 +1326,7 @@ async function loadSetups() {
   try {
     const res = await fetch('/api/setups');
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not load setups');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not load setups'));
 
     const activeId = Number(data.active_setup_id);
     cachedSetups = Array.isArray(data.setups) ? data.setups : [];
@@ -1339,7 +1366,7 @@ async function loadEquipmentLibrary() {
   try {
     const res = await fetch('/api/equipment/library');
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not load equipment');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not load equipment'));
 
     cachedEquipmentLibrary = {
       grinders: Array.isArray(data.grinders) ? data.grinders : [],
@@ -1690,7 +1717,7 @@ async function saveSetupFromForm() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not save setup');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not save setup'));
 
     setupEditingId = null;
     clearSetupForm();
@@ -1771,7 +1798,7 @@ async function deleteSetup(setup) {
   try {
     const res = await fetch(`/api/setups/${setup.id}`, { method: 'DELETE' });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not delete setup');
+    if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not delete setup'));
 
     await Promise.all([loadSetups(), loadSettings()]);
     showToast('✅ Setup deleted');
@@ -1805,7 +1832,7 @@ async function putJson(url, body, successMsg) {
     });
     if (!res.ok) {
       const d = await res.json();
-      throw new Error(d.detail || 'Update failed');
+      throw new Error(getApiErrorMessage(d, 'Update failed'));
     }
     showToast('✅ ' + successMsg);
   } catch (err) {

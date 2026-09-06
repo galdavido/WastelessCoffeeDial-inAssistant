@@ -18,7 +18,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=24" />
+  <link rel="stylesheet" href="/static/style.css?v=26" />
 </head>
 <body>
   <div id="app">
@@ -191,6 +191,26 @@
       <!-- Settings Tab -->
       <section class="tab-panel" id="tab-settings">
         <div class="settings-scroll">
+
+          <!-- Only shown on the shared (Tailscale) instance; on a single-user
+               instance there is no identity worth reporting. -->
+          <div class="settings-group" id="account-group" hidden>
+            <h2 class="settings-heading">Account</h2>
+            <div class="setting-card">
+              <div class="gear-row">
+                <svg class="gear-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+                <div>
+                  <span class="gear-role">Signed in as</span>
+                  <span class="gear-name" id="account-owner">—</span>
+                </div>
+              </div>
+              <p class="field-hint">
+                Your coffees, shots and setups are private to this account.
+              </p>
+            </div>
+          </div>
 
           <div class="settings-group">
             <h2 class="settings-heading">Active Setup</h2>
@@ -578,6 +598,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=24"></script>
+  <script src="/static/app.js?v=26"></script>
 </body>
 </html>
