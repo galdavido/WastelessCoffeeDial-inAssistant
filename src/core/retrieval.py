@@ -163,18 +163,22 @@ def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRec
 
 
 def fetch_calibration_shots(
-    db: Session, setup_id: int | None, method: Method
+    db: Session, owner: str, setup_id: int | None, method: Method
 ) -> list[ShotRecord]:
     """Shots usable for fitting the grind law.
 
     No rating filter on purpose: a shot that tasted terrible but has a
     recorded grind and time is perfectly good physics.
+
+    Scoped to ``owner`` as well as the setup: a setup id already belongs to one
+    user, but filtering on both keeps the isolation explicit and index-backed.
     """
     if setup_id is None:
         return []
     stmt = (
         select(DialInLog, Bean)
         .join(Bean, DialInLog.bean_id == Bean.id)
+        .where(DialInLog.owner == owner)
         .where(DialInLog.setup_id == setup_id)
         .where(DialInLog.data_quality == "measured")
         .where(DialInLog.grind_clicks.is_not(None))
@@ -188,15 +192,22 @@ def fetch_calibration_shots(
 
 def fetch_exemplars(
     db: Session,
+    owner: str,
     target: BeanFeatures,
     setup_id: int | None,
     method: Method,
     limit: int = 8,
 ) -> list[tuple[ShotRecord, float]]:
-    """Well-rated past shots on similar coffee, best match first."""
+    """Well-rated past shots on similar coffee, best match first.
+
+    Scoped to ``owner``: without this filter a well-rated shot logged by
+    another user on a similar coffee would be pulled in and fed to the
+    rationale, so one person's history would colour another's advice.
+    """
     stmt = (
         select(DialInLog, Bean)
         .join(Bean, DialInLog.bean_id == Bean.id)
+        .where(DialInLog.owner == owner)
         .where(DialInLog.data_quality == "measured")
         .where(DialInLog.rating.is_not(None))
         .where(DialInLog.rating >= 4)

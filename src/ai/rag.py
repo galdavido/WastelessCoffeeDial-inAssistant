@@ -19,18 +19,26 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.auth import single_user_owner
 from core.engine import recommend, render_legacy_text
 from core.web_helpers import find_existing_bean, get_active_setup, get_default_dose_g
 from database.database import SessionLocal
 from database.models import Bean
 
 
-def get_best_grind_setting(coffee_json: dict[str, Any]) -> str:
+def get_best_grind_setting(
+    coffee_json: dict[str, Any], owner: str | None = None
+) -> str:
     """Return a printable recommendation for a scanned coffee.
 
     Deprecated: prefer core.engine.recommend(), which returns the numbers as
     structured fields rather than embedded in prose.
+
+    There is no request here to take an identity from, so ``owner`` defaults to
+    the single-user owner -- correct for the CLI this shim exists for. The web
+    app never calls this; it resolves the owner per request instead.
     """
+    owner = (owner or single_user_owner()).strip().lower()
     db = SessionLocal()
     try:
         name = str(coffee_json.get("name") or "Unknown")
@@ -39,10 +47,11 @@ def get_best_grind_setting(coffee_json: dict[str, Any]) -> str:
         process = str(coffee_json.get("process") or "Unknown")
 
         bean = find_existing_bean(
-            db, name=name, roaster=roaster, origin=origin, process=process
+            db, owner, name=name, roaster=roaster, origin=origin, process=process
         )
         if bean is None:
             bean = Bean(
+                owner=owner,
                 roaster=roaster,
                 name=name,
                 origin=origin,
@@ -50,9 +59,9 @@ def get_best_grind_setting(coffee_json: dict[str, Any]) -> str:
                 roast_level=str(coffee_json.get("roast_level") or "Unknown"),
             )
 
-        setup = get_active_setup(db)
-        dose = coffee_json.get("preferred_dose_g") or get_default_dose_g(db)
-        result = recommend(db, setup, bean, float(dose))
+        setup = get_active_setup(db, owner)
+        dose = coffee_json.get("preferred_dose_g") or get_default_dose_g(db, owner)
+        result = recommend(db, owner, setup, bean, float(dose))
         return render_legacy_text(result)
     except Exception as exc:  # pragma: no cover - defensive, as before
         return f"Error occurred while building the recommendation: {exc}"

@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from core.auth import warn_if_misconfigured
 from core.db_bootstrap import run_migrations, seed_baseline_equipment
 from core.optional_deps import load_dotenv_if_available
 from core.web_routes import register_routes
@@ -30,6 +31,7 @@ _STATIC_DIR = os.path.normpath(
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     run_migrations()
     seed_baseline_equipment()
+    warn_if_misconfigured()
     logger.info("Startup complete.")
     yield
 

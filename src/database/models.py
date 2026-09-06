@@ -14,11 +14,18 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+# The friends instance is multi-user: `owner` is the Tailscale login the row
+# belongs to (see core.auth). The single-user dev instance puts every row under
+# one owner ("owner" by default), which is also what migration 0005 backfills
+# onto pre-multi-user data. Equipment is deliberately not owned -- it is a
+# shared hardware-spec catalogue.
 
 
 # 1. Beans table
@@ -26,6 +33,7 @@ class Bean(Base):
     __tablename__ = "beans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner: Mapped[str] = mapped_column(String, index=True)
     roaster: Mapped[str] = mapped_column(String, index=True)
     name: Mapped[str] = mapped_column(String)
     origin: Mapped[str] = mapped_column(String)
@@ -75,6 +83,7 @@ class BrewSetup(Base):
     __tablename__ = "brew_setups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner: Mapped[str] = mapped_column(String, index=True)
     name: Mapped[str] = mapped_column(String, index=True)
     grinder_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
     machine_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
@@ -91,6 +100,7 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -120,6 +130,7 @@ class DialInLog(Base):
     __tablename__ = "dial_in_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner: Mapped[str] = mapped_column(String, index=True)
     bean_id: Mapped[int] = mapped_column(ForeignKey("beans.id"))
     grinder_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
     machine_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
@@ -176,10 +187,17 @@ class DialInLog(Base):
     setup: Mapped[BrewSetup | None] = relationship(foreign_keys=[setup_id])
 
 
-# 4. Simple key-value settings table for app preferences
+# 4. Simple key-value settings table for app preferences.
+# Settings are per-owner: active_setup_id, default_dose_g and
+# default_grind_offset_clicks were global singletons before multi-user, so the
+# unique key is (owner, key), not key alone.
 class AppSetting(Base):
     __tablename__ = "app_settings"
+    __table_args__ = (
+        UniqueConstraint("owner", "key", name="uq_app_settings_owner_key"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    key: Mapped[str] = mapped_column(String, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String, index=True)
+    key: Mapped[str] = mapped_column(String, index=True)
     value: Mapped[str] = mapped_column(String)

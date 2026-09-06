@@ -97,12 +97,17 @@ def _days_since_roast(roast_date: date | None, today: date | None = None) -> int
 
 def recommend(
     db: Session,
+    owner: str,
     setup: BrewSetup | None,
     bean: Bean | None,
     dose_g: float,
     style: str | None = None,
 ) -> EngineResult:
-    """Produce a recommendation for the active setup and this coffee."""
+    """Produce a recommendation for the active setup and this coffee.
+
+    Every shot the engine learns from is scoped to ``owner`` so users on the
+    same instance never inform each other's numbers or rationale.
+    """
     method: Method = get_active_setup_method(setup)
     grinder = setup.grinder if setup else None
     machine = setup.machine if setup else None
@@ -111,7 +116,7 @@ def recommend(
     target = target_for(method, style)
 
     setup_id = setup.id if setup else None
-    history = fetch_calibration_shots(db, setup_id, method)
+    history = fetch_calibration_shots(db, owner, setup_id, method)
     tier = classify_tier(history, bean.id if bean else None, caps.has_range)
 
     prior = beta_prior(method, caps)
@@ -125,6 +130,7 @@ def recommend(
 
     exemplars = fetch_exemplars(
         db,
+        owner,
         BeanFeatures(
             roast_level_ord=roast_ord,
             process=bean.process if bean else None,
@@ -232,6 +238,7 @@ def recommend(
 
 def persist_recommendation(
     db: Session,
+    owner: str,
     result: EngineResult,
     setup: BrewSetup | None,
     bean: Bean | None,
@@ -239,6 +246,7 @@ def persist_recommendation(
     """Store the engine's output so proposed-vs-actual can be back-tested."""
     recipe = result.recipe
     row = Recommendation(
+        owner=owner,
         setup_id=setup.id if setup else None,
         bean_id=bean.id if bean else None,
         engine_version=ENGINE_VERSION,

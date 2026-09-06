@@ -19,7 +19,13 @@ from database.database import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False is load-bearing, not tidiness. Migrations
+    # run inside the app's startup lifespan, so the default (True) would switch
+    # off every logger configured before this point -- the whole "wcda.*" tree.
+    # Everything logged after startup then vanishes: the identity-trust warning
+    # from warn_if_misconfigured(), and the tracebacks _server_error() writes
+    # behind a generic 500, which would leave production errors undiagnosable.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

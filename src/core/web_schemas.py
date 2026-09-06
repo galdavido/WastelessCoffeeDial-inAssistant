@@ -15,7 +15,10 @@ class FeedbackRequest(BaseModel):
     # substituted with a default, because calibration reads these as truth.
     yield_g: float | None = None
     water_g: float | None = None
-    time_s: int | None = None
+    # A float, even though the column is whole seconds: the wizard's timer
+    # reports tenths, and an int here rejected every timed shot outright.
+    # Rounding to the second happens on the way into the row.
+    time_s: float | None = None
     taste_axis: (
         Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"] | None
     ) = None
@@ -112,7 +115,9 @@ class LogDetailsInput(BaseModel):
     grind_setting: str | None = None
     dose_g: float | None = None
     yield_g: float | None = None
-    time_s: int | None = None
+    # Float for the same reason as FeedbackRequest.time_s: a typed "27.5"
+    # must not be a validation error.
+    time_s: float | None = None
     rating: int | None = None
     tasting_notes: str | None = None
 

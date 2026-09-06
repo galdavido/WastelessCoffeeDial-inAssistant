@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from ai.vision import analyze_coffee_bag, get_last_vision_error
 from database.models import Bean, BrewSetup, DialInLog, Equipment, Recommendation
 
+from .auth import auth_mode, get_owner
 from .brewing import normalised_time, target_for
 from .db_session import get_db
 from .engine import (
@@ -128,7 +129,7 @@ def _apply_capabilities(item: Equipment, body: Any) -> None:
             setattr(item, field_name, value)
 
 
-def _bean_for(db: Session, coffee_data: dict[str, Any]) -> Bean | None:
+def _bean_for(db: Session, owner: str, coffee_data: dict[str, Any]) -> Bean | None:
     """The stored bean if we have brewed it, otherwise a transient stand-in.
 
     An unsaved Bean still carries roast level, process and origin, which is
@@ -142,12 +143,13 @@ def _bean_for(db: Session, coffee_data: dict[str, Any]) -> Bean | None:
     roast_level = as_non_empty_text(coffee_data.get("roast_level"))
 
     existing = find_existing_bean(
-        db, name=name, roaster=roaster, origin=origin, process=process
+        db, owner, name=name, roaster=roaster, origin=origin, process=process
     )
     if existing is not None:
         return existing
 
     return Bean(
+        owner=owner,
         roaster=roaster,
         name=name,
         origin=origin,
@@ -159,7 +161,10 @@ def _bean_for(db: Session, coffee_data: dict[str, Any]) -> Bean | None:
 
 
 def _engine_recommendation(
-    db: Session, coffee_data: dict[str, Any], bean: Bean | None = None
+    db: Session,
+    owner: str,
+    coffee_data: dict[str, Any],
+    bean: Bean | None = None,
 ) -> dict[str, Any]:
     """Run the deterministic engine and shape the API response.
 
@@ -172,18 +177,18 @@ def _engine_recommendation(
     `bean` is passed in when the caller already has the real row (recommending
     for a saved coffee); otherwise one is found or fabricated from coffee_data.
     """
-    setup = get_active_setup(db)
+    setup = get_active_setup(db, owner)
     if bean is None:
-        bean = _bean_for(db, coffee_data)
-    dose = coffee_data.get("preferred_dose_g") or get_default_dose_g(db)
+        bean = _bean_for(db, owner, coffee_data)
+    dose = coffee_data.get("preferred_dose_g") or get_default_dose_g(db, owner)
 
-    result = recommend(db, setup, bean, float(dose))
+    result = recommend(db, owner, setup, bean, float(dose))
 
     recommendation_id: int | None = None
     if bean is not None and bean.id is not None:
         # Only persist against a bean that actually exists; a transient
         # stand-in has no row to reference.
-        recommendation_id = persist_recommendation(db, result, setup, bean)
+        recommendation_id = persist_recommendation(db, owner, result, setup, bean)
 
     payload = serialize_result(result)
     payload["recommendation"] = render_legacy_text(result)
@@ -246,6 +251,17 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             "engine_version": ENGINE_VERSION,
         }
 
+    @app.get("/api/whoami")
+    def whoami(owner: str = Depends(get_owner)) -> dict[str, str]:
+        """Who the server thinks you are, and how it decided.
+
+        Deliberately the one user-scoped route that touches no database: when a
+        friend reports "it says I'm not signed in", this separates a Tailscale
+        identity problem (401 here) from an app problem (200 here, trouble
+        elsewhere) in a single request.
+        """
+        return {"owner": owner, "auth_mode": auth_mode()}
+
     @app.get("/sw.js", include_in_schema=False)
     def service_worker() -> FileResponse:
         return FileResponse(
@@ -261,6 +277,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     def analyze_image(
         file: UploadFile = File(...),
         db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         content_type = (file.content_type or "").lower()
         if content_type not in _ALLOWED_IMAGE_TYPES:
@@ -308,17 +325,21 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 logger.warning("Could not persist uploaded image to %s", uploads_dir)
                 image_name = None
 
-        coffee_data["preferred_dose_g"] = get_default_dose_g(db)
-        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
+        coffee_data["preferred_dose_g"] = get_default_dose_g(db, owner)
+        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(
+            db, owner
+        )
         if image_name:
             coffee_data["image_name"] = image_name
 
-        payload = _engine_recommendation(db, coffee_data)
+        payload = _engine_recommendation(db, owner, coffee_data)
         return {"coffee_data": coffee_data, **payload}
 
     @app.post("/api/recommendation")
     def refresh_recommendation(
-        body: RecommendationRequest, db: Session = Depends(get_db)
+        body: RecommendationRequest,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         """Regenerate the recipe for a scanned bag or a coffee already saved.
 
@@ -333,7 +354,11 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
         bean: Bean | None = None
         if body.bean_id is not None:
-            bean = db.query(Bean).filter(Bean.id == body.bean_id).first()
+            bean = (
+                db.query(Bean)
+                .filter(Bean.id == body.bean_id, Bean.owner == owner)
+                .first()
+            )
             if bean is None:
                 raise HTTPException(status_code=404, detail="Coffee not found")
             coffee_data = bean_coffee_data(bean)
@@ -343,12 +368,14 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         if body.dose_g is not None:
             coffee_data["preferred_dose_g"] = body.dose_g
         else:
-            coffee_data.setdefault("preferred_dose_g", get_default_dose_g(db))
+            coffee_data.setdefault("preferred_dose_g", get_default_dose_g(db, owner))
         # Grind offset is a server-side preference, never trusted from the client.
-        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(db)
+        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(
+            db, owner
+        )
 
         try:
-            payload = _engine_recommendation(db, coffee_data, bean=bean)
+            payload = _engine_recommendation(db, owner, coffee_data, bean=bean)
         except Exception as exc:
             raise _server_error(exc, "refresh recommendation") from exc
         # Echo the profile back so the client renders one shape from either
@@ -357,9 +384,13 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return payload
 
     @app.post("/api/feedback")
-    def save_feedback(body: FeedbackRequest) -> dict[str, str]:
+    def save_feedback(
+        body: FeedbackRequest,
+        owner: str = Depends(get_owner),
+    ) -> dict[str, str]:
         try:
             save_dial_in_log(
+                owner,
                 body.coffee_data,
                 body.recommendation,
                 actual_grind=body.actual_grind,
@@ -394,8 +425,10 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return FileResponse(file_path)
 
     @app.get("/api/equipment")
-    def get_equipment(db: Session = Depends(get_db)) -> dict[str, Any]:
-        setup = get_active_setup(db)
+    def get_equipment(
+        db: Session = Depends(get_db), owner: str = Depends(get_owner)
+    ) -> dict[str, Any]:
+        setup = get_active_setup(db, owner)
         grinder = setup.grinder
         machine = setup.machine
         return {
@@ -409,10 +442,12 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.put("/api/equipment/grinder")
     def update_grinder(
-        body: EquipmentUpdate, db: Session = Depends(get_db)
+        body: EquipmentUpdate,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, str]:
         try:
-            setup = get_active_setup(db)
+            setup = get_active_setup(db, owner)
             setup.grinder.brand = body.brand
             setup.grinder.model = body.model
             db.commit()
@@ -423,10 +458,12 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.put("/api/equipment/machine")
     def update_machine(
-        body: EquipmentUpdate, db: Session = Depends(get_db)
+        body: EquipmentUpdate,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, str]:
         try:
-            setup = get_active_setup(db)
+            setup = get_active_setup(db, owner)
             setup.machine.brand = body.brand
             setup.machine.model = body.model
             db.commit()
@@ -436,15 +473,19 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return {"status": "updated"}
 
     @app.get("/api/settings")
-    def get_settings(db: Session = Depends(get_db)) -> dict[str, float]:
+    def get_settings(
+        db: Session = Depends(get_db), owner: str = Depends(get_owner)
+    ) -> dict[str, float]:
         return {
-            "dose_g": get_default_dose_g(db),
-            "grind_offset_clicks": get_grind_offset_clicks(db),
+            "dose_g": get_default_dose_g(db, owner),
+            "grind_offset_clicks": get_grind_offset_clicks(db, owner),
         }
 
     @app.get("/api/logs")
     def get_logs(
-        limit: int = 20, db: Session = Depends(get_db)
+        limit: int = 20,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, list[dict[str, Any]]]:
         safe_limit = max(1, min(limit, 50))
         # Order by when a coffee was last brewed, not when it was created --
@@ -460,6 +501,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         )
         beans = (
             db.query(Bean)
+            .filter(Bean.owner == owner)
             .outerjoin(last_brew, last_brew.c.bean_id == Bean.id)
             .options(selectinload(Bean.logs))
             .order_by(last_brew.c.last_at.desc().nullslast(), Bean.id.desc())
@@ -519,7 +561,10 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     # route is ever added it must be declared above this one.
     @app.get("/api/beans/{bean_id}/shots")
     def get_bean_shots(
-        bean_id: int, limit: int = 5, db: Session = Depends(get_db)
+        bean_id: int,
+        limit: int = 5,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         """Recent shots on one coffee, with each judged against its target.
 
@@ -528,14 +573,14 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         seconds. Re-deriving that in JavaScript would drift from brewing.py
         the first time the target bands change.
         """
-        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        bean = db.query(Bean).filter(Bean.id == bean_id, Bean.owner == owner).first()
         if bean is None:
             raise HTTPException(status_code=404, detail="Coffee not found")
 
         safe_limit = max(1, min(limit, 20))
         logs = (
             db.query(DialInLog)
-            .filter(DialInLog.bean_id == bean_id)
+            .filter(DialInLog.bean_id == bean_id, DialInLog.owner == owner)
             .order_by(DialInLog.created_at.desc())
             .limit(safe_limit)
             .all()
@@ -549,7 +594,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             ):
                 suggested[rec.id] = rec.grind_clicks
 
-        setup = get_active_setup(db)
+        setup = get_active_setup(db, owner)
         active_method = get_active_setup_method(setup)
         target = target_for(active_method)
 
@@ -753,10 +798,15 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return {"status": "deleted"}
 
     @app.get("/api/setups")
-    def get_setups(db: Session = Depends(get_db)) -> dict[str, Any]:
-        active = get_active_setup(db)
+    def get_setups(
+        db: Session = Depends(get_db), owner: str = Depends(get_owner)
+    ) -> dict[str, Any]:
+        active = get_active_setup(db, owner)
         setups = (
-            db.query(BrewSetup).order_by(BrewSetup.name.asc(), BrewSetup.id.asc()).all()
+            db.query(BrewSetup)
+            .filter(BrewSetup.owner == owner)
+            .order_by(BrewSetup.name.asc(), BrewSetup.id.asc())
+            .all()
         )
         return {
             "active_setup_id": active.id,
@@ -764,7 +814,11 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         }
 
     @app.post("/api/setups")
-    def create_setup(body: SetupInput, db: Session = Depends(get_db)) -> dict[str, Any]:
+    def create_setup(
+        body: SetupInput,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
+    ) -> dict[str, Any]:
         grinder = (
             db.query(Equipment)
             .filter(Equipment.id == body.grinder_id, Equipment.type == "grinder")
@@ -780,6 +834,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
         try:
             setup = BrewSetup(
+                owner=owner,
                 name=as_non_empty_text(body.name),
                 grinder_id=grinder.id,
                 machine_id=machine.id,
@@ -795,7 +850,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.put("/api/setups/active")
     def select_setup(
-        body: SetupSelectInput, db: Session = Depends(get_db)
+        body: SetupSelectInput,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         # Declared before "/api/setups/{setup_id}" so the literal "active" path
         # is not captured as an integer setup_id path parameter.
@@ -803,17 +860,28 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         if not selected_id:
             raise HTTPException(status_code=422, detail="setup_id is required")
 
-        setup = db.query(BrewSetup).filter(BrewSetup.id == selected_id).first()
+        setup = (
+            db.query(BrewSetup)
+            .filter(BrewSetup.id == selected_id, BrewSetup.owner == owner)
+            .first()
+        )
         if not setup:
             raise HTTPException(status_code=404, detail="Setup not found")
-        set_setting(db, "active_setup_id", str(setup.id))
+        set_setting(db, owner, "active_setup_id", str(setup.id))
         return {"status": "selected", "setup_id": setup.id}
 
     @app.put("/api/setups/{setup_id}")
     def update_setup(
-        setup_id: int, body: SetupInput, db: Session = Depends(get_db)
+        setup_id: int,
+        body: SetupInput,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
-        setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+        setup = (
+            db.query(BrewSetup)
+            .filter(BrewSetup.id == setup_id, BrewSetup.owner == owner)
+            .first()
+        )
         if not setup:
             raise HTTPException(status_code=404, detail="Setup not found")
 
@@ -843,11 +911,19 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return {"status": "updated", "setup": serialize_setup(setup)}
 
     @app.delete("/api/setups/{setup_id}")
-    def delete_setup(setup_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
-        setup = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+    def delete_setup(
+        setup_id: int,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
+    ) -> dict[str, str]:
+        setup = (
+            db.query(BrewSetup)
+            .filter(BrewSetup.id == setup_id, BrewSetup.owner == owner)
+            .first()
+        )
         if not setup:
             raise HTTPException(status_code=404, detail="Setup not found")
-        if db.query(BrewSetup).count() <= 1:
+        if db.query(BrewSetup).filter(BrewSetup.owner == owner).count() <= 1:
             raise HTTPException(
                 status_code=400, detail="At least one setup must remain"
             )
@@ -856,9 +932,14 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.delete(setup)
             db.commit()
 
-            next_setup = db.query(BrewSetup).order_by(BrewSetup.id.asc()).first()
+            next_setup = (
+                db.query(BrewSetup)
+                .filter(BrewSetup.owner == owner)
+                .order_by(BrewSetup.id.asc())
+                .first()
+            )
             if next_setup:
-                set_setting(db, "active_setup_id", str(next_setup.id))
+                set_setting(db, owner, "active_setup_id", str(next_setup.id))
         except Exception as exc:
             db.rollback()
             raise _server_error(exc, "delete setup") from exc
@@ -866,10 +947,13 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.post("/api/logs/manual")
     def create_manual_log(
-        body: BeanRecordInput, db: Session = Depends(get_db)
+        body: BeanRecordInput,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         try:
             bean = Bean(
+                owner=owner,
                 roaster=as_non_empty_text(body.roaster),
                 name=as_non_empty_text(body.name),
                 origin=as_non_empty_text(body.origin),
@@ -880,11 +964,12 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.commit()
             db.refresh(bean)
 
-            active_setup = get_active_setup(db)
+            active_setup = get_active_setup(db, owner)
             grinder, machine = active_setup.grinder, active_setup.machine
-            values = resolve_log_values(body.log, db)
+            values = resolve_log_values(body.log, db, owner)
             db.add(
                 DialInLog(
+                    owner=owner,
                     bean_id=bean.id,
                     grinder_id=grinder.id,
                     machine_id=machine.id,
@@ -908,9 +993,12 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.put("/api/logs/{bean_id}")
     def update_log_record(
-        bean_id: int, body: BeanRecordInput, db: Session = Depends(get_db)
+        bean_id: int,
+        body: BeanRecordInput,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
-        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        bean = db.query(Bean).filter(Bean.id == bean_id, Bean.owner == owner).first()
         if not bean:
             raise HTTPException(status_code=404, detail="Bean not found")
 
@@ -925,12 +1013,13 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             if bean.logs:
                 latest_log = max(bean.logs, key=lambda log: log.created_at)
 
-            values = resolve_log_values(body.log, db)
+            values = resolve_log_values(body.log, db, owner)
             if latest_log is None:
-                active_setup = get_active_setup(db)
+                active_setup = get_active_setup(db, owner)
                 grinder, machine = active_setup.grinder, active_setup.machine
                 db.add(
                     DialInLog(
+                        owner=owner,
                         bean_id=bean.id,
                         grinder_id=grinder.id,
                         machine_id=machine.id,
@@ -966,9 +1055,11 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.delete("/api/logs/{bean_id}")
     def delete_log_record(
-        bean_id: int, db: Session = Depends(get_db)
+        bean_id: int,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, str]:
-        bean = db.query(Bean).filter(Bean.id == bean_id).first()
+        bean = db.query(Bean).filter(Bean.id == bean_id, Bean.owner == owner).first()
         if not bean:
             raise HTTPException(status_code=404, detail="Bean not found")
 
@@ -1004,11 +1095,15 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return {"status": "deleted"}
 
     @app.put("/api/settings/dose")
-    def update_dose(body: DoseUpdate, db: Session = Depends(get_db)) -> dict[str, Any]:
+    def update_dose(
+        body: DoseUpdate,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
+    ) -> dict[str, Any]:
         if body.dose_g <= 0:
             raise HTTPException(status_code=400, detail="Dose must be positive.")
         try:
-            set_default_dose_g(db, body.dose_g)
+            set_default_dose_g(db, owner, body.dose_g)
         except Exception as exc:
             db.rollback()
             raise _server_error(exc, "update dose") from exc
@@ -1016,10 +1111,12 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
     @app.put("/api/settings/grind-offset")
     def update_grind_offset(
-        body: GrindOffsetUpdate, db: Session = Depends(get_db)
+        body: GrindOffsetUpdate,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         try:
-            set_grind_offset_clicks(db, body.offset_clicks)
+            set_grind_offset_clicks(db, owner, body.offset_clicks)
         except Exception as exc:
             db.rollback()
             raise _server_error(exc, "update grind offset") from exc

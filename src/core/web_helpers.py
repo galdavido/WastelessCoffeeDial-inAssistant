@@ -14,8 +14,12 @@ from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
 from .web_schemas import LogDetailsInput
 
 
-def get_default_dose_g(db: Any) -> float:
-    setting = db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
+def get_default_dose_g(db: Any, owner: str) -> float:
+    setting = (
+        db.query(AppSetting)
+        .filter(AppSetting.owner == owner, AppSetting.key == "default_dose_g")
+        .first()
+    )
     if not setting:
         return 16.0
     try:
@@ -27,19 +31,17 @@ def get_default_dose_g(db: Any) -> float:
     return 16.0
 
 
-def set_default_dose_g(db: Any, dose: float) -> None:
-    setting = db.query(AppSetting).filter(AppSetting.key == "default_dose_g").first()
-    if setting:
-        setting.value = str(dose)
-    else:
-        db.add(AppSetting(key="default_dose_g", value=str(dose)))
-    db.commit()
+def set_default_dose_g(db: Any, owner: str, dose: float) -> None:
+    set_setting(db, owner, "default_dose_g", str(dose))
 
 
-def get_grind_offset_clicks(db: Any) -> float:
+def get_grind_offset_clicks(db: Any, owner: str) -> float:
     setting = (
         db.query(AppSetting)
-        .filter(AppSetting.key == "default_grind_offset_clicks")
+        .filter(
+            AppSetting.owner == owner,
+            AppSetting.key == "default_grind_offset_clicks",
+        )
         .first()
     )
     if not setting:
@@ -50,17 +52,8 @@ def get_grind_offset_clicks(db: Any) -> float:
         return 0.0
 
 
-def set_grind_offset_clicks(db: Any, offset: float) -> None:
-    setting = (
-        db.query(AppSetting)
-        .filter(AppSetting.key == "default_grind_offset_clicks")
-        .first()
-    )
-    if setting:
-        setting.value = str(offset)
-    else:
-        db.add(AppSetting(key="default_grind_offset_clicks", value=str(offset)))
-    db.commit()
+def set_grind_offset_clicks(db: Any, owner: str, offset: float) -> None:
+    set_setting(db, owner, "default_grind_offset_clicks", str(offset))
 
 
 def as_non_empty_text(value: Any, default: str = "Unknown") -> str:
@@ -148,9 +141,13 @@ def similarity(a: str, b: str) -> float:
 
 
 def find_existing_bean(
-    db: Any, name: str, roaster: str, origin: str, process: str
+    db: Any, owner: str, name: str, roaster: str, origin: str, process: str
 ) -> Any:
-    exact = db.query(Bean).filter(Bean.name == name, Bean.roaster == roaster).first()
+    exact = (
+        db.query(Bean)
+        .filter(Bean.owner == owner, Bean.name == name, Bean.roaster == roaster)
+        .first()
+    )
     if exact:
         return exact
 
@@ -160,7 +157,7 @@ def find_existing_bean(
     process_norm = normalize_label(process)
 
     best_candidate, best_score = None, 0.0
-    for candidate in db.query(Bean).all():
+    for candidate in db.query(Bean).filter(Bean.owner == owner).all():
         if (
             roaster_norm != "unknown"
             and normalize_label(str(candidate.roaster)) != roaster_norm
@@ -266,28 +263,46 @@ def serialize_equipment(item: Equipment) -> dict[str, Any]:
     }
 
 
-def get_setting(db: Any, key: str) -> str | None:
-    setting = db.query(AppSetting).filter(AppSetting.key == key).first()
+def get_setting(db: Any, owner: str, key: str) -> str | None:
+    setting = (
+        db.query(AppSetting)
+        .filter(AppSetting.owner == owner, AppSetting.key == key)
+        .first()
+    )
     return setting.value if setting else None
 
 
-def set_setting(db: Any, key: str, value: str) -> None:
-    setting = db.query(AppSetting).filter(AppSetting.key == key).first()
+def set_setting(db: Any, owner: str, key: str, value: str) -> None:
+    setting = (
+        db.query(AppSetting)
+        .filter(AppSetting.owner == owner, AppSetting.key == key)
+        .first()
+    )
     if setting:
         setting.value = value
     else:
-        db.add(AppSetting(key=key, value=value))
+        db.add(AppSetting(owner=owner, key=key, value=value))
     db.commit()
 
 
-def ensure_default_setup(db: Any) -> BrewSetup:
-    setup = db.query(BrewSetup).order_by(BrewSetup.id.asc()).first()
+def ensure_default_setup(db: Any, owner: str) -> BrewSetup:
+    setup = (
+        db.query(BrewSetup)
+        .filter(BrewSetup.owner == owner)
+        .order_by(BrewSetup.id.asc())
+        .first()
+    )
     if setup:
         return setup
 
+    # Equipment is a shared catalogue, so a new user's first setup points at
+    # whatever baseline hardware already exists rather than owning its own.
     grinder, machine = ensure_default_equipment(db)
     setup = BrewSetup(
-        name="Default Setup", grinder_id=grinder.id, machine_id=machine.id
+        owner=owner,
+        name="Default Setup",
+        grinder_id=grinder.id,
+        machine_id=machine.id,
     )
     db.add(setup)
     db.commit()
@@ -295,18 +310,22 @@ def ensure_default_setup(db: Any) -> BrewSetup:
     return setup
 
 
-def get_active_setup(db: Any) -> BrewSetup:
-    fallback = ensure_default_setup(db)
-    setting_value = get_setting(db, "active_setup_id")
+def get_active_setup(db: Any, owner: str) -> BrewSetup:
+    fallback = ensure_default_setup(db, owner)
+    setting_value = get_setting(db, owner, "active_setup_id")
     if setting_value:
         try:
             setup_id = int(setting_value)
-            existing = db.query(BrewSetup).filter(BrewSetup.id == setup_id).first()
+            existing = (
+                db.query(BrewSetup)
+                .filter(BrewSetup.id == setup_id, BrewSetup.owner == owner)
+                .first()
+            )
             if existing:
                 return existing
         except ValueError:
             pass
-    set_setting(db, "active_setup_id", str(fallback.id))
+    set_setting(db, owner, "active_setup_id", str(fallback.id))
     return fallback
 
 
@@ -344,7 +363,9 @@ def classify_data_quality(
     return "measured" if complete else "partial"
 
 
-def resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
+def resolve_log_values(
+    log: LogDetailsInput | None, db: Any, owner: str
+) -> dict[str, Any]:
     """Normalise a log payload without inventing measurements.
 
     Anything the user did not supply stays None. Before this, absent values
@@ -353,7 +374,7 @@ def resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
     system learned from its own defaults. The dose default is retained
     because it is a stored user preference, not a guess about an outcome.
     """
-    dose = get_default_dose_g(db)
+    dose = get_default_dose_g(db, owner)
     if log and log.dose_g is not None and log.dose_g > 0:
         dose = float(log.dose_g)
 
@@ -363,7 +384,7 @@ def resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
         else None
     )
     time_s = (
-        int(log.time_s) if log and log.time_s is not None and log.time_s > 0 else None
+        round(log.time_s) if log and log.time_s is not None and log.time_s > 0 else None
     )
     rating = max(1, min(5, int(log.rating))) if log and log.rating is not None else None
 
@@ -396,6 +417,7 @@ def resolve_log_values(log: LogDetailsInput | None, db: Any) -> dict[str, Any]:
 
 
 def save_dial_in_log(
+    owner: str,
     coffee_data: dict[str, Any],
     recommendation: str,
     actual_grind: str | None = None,
@@ -403,7 +425,7 @@ def save_dial_in_log(
     image_name: str | None = None,
     yield_g: float | None = None,
     water_g: float | None = None,
-    time_s: int | None = None,
+    time_s: float | None = None,
     taste_axis: str | None = None,
     astringent: bool | None = None,
     brew_temp_c: float | None = None,
@@ -427,9 +449,13 @@ def save_dial_in_log(
         explicit_id = coffee_data.get("bean_id")
         if explicit_id is not None:
             bean = db.get(Bean, int(explicit_id))
+            # A bean_id from another user's library must not attach a shot.
+            if bean is not None and bean.owner != owner:
+                bean = None
         if bean is None:
             bean = find_existing_bean(
                 db,
+                owner,
                 name=bean_name,
                 roaster=bean_roaster,
                 origin=bean_origin,
@@ -437,6 +463,7 @@ def save_dial_in_log(
             )
         if not bean:
             bean = Bean(
+                owner=owner,
                 roaster=bean_roaster,
                 name=bean_name,
                 origin=bean_origin,
@@ -447,7 +474,7 @@ def save_dial_in_log(
             db.commit()
             db.refresh(bean)
 
-        active_setup = get_active_setup(db)
+        active_setup = get_active_setup(db, owner)
         grinder = active_setup.grinder if active_setup else None
         machine = active_setup.machine if active_setup else None
         if not grinder or not machine:
@@ -459,13 +486,18 @@ def save_dial_in_log(
         grind_setting = actual_grind.strip() if actual_grind else "Unknown"
         grind_clicks = parse_grind_clicks(grind_setting)
 
-        resolved_dose_g = dose_g if dose_g is not None else get_default_dose_g(db)
+        resolved_dose_g = (
+            dose_g if dose_g is not None else get_default_dose_g(db, owner)
+        )
+        # The wizard's timer measures tenths; the column is whole seconds.
+        resolved_time_s = None if time_s is None else round(time_s)
         resolved_image_name = image_name or coffee_data.get("image_name")
         if resolved_image_name:
             resolved_image_name = os.path.basename(str(resolved_image_name))
 
         db.add(
             DialInLog(
+                owner=owner,
                 bean_id=bean.id,
                 grinder_id=grinder.id,
                 machine_id=machine.id,
@@ -478,7 +510,7 @@ def save_dial_in_log(
                 # blank stays None rather than being filled with a default.
                 yield_g=yield_g,
                 water_g=water_g,
-                time_s=time_s,
+                time_s=resolved_time_s,
                 taste_axis=taste_axis,
                 astringent=astringent,
                 brew_temp_c=brew_temp_c,
@@ -492,7 +524,7 @@ def save_dial_in_log(
                 llm_note=recommendation,
                 data_quality=classify_data_quality(
                     grind_clicks=grind_clicks,
-                    time_s=time_s,
+                    time_s=resolved_time_s,
                     yield_g=yield_g,
                     water_g=water_g,
                     rating=None,
