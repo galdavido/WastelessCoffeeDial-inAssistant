@@ -39,6 +39,29 @@ The app is then at `https://<machine>.<tailnet>.ts.net`. Because that is real HT
 it is a *secure context*, so the service worker finally registers and the PWA works
 offline — something the plain-HTTP LAN deployment never did.
 
+### Turn off key expiry on this machine
+
+By default a node key expires after ~6 months. When it does, the machine drops off the
+tailnet and **the app goes dark for everyone** until somebody with shell access runs
+`sudo tailscale up` and completes a browser login. On a personal laptop or phone that is
+a minor annoyance and worth keeping. On an always-on server that other people depend on
+it is an outage with a long fuse, scheduled for a date nobody remembers.
+
+Admin console → **Machines** → this machine → **⋯** → **Disable key expiry**.
+
+Check where it stands:
+
+```sh
+curl -s -H "Authorization: Bearer $TOK" \
+  https://api.tailscale.com/api/v2/tailnet/-/devices \
+  | python3 -c 'import json,sys; [print(d["name"], d["keyExpiryDisabled"], d["expires"]) for d in json.load(sys.stdin)["devices"]]'
+```
+
+Want `True` for this host. Leave the phone alone — reauthenticating a phone is easy, and
+key expiry on a personal device is a feature. Note the read-only `devices:core:read`
+scope can *see* this but not change it; flipping it needs the console or a token with
+device write.
+
 ## 4. Lock down what shared friends can reach
 
 **This matters on this host.** It also runs Jellyfin (`8096`), qBittorrent (`8080`),
@@ -72,6 +95,13 @@ Two related gotchas:
 
 - Tailscale's docs state that *omitting* the `acls` field is equivalent to the default
   allow-all. Do not rely on removing it; write an explicit rule set.
+
+  **Settled by measurement (2026-09-06):** with the `grants` policy below live and no
+  `acls` field present, an identity that matches no grant is dropped on *every* port,
+  443 included — so a `grants`-only file is **not** an implicit allow-all. Verified with
+  the ACL-test method below; see the "unknown identity" test. This is reassuring, but
+  keep writing the explicit rule set anyway: the guarantee that matters is that no
+  allow-all rule survives, not that omission happens to be safe.
 - The docs do not clearly specify how a file containing **both** `acls` and `grants`
   is evaluated. Don't find out the hard way — keep the policy in **one** style, with no
   allow-all rule left in either block.
@@ -120,13 +150,41 @@ merging, so no permissive rule survives by accident.
 need listing in advance. `autogroup:member` is authenticated members of your own
 tailnet — you — and shared-in friends are deliberately *not* members.
 
-### Verify it, twice
+### Verify it, three ways
 
 The admin console's policy editor previews rule matches before you save — use it, and
 confirm your own account still matches the unrestricted rule *before* saving.
 
-Then test for real from a friend's device (or a second account of your own that you
-invite as a share), because a preview only checks the policy, not Serve:
+**Then assert the rules, don't eyeball them.** Tailscale evaluates `tests` in the policy
+file server-side, so the whole rule set can be checked without touching a device. This
+needs an OAuth client with **write** on the `acl` scope (admin console → Settings → OAuth
+clients); it can read and rewrite the policy file and nothing else, and posting to
+`/acl/validate` only checks — it never saves.
+
+```sh
+TOK=$(curl -s -d "client_id=$ID" -d "client_secret=$SECRET" \
+  https://api.tailscale.com/api/v2/oauth/token | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+
+curl -s -X POST -H "Authorization: Bearer $TOK" -H "Content-Type: application/hujson" \
+  --data-binary @policy.hujson \
+  https://api.tailscale.com/api/v2/tailnet/-/acl/validate
+```
+
+`{}` means every test passed. Put these three in the `tests` array, substituting this
+machine's tailnet IP:
+
+| src | assertion | proves |
+|---|---|---|
+| your own login | `accept` 443, 8096, 9000 | you are not locked out of your own box |
+| your own login | `deny` 8096 — **must fail** | the tests are really being evaluated |
+| an address in no share | `deny` 443, 8096, 9000 | nothing is reachable by default |
+
+The middle row is the one people skip. Run it and confirm it *fails* with
+`want: Drop, got: Accept` — a suite where a false claim passes is proving nothing, and
+that is exactly the failure mode of a policy that silently isn't applying.
+
+Finally, test from a friend's device (or a second account of your own that you invite as
+a share), because none of the above checks Serve:
 
 ```sh
 curl -fsS  https://<machine>.<tailnet>.ts.net/api/whoami          # 200, their login
