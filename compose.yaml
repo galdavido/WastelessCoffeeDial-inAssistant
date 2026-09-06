@@ -32,14 +32,52 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
       WEB_PORT: "8080"
       LOG_IMAGES_DIR: /app/data/log_images
+      # Startup logs (the migration summary, warn_if_misconfigured) are block
+      # buffered without this and never reach `docker logs`.
+      PYTHONUNBUFFERED: "1"
+      # Single-user: every request maps to one implicit owner ("owner"). This is
+      # the dev instance -- no identity handling, reachable directly on the LAN.
+      WCDA_AUTH_MODE: ${WCDA_AUTH_MODE:-single}
     depends_on:
       db:
         condition: service_healthy
-    # Bound to localhost only; put a reverse proxy in front to expose it.
+    # Published on all host interfaces so phones / other LAN devices can reach
+    # the dev instance directly at http://<host-ip>:8082. Port 8082, not 8081:
+    # the prod stack holds 8081 on this host and the two must run side by side.
+    # Plain HTTP on a bare IP is not a "secure context", so the service worker /
+    # offline cache will not register (Add-to-Home-Screen still works).
     ports:
-      - "127.0.0.1:8081:8080"
+      - "8082:8080"
     volumes:
       - log_images:/app/data/log_images
+    security_opt:
+      - no-new-privileges:true
+
+  # Nightly pg_dump with rotation, same as the prod stack has. This instance is
+  # the one actually used day to day, so its data is not scratch -- it is the
+  # real bean/shot history and needs a backup of its own. Dumps land in
+  # ./backups/dev-db/ on the host. Restore the latest with:
+  #   gunzip -c backups/dev-db/last/<db>-latest.sql.gz \
+  #     | docker compose exec -T db psql -U barista -d barista_db
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-barista_db}
+      POSTGRES_USER: ${POSTGRES_USER:-barista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_EXTRA_OPTS: "--no-owner --no-privileges"
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: "14"
+      BACKUP_KEEP_WEEKS: "8"
+      BACKUP_KEEP_MONTHS: "6"
+      HEALTHCHECK_PORT: "8080"
+    volumes:
+      - ./backups/dev-db:/backups
+    depends_on:
+      db:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
 

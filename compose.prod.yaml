@@ -42,15 +42,30 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
       WEB_PORT: "8080"
       LOG_IMAGES_DIR: /app/data/log_images
+      # Startup logs (the migration summary, warn_if_misconfigured) are block
+      # buffered without this and never reach `docker logs`.
+      PYTHONUNBUFFERED: "1"
+      # The friends instance is multi-user: each caller's data is scoped to the
+      # Tailscale identity that `tailscale serve` authenticates and forwards in
+      # the Tailscale-User-Login header. This trusts a header, so the port below
+      # is bound to loopback only -- the app must be unreachable except through
+      # Serve, or the header can be spoofed. See src/core/auth.py.
+      WCDA_AUTH_MODE: ${WCDA_AUTH_MODE:-tailscale}
     depends_on:
       db:
         condition: service_healthy
-    # Published on all host interfaces so phones / other LAN devices can reach it
-    # directly at http://<host-ip>:8081. Note: plain HTTP on a bare IP is not a
-    # "secure context", so the service worker / offline PWA cache will not run
-    # (Add-to-Home-Screen still works). Put a TLS reverse proxy in front for that.
+    # Loopback only by default. Friends reach this through `tailscale serve`,
+    # which runs on the host and must be pointed at 127.0.0.1:8081:
+    #   sudo tailscale serve --bg --https=443 http://127.0.0.1:8081
+    # That also makes it an HTTPS "secure context", so the PWA/offline cache
+    # works over the tailnet.
+    #
+    # WCDA_PROD_BIND exists so the bind address can be moved without editing this
+    # file -- but it must stay on loopback whenever WCDA_AUTH_MODE is `tailscale`.
+    # Publishing on 0.0.0.0 in that mode lets anyone on the LAN forge the identity
+    # header, so only widen it together with WCDA_AUTH_MODE=single.
     ports:
-      - "8081:8080"
+      - "${WCDA_PROD_BIND:-127.0.0.1}:8081:8080"
     read_only: true
     volumes:
       - log_images:/app/data/log_images
