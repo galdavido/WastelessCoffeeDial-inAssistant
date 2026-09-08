@@ -53,3 +53,6 @@ backups/
 
 # Git worktrees created by tooling live inside the repo
 .claude/worktrees/
+
+# Per-task working memory for Claude sessions — kept local, never shared
+docs/SESSION-STATE.md

@@ -9,6 +9,26 @@ dial-in helper with a vanilla-JS PWA frontend. Scan a coffee bag, get a
 grind/dose/temperature recipe informed by your own past logs (RAG over a
 Postgres history).
 
+## Session state — read this first
+
+`docs/SESSION-STATE.md` is the working memory for whatever task is in flight,
+so it survives a disconnect or a context reset. It is deliberately separate
+from the three things that already exist: this file is durable repo truth,
+auto-memory holds cross-session lessons, and `git log` is what shipped —
+none of them hold "where are we in this job."
+
+- **First action of every ask:** read `docs/SESSION-STATE.md`.
+- **Update it after any meaningful step**, and *always before* a long or
+  risky operation (deploy, migration, container rebuild) so an interruption
+  mid-op is recoverable.
+- **On task completion:** move `Now` into `Done this thread`, clear
+  `Next steps`, promote anything under `System notes discovered` into this
+  file or auto-memory, and trim `Done this thread` back to ~10 lines.
+- Keep every section short — it is working memory, not a changelog.
+- **Commit discipline:** fold the state update into the task's own commit;
+  if a task produces no code commit, a standalone `docs: session state`
+  commit is fine.
+
 ## Layout
 
 - `src/core/` — FastAPI app (`web_server.py` entry, `web_routes.py` routes,
