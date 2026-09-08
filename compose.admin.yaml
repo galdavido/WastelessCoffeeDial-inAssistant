@@ -1,0 +1,25 @@
+# Optional overlay: gives the dev stack a read-only window onto the friends
+# database, so /admin on 8082 shows live usage.
+#
+#   docker compose -f compose.yaml -f compose.admin.yaml up -d --build
+#
+# Deliberately NOT folded into compose.yaml. It attaches to a network the prod
+# project owns, and an external network that does not exist is a hard startup
+# failure -- so putting it in the default file would stop the dev stack, which
+# is the daily driver, from coming up whenever the friends stack is down.
+services:
+  web:
+    environment:
+      # Host is the prod *container* name, not "db": the dev stack has a
+      # service called db too, and on a shared network that name is ambiguous.
+      WCDA_ADMIN_DATABASE_URL: ${WCDA_ADMIN_DATABASE_URL:?set WCDA_ADMIN_DATABASE_URL in .env}
+      # Without a token the dashboard stays unmounted; see core/admin_db.py.
+      WCDA_ADMIN_TOKEN: ${WCDA_ADMIN_TOKEN:?set WCDA_ADMIN_TOKEN in .env}
+    networks:
+      - default
+      - prod_backend
+
+networks:
+  prod_backend:
+    external: true
+    name: wcda-prod_backend

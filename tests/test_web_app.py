@@ -92,18 +92,26 @@ class TestWebAppWiring(unittest.TestCase):
         assert match is not None
         cache_version = int(match.group(1))
 
-        html = (static / "index.html").read_text(encoding="utf-8")
-        pinned = re.findall(r"/static/[\w./-]+\.(?:css|js)\?v=(\d+)", html)
-        self.assertTrue(pinned, "no version-pinned assets in index.html")
-        self.assertEqual(
-            {int(v) for v in pinned},
-            {cache_version},
-            "index.html ?v= does not match sw.js CACHE",
-        )
+        # Every page, not just index.html: admin.html pins the same way, and a
+        # page left behind at an older ?v= is exactly the torn-cache bug this
+        # whole scheme exists to prevent.
+        for page in sorted(static.glob("*.html")):
+            html = page.read_text(encoding="utf-8")
+            pinned = re.findall(r"/static/[\w./-]+\.(?:css|js)\?v=(\d+)", html)
+            self.assertTrue(pinned, f"no version-pinned assets in {page.name}")
+            self.assertEqual(
+                {int(v) for v in pinned},
+                {cache_version},
+                f"{page.name} ?v= does not match sw.js CACHE",
+            )
 
-        # A newly added tag without ?v= would silently escape the pinning.
-        unpinned = re.findall(r'(?:href|src)="(/static/[\w./-]+\.(?:css|js))"', html)
-        self.assertEqual(unpinned, [], f"unversioned static assets: {unpinned}")
+            # A newly added tag without ?v= would silently escape the pinning.
+            unpinned = re.findall(
+                r'(?:href|src)="(/static/[\w./-]+\.(?:css|js))"', html
+            )
+            self.assertEqual(
+                unpinned, [], f"unversioned static assets in {page.name}: {unpinned}"
+            )
 
         served = client.get("/api/version").json()
         self.assertEqual(served["asset_version"], cache_version)

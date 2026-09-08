@@ -50,6 +50,18 @@ The two stacks run side by side on one host, so they must not share a port:
 - Host-side Tailscale setup (Serve, the ACL that keeps shared friends off this
   box's other services, inviting people, claiming pre-multi-user rows):
   **`docs/tailscale-setup.md`**.
+- **Admin dashboard (dev only):** `/admin` on 8082 shows how much the friends
+  instance is used and how, read live from the **prod** database through a
+  `SELECT`-only role. It is mounted only when both `WCDA_ADMIN_DATABASE_URL`
+  and `WCDA_ADMIN_TOKEN` are set -- that is the dev instance and never prod, so
+  prod's attack surface is unchanged. Bring it up with the overlay:
+  `docker compose -f compose.yaml -f compose.admin.yaml up -d --build`.
+  The overlay is separate because it joins `wcda-prod_backend`, and a missing
+  external network is a hard startup failure: folding it into `compose.yaml`
+  would stop the daily driver whenever the prod stack is down. Create the role
+  once with `scripts/create_readonly_role.sql`. The DB host in the URL is the
+  **container** name `wcda-prod-db-1`, not `db` -- both projects have a service
+  called `db`, so that name is ambiguous across a shared network.
 - To ship a change to the running prod app, use the **`deploy` skill**.
 - App process: `python -m core.web_server`; honours `WCDA_HOST` / `WEB_PORT`.
 
@@ -72,13 +84,18 @@ The two stacks run side by side on one host, so they must not share a port:
   nightly dump quietly never runs.
 - **Volume names follow the compose project name, so renaming a project
   orphans its data.** Adding `name: wcda` / `name: wcda-prod` in 2026-08 detached
-  the original `wastelesscoffeedial-inassistant_postgres_data` (the real history,
-  on PG **15**) and `..._log_images`; both stacks then came up on new, empty
-  volumes and the data looked lost. Those volumes still exist as
-  `dangling=true`, so **never run `docker volume prune` or `docker system prune
-  --volumes` on this host.** Check `docker volume ls` for orphans before
-  assuming a fresh start is safe, and note a PG 15 data dir cannot be opened by
-  the PG 16 image — dump it with a `pgvector/pgvector:pg15` container first.
+  the original `wastelesscoffeedial-inassistant_postgres_data` (PG **15**) and
+  `..._log_images`; both stacks then came up on new, empty volumes. **That old
+  database was deliberately discarded on 2026-09-08** — the owner confirmed the
+  history in it was not wanted — and the volume plus its `wcda_rescue_pg15` copy
+  were deleted. Do not go looking for it again: the live data is
+  `wcda_postgres_data` (dev) and `wcda-prod_postgres_data` (prod), and dev's
+  history starts 2026-09-06. `wastelesscoffeedial-inassistant_log_images` is
+  still dangling.
+- Still **never run `docker volume prune` or `docker system prune --volumes`**
+  here: the two stacks' live volumes are only ever attached while their
+  containers exist, and a stopped stack's data would go with it. Check
+  `docker volume ls` before assuming a fresh start is safe.
 
 ## Tests, lint, types
 
@@ -96,8 +113,23 @@ The two stacks run side by side on one host, so they must not share a port:
 ## Frontend conventions
 
 - No build step, no framework. Edit the files in `src/web/static/` directly.
+- **Type and colour live in `:root` in `style.css`.** Instrument Serif sets
+  headings, the shot clock and filled buttons; Hanken Grotesk does the rest.
+  Both are **self-hosted** in `static/fonts/` and precached by `sw.js` — they
+  have to be, because the CSP is `default-src 'self'` with no `font-src`, so
+  Google Fonts is blocked outright.
+- **The CSP also blocks inline styles**: no `<style>` blocks, and no `style=""`
+  inside an `innerHTML` template. Dynamic values go through
+  `element.style.setProperty()` (CSSOM, which is not blocked) or a data
+  attribute the stylesheet reads.
+- The look is warm and muted, never neon, and controls are printed rather than
+  glossy — flat fills with a letterpress keyline, no gradients or white inner
+  highlights. Chart series in `admin.css` are three separate hues, not three
+  shades of clay, because muted earth tones alone fail colour-blind separation.
 - **`sw.js` has `const CACHE = 'wcda-vN'` — bump N on every change to a static
-  asset** so clients fetch the new bundle. The service worker is network-first
+  asset** so clients fetch the new bundle, and move the `?v=` on the CSS/JS
+  tags in **every** page (`index.html` and `admin.html`) to match;
+  `tests/test_web_app.py` asserts they agree. The service worker is network-first
   for the app shell (HTML/JS/CSS), cache-only as an offline fallback.
 - Over plain HTTP on a bare IP the service worker does not register (not a
   secure context); Add-to-Home-Screen still works.

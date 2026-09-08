@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Barista AI — Admin</title>
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#12100E" />
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg" />
+
+  <!-- style.css carries the faces and the token block; admin.css is only the
+       desktop-shaped layout this page needs on top of them. -->
+  <link rel="stylesheet" href="/static/style.css?v=29" />
+  <link rel="stylesheet" href="/static/admin.css?v=29" />
+</head>
+<body class="admin-body">
+
+  <header class="admin-header">
+    <svg class="header-logo" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <circle cx="32" cy="32" r="27" stroke="var(--border-2)" stroke-width="4.5" stroke-dasharray="2.2 5.13"/>
+      <path d="M32 2.5V10.5" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="18.5" fill="var(--accent)"/>
+      <path d="M32 15.5C26.5 22 26.5 27 32 32c5.5 5 5.5 10 0 16.5" stroke="var(--bg)" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+    <span class="header-title">Barista AI</span>
+    <span class="admin-badge">Admin</span>
+    <div class="admin-spacer"></div>
+    <span class="admin-source" id="admin-source">read-only view of the friends instance</span>
+  </header>
+
+  <main class="admin-main">
+
+    <!-- Shown until a token has been entered. The dev instance has no identity
+         of its own and is published on the LAN, so this is what keeps other
+         people's usage off every device on the network. -->
+    <section class="admin-gate" id="admin-gate" hidden>
+      <h1 class="admin-gate-title">Admin token</h1>
+      <p class="admin-gate-note" id="admin-gate-note">
+        From <code>WCDA_ADMIN_TOKEN</code> in <code>.env</code>. Kept in this
+        browser only.
+      </p>
+      <form class="admin-gate-form" id="admin-gate-form">
+        <input class="input" type="password" id="admin-token-input"
+               autocomplete="off" placeholder="Paste the token" />
+        <button class="btn btn-primary" type="submit">Unlock</button>
+      </form>
+    </section>
+
+    <div id="admin-dash" hidden>
+      <div class="admin-toolbar">
+        <div class="admin-range" id="admin-range" role="group" aria-label="Time window">
+          <button class="admin-range-btn" type="button" data-days="30">30 days</button>
+          <button class="admin-range-btn is-active" type="button" data-days="90">90 days</button>
+          <button class="admin-range-btn" type="button" data-days="365">A year</button>
+          <button class="admin-range-btn" type="button" data-days="3650">All time</button>
+        </div>
+        <div class="admin-spacer"></div>
+        <span class="admin-note">Derived from shot and recipe timestamps — nothing extra is collected.</span>
+        <button class="btn btn-sm btn-ghost" id="admin-forget" type="button">Forget token</button>
+      </div>
+
+      <div class="admin-status" id="admin-status">Loading…</div>
+
+      <section class="kpi-row" id="kpi-row"></section>
+
+      <section class="admin-cols">
+        <div class="panel panel-wide">
+          <div class="panel-head">
+            <h2 class="panel-title">Shots logged per week</h2>
+            <span class="panel-sub">Everyone · last 12 weeks</span>
+          </div>
+          <div class="chart-host" id="chart-weekly"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">How they brew</h2>
+            <span class="panel-sub">Share of logged shots</span>
+          </div>
+          <div id="chart-methods"></div>
+          <div class="panel-rule"></div>
+          <div class="usage-list" id="usage-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">Per person</h2>
+          <span class="panel-sub">Activity only — never what they drink or how they rated it.</span>
+        </div>
+        <div class="table-scroll">
+          <table class="admin-table" id="people-table">
+            <thead>
+              <tr>
+                <th scope="col">Friend</th>
+                <th scope="col" class="num">Shots</th>
+                <th scope="col" class="num">Coffees</th>
+                <th scope="col" class="num">Recipes</th>
+                <th scope="col">Follow-through</th>
+                <th scope="col" class="num">Timer use</th>
+                <th scope="col" class="num">Active days</th>
+                <th scope="col">Last seen</th>
+                <th scope="col" class="num">12 weeks</th>
+              </tr>
+            </thead>
+            <tbody id="people-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="chart-tip" id="chart-tip" hidden></div>
+
+  <script src="/static/admin.js?v=29"></script>
+</body>
+</html>
