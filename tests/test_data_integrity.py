@@ -22,7 +22,11 @@ from core.web_schemas import LogDetailsInput
 
 
 class _FakeDB:
-    """Stands in for a Session: resolve_log_values only reads the dose setting."""
+    """Stands in for a Session: resolve_log_values only reads the dose setting.
+
+    It ignores the owner scoping too -- every query returns nothing, so the
+    helper falls through to its defaults whichever owner is asked for.
+    """
 
     def query(self, *_args: object, **_kwargs: object) -> _FakeDB:
         return self
@@ -116,7 +120,7 @@ class TestResolveLogValuesDoesNotFabricate(unittest.TestCase):
     def test_absent_measurements_stay_none(self) -> None:
         from core.web_helpers import resolve_log_values
 
-        values = resolve_log_values(LogDetailsInput(), _FakeDB())
+        values = resolve_log_values(LogDetailsInput(), _FakeDB(), "owner")
 
         # The exact fabrications this project used to write.
         self.assertIsNone(values["yield_g"], "yield_g must not default to dose*2")
@@ -128,7 +132,7 @@ class TestResolveLogValuesDoesNotFabricate(unittest.TestCase):
         # The dose default is a real user preference, not a guessed outcome.
         from core.web_helpers import resolve_log_values
 
-        values = resolve_log_values(LogDetailsInput(), _FakeDB())
+        values = resolve_log_values(LogDetailsInput(), _FakeDB(), "owner")
         self.assertEqual(values["dose_g"], 16.0)
 
     def test_supplied_measurements_are_kept_and_marked_measured(self) -> None:
@@ -143,6 +147,7 @@ class TestResolveLogValuesDoesNotFabricate(unittest.TestCase):
                 rating=4,
             ),
             _FakeDB(),
+            "owner",
         )
         self.assertEqual(values["yield_g"], 36.0)
         self.assertEqual(values["time_s"], 29)

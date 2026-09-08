@@ -43,16 +43,12 @@ def upgrade() -> None:
     for table in _OWNED_TABLES:
         op.add_column(table, sa.Column("owner", sa.String(), nullable=True))
         op.execute(f"UPDATE {table} SET owner = '{_BACKFILL_OWNER}'")
-        op.alter_column(
-            table, "owner", existing_type=sa.String(), nullable=False
-        )
+        op.alter_column(table, "owner", existing_type=sa.String(), nullable=False)
         op.create_index(f"ix_{table}_owner", table, ["owner"])
 
     op.add_column("app_settings", sa.Column("owner", sa.String(), nullable=True))
     op.execute(f"UPDATE app_settings SET owner = '{_BACKFILL_OWNER}'")
-    op.alter_column(
-        "app_settings", "owner", existing_type=sa.String(), nullable=False
-    )
+    op.alter_column("app_settings", "owner", existing_type=sa.String(), nullable=False)
     op.create_index("ix_app_settings_owner", "app_settings", ["owner"])
     # 0001 enforced key-uniqueness with a unique index, not a constraint.
     op.drop_index("ix_app_settings_key", table_name="app_settings")
@@ -63,9 +59,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_app_settings_owner_key", "app_settings", type_="unique"
-    )
+    op.drop_constraint("uq_app_settings_owner_key", "app_settings", type_="unique")
     op.drop_index("ix_app_settings_key", table_name="app_settings")
     op.create_index("ix_app_settings_key", "app_settings", ["key"], unique=True)
     op.drop_index("ix_app_settings_owner", table_name="app_settings")
