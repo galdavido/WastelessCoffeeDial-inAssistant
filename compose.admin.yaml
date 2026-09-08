@@ -15,6 +15,11 @@ services:
       WCDA_ADMIN_DATABASE_URL: ${WCDA_ADMIN_DATABASE_URL:?set WCDA_ADMIN_DATABASE_URL in .env}
       # Without a token the dashboard stays unmounted; see core/admin_db.py.
       WCDA_ADMIN_TOKEN: ${WCDA_ADMIN_TOKEN:?set WCDA_ADMIN_TOKEN in .env}
+    # Joining a second network puts this container in two DNS namespaces at
+    # once. Both projects have a service called `db`, so anything addressing
+    # the bare name gets whichever answers first -- which is why the dev
+    # database is addressed as `wcda-dev-db` in compose.yaml and the admin URL
+    # below uses the prod container's name. Never reintroduce a bare `db` here.
     networks:
       - default
       - prod_backend

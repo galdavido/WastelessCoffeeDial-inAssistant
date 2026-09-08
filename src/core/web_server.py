@@ -15,6 +15,7 @@ from core.auth import warn_if_misconfigured
 from core.db_bootstrap import run_migrations, seed_baseline_equipment
 from core.optional_deps import load_dotenv_if_available
 from core.web_routes import register_routes
+from database.database import engine
 
 load_dotenv_if_available()
 
@@ -31,6 +32,12 @@ _STATIC_DIR = os.path.normpath(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # Which database this process is actually bound to, in plain sight. A
+    # container that joins a second compose network can resolve a bare service
+    # name like `db` to the wrong stack, and the app is perfectly happy serving
+    # somebody else's data -- it just looks empty. Log it so that is a visible
+    # fact in `docker logs` rather than something to deduce.
+    logger.info("Database: %s", engine.url.render_as_string(hide_password=True))
     run_migrations()
     seed_baseline_equipment()
     warn_if_misconfigured()

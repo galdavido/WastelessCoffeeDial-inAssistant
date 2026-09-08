@@ -59,9 +59,18 @@ The two stacks run side by side on one host, so they must not share a port:
   The overlay is separate because it joins `wcda-prod_backend`, and a missing
   external network is a hard startup failure: folding it into `compose.yaml`
   would stop the daily driver whenever the prod stack is down. Create the role
-  once with `scripts/create_readonly_role.sql`. The DB host in the URL is the
-  **container** name `wcda-prod-db-1`, not `db` -- both projects have a service
-  called `db`, so that name is ambiguous across a shared network.
+  once with `scripts/create_readonly_role.sql`.
+- **A container on two compose networks resolves a bare service name to
+  whichever stack answers first.** Both projects have a service called `db`, so
+  once the overlay put the dev web container on `wcda-prod_backend` its plain
+  `db` started resolving to the *prod* database: the dev app read the friends'
+  rows for half a day and showed an empty list, because the dev owner owns
+  nothing there. Nothing was written, but only by luck. So: the dev database is
+  addressed **only** as `wcda-dev-db` (a network alias that exists on one
+  network), the admin URL uses the **container** name `wcda-prod-db-1`, and
+  `tests/test_admin.py` fails if a bare `db` comes back. The app logs
+  `Database: ...` at startup — check it in `docker logs` when data looks
+  missing.
 - To ship a change to the running prod app, use the **`deploy` skill**.
 - App process: `python -m core.web_server`; honours `WCDA_HOST` / `WEB_PORT`.
 
@@ -77,8 +86,11 @@ The two stacks run side by side on one host, so they must not share a port:
   `DATABASE_URL`, `GEMINI_API_KEY`. Template: `.env.example`.
 - Daily dumps land in `./backups/db/` (prod) and `./backups/dev-db/` (dev) via
   the `db-backup` compose service in each stack (`backups/` is gitignored).
-  Restore: `gunzip -c backups/db/last/<file>.sql.gz | docker compose -f
-  compose.prod.yaml exec -T db psql -U barista -d barista_db`.
+  **Despite the `.sql.gz` name these dumps are plain, uncompressed SQL**, so
+  the restore is a straight redirect — piping them through `gunzip` fails with
+  "not in gzip format":
+  `docker compose -f compose.prod.yaml exec -T db psql -U barista -d
+  barista_db < backups/db/last/<file>.sql.gz`.
   **`docker compose up -d --build web` starts only `web` and its `depends_on`,
   never `db-backup`** — bring the stack up without naming a service, or the
   nightly dump quietly never runs.

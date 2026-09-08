@@ -21,7 +21,8 @@ from core.admin_routes import register_admin_routes
 from core.admin_stats import _pct
 from core.web_server import app
 
-STATIC = Path(__file__).resolve().parents[1] / "src" / "web" / "static"
+ROOT = Path(__file__).resolve().parents[1]
+STATIC = ROOT / "src" / "web" / "static"
 
 _DB = "postgresql+psycopg2://wcda_readonly:pw@wcda-prod-db-1:5432/barista_db"
 
@@ -101,6 +102,39 @@ class TestAdminStatsHelpers(unittest.TestCase):
         self.assertEqual(_pct(0, 8), 0.0)
         self.assertEqual(_pct(1, 3), 33.3)
         self.assertEqual(_pct(8, 8), 100.0)
+
+
+class TestComposeHostnamesAreUnambiguous(unittest.TestCase):
+    """The dev stack must never address its own database as plain ``db``.
+
+    compose.admin.yaml puts the dev web container on the prod network as well,
+    and both projects have a service called ``db``. With the bare name the
+    winner is whichever DNS answer arrives first -- which silently pointed the
+    dev app at the friends database for half a day, where it read someone
+    else's rows and showed the user an empty app. A unique alias exists on one
+    network only and cannot be confused.
+    """
+
+    def test_dev_database_is_addressed_by_a_unique_alias(self) -> None:
+        compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+        self.assertIn("wcda-dev-db", compose)
+        self.assertNotIn("@db:5432", compose)
+        self.assertNotIn("POSTGRES_HOST: db\n", compose)
+
+    def test_the_overlay_still_only_touches_web(self) -> None:
+        # Attaching db or db-backup to the prod network would put a second
+        # `db` on their own network too.
+        overlay = (ROOT / "compose.admin.yaml").read_text(encoding="utf-8")
+        services, in_services = [], False
+        for line in overlay.splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if not line.startswith(" "):  # a top-level key ends the block
+                in_services = line.startswith("services:")
+                continue
+            if in_services and line.startswith("  ") and not line.startswith("   "):
+                services.append(line.strip().rstrip(":"))
+        self.assertEqual(services, ["web"])
 
 
 if __name__ == "__main__":  # pragma: no cover

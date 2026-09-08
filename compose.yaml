@@ -21,6 +21,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    # Everything addresses this database as `wcda-dev-db`, never as `db`.
+    # The prod stack also has a service called `db`, so the moment a container
+    # here joins the prod network as well -- which compose.admin.yaml does --
+    # the bare name resolves to whichever answers first. That silently pointed
+    # the dev app at the friends database for half a day. A unique alias exists
+    # on this network only and cannot be confused with anything.
+    networks:
+      default:
+        aliases:
+          - wcda-dev-db
 
   web:
     build:
@@ -28,7 +38,7 @@ services:
       target: runtime
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-barista}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-barista_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-barista}:${POSTGRES_PASSWORD}@wcda-dev-db:5432/${POSTGRES_DB:-barista_db}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
       WEB_PORT: "8080"
       LOG_IMAGES_DIR: /app/data/log_images
@@ -63,7 +73,7 @@ services:
     image: prodrigestivill/postgres-backup-local:16
     restart: unless-stopped
     environment:
-      POSTGRES_HOST: db
+      POSTGRES_HOST: wcda-dev-db
       POSTGRES_DB: ${POSTGRES_DB:-barista_db}
       POSTGRES_USER: ${POSTGRES_USER:-barista}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
