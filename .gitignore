@@ -50,3 +50,6 @@ Thumbs.db
 
 # Local DB dumps / backups (contain real data)
 backups/
+
+# Git worktrees created by tooling live inside the repo
+.claude/worktrees/

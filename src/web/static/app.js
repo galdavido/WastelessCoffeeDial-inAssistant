@@ -442,7 +442,7 @@ async function recalcForDose() {
     if (ok) {
       if (currentCoffeeData) currentCoffeeData.preferred_dose_g = dose;
       $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
-      showToast(`✅ Recipe updated for ${dose} g`);
+      showToast(`Recipe updated for ${dose} g`);
     }
   } finally {
     btn.disabled = false;
@@ -657,7 +657,7 @@ async function saveRecordFromForm() {
 
     closeRecordEditor();
     await loadRecents();
-    showToast('✅ Record saved');
+    showToast('Record saved');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save record'));
   }
@@ -678,7 +678,7 @@ async function deleteRecord(entry) {
       showPanel('recipe-empty');
     }
     await loadRecents();
-    showToast('✅ Record deleted');
+    showToast('Record deleted');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not delete record'));
   }
@@ -741,9 +741,14 @@ function originArtwork(origin) {
   const W = 400;
   const H = 120;
 
-  // Derive every varying quantity from a different slice of the hash.
-  const hue = h % 360;
-  const hue2 = (hue + 25 + ((h >> 9) % 40)) % 360;
+  // Derive every varying quantity from a different slice of the hash. The sky
+  // is confined to a dusk band and desaturated: a full-spectrum hue varied per
+  // origin, which is what this used to do, fights the muted palette the rest of
+  // the app is built from. The sun stays clay whatever the sky does, and that
+  // is what ties every card back to the accent.
+  const hue = 186 + (h % 150);
+  const hue2 = hue + 10 + ((h >> 9) % 22);
+  const sunHue = 26 + ((h >> 7) % 12);
   const sunX = 250 + ((h >> 5) % 110);        // right-hand side
   const sunY = 26 + ((h >> 11) % 16);
   const seed = ((h >> 3) % 1000) / 100;
@@ -765,20 +770,20 @@ function originArtwork(origin) {
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <linearGradient id="${uid}s" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="hsl(${hue} 58% 30%)"/>
-            <stop offset="100%" stop-color="hsl(${hue2} 48% 13%)"/>
+            <stop offset="0%" stop-color="hsl(${hue} 26% 26%)"/>
+            <stop offset="100%" stop-color="hsl(${hue2} 22% 11%)"/>
           </linearGradient>
           <radialGradient id="${uid}g">
-            <stop offset="0%" stop-color="hsl(${(hue + 45) % 360} 90% 78%)" stop-opacity=".95"/>
-            <stop offset="45%" stop-color="hsl(${(hue + 45) % 360} 88% 66%)" stop-opacity=".45"/>
-            <stop offset="100%" stop-color="hsl(${(hue + 45) % 360} 85% 60%)" stop-opacity="0"/>
+            <stop offset="0%" stop-color="hsl(${sunHue} 62% 70%)" stop-opacity=".85"/>
+            <stop offset="45%" stop-color="hsl(${sunHue} 58% 58%)" stop-opacity=".34"/>
+            <stop offset="100%" stop-color="hsl(${sunHue} 55% 52%)" stop-opacity="0"/>
           </radialGradient>
         </defs>
         <rect width="${W}" height="${H}" fill="url(#${uid}s)"/>
         <circle cx="${sunX}" cy="${sunY}" r="46" fill="url(#${uid}g)"/>
-        <path d="${ridge(70, 26, seed * 1.3)}"       fill="hsl(${hue} 42% 21%)"/>
-        <path d="${ridge(88, 21, seed * 2.1 + 2)}"   fill="hsl(${hue} 47% 14%)"/>
-        <path d="${ridge(106, 15, seed * 1.7 + 4)}"  fill="hsl(${hue} 52% 8%)"/>
+        <path d="${ridge(70, 26, seed * 1.3)}"       fill="hsl(${hue} 20% 18%)"/>
+        <path d="${ridge(88, 21, seed * 2.1 + 2)}"   fill="hsl(${hue} 22% 12%)"/>
+        <path d="${ridge(106, 15, seed * 1.7 + 4)}"  fill="hsl(${hue} 24% 7%)"/>
       </svg>
       <div class="origin-art-label">
         <span class="origin-art-flag">${flagForOrigin(label)}</span>
@@ -1003,7 +1008,16 @@ function renderTimer() {
   const clock = $('timer-clock');
   if (phase) phase.textContent = spec.phase;
   if (prompt) prompt.textContent = spec.prompt;
-  if (clock) clock.textContent = (liveElapsed() ?? 0).toFixed(1);
+  const elapsed = liveElapsed() ?? 0;
+  if (clock) clock.textContent = elapsed.toFixed(1);
+
+  // One full turn per minute, like a stopwatch face. 2 * PI * r, r = 108.
+  const arc = $('timer-ring-arc');
+  if (arc) {
+    const CIRCUMFERENCE = 678.58;
+    arc.style.strokeDashoffset =
+      String(CIRCUMFERENCE * (1 - ((elapsed % 60) / 60)));
+  }
 
   const marks = $('timer-marks');
   if (marks) {
@@ -1506,7 +1520,7 @@ function renderSetupManagerList(activeId = null) {
     item.innerHTML = `
       <div class="setup-item-main">
         <div class="setup-item-name">${escapeHtml(setup.name)} ${isActive ? '<span class="setup-active-pill">Active</span>' : ''}</div>
-        <div class="setup-item-meta">⚙ ${escapeHtml(setup.grinder.brand)} ${escapeHtml(setup.grinder.model)} &nbsp;·&nbsp; ☕ ${escapeHtml(setup.machine.brand)} ${escapeHtml(setup.machine.model)}</div>
+        <div class="setup-item-meta">${escapeHtml(setup.grinder.brand)} ${escapeHtml(setup.grinder.model)} &nbsp;·&nbsp; ${escapeHtml(setup.machine.brand)} ${escapeHtml(setup.machine.model)}</div>
       </div>
       <div class="setup-item-actions">
         <button class="btn btn-sm btn-ghost js-setup-edit">Edit</button>
@@ -1592,7 +1606,7 @@ async function selectSetup(setupId) {
     } else {
       clearRecommendation();
     }
-    showToast(`✅ Now on ${activeSetupName || 'the new setup'}`);
+    showToast(`Now on ${activeSetupName || 'the new setup'}`);
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not switch setup'));
   }
@@ -1723,7 +1737,7 @@ async function saveSetupFromForm() {
     clearSetupForm();
     $('setup-manager-title').textContent = 'Manage setups';
     await Promise.all([loadSetups(), loadSettings()]);
-    showToast('✅ Setup saved');
+    showToast('Setup saved');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save setup'));
   }
@@ -1768,7 +1782,7 @@ async function saveEquipmentFromForm() {
 
     clearEquipmentForm();
     await Promise.all([loadEquipmentLibrary(), loadSetups(), loadSettings()]);
-    showToast(isEdit ? '✅ Equipment updated' : '✅ Equipment saved');
+    showToast(isEdit ? 'Equipment updated' : 'Equipment saved');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not save equipment'));
   }
@@ -1785,7 +1799,7 @@ async function deleteEquipment(item) {
 
     clearEquipmentForm();
     await Promise.all([loadEquipmentLibrary(), loadSetups(), loadSettings()]);
-    showToast('✅ Equipment deleted');
+    showToast('Equipment deleted');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not delete equipment'));
   }
@@ -1801,7 +1815,7 @@ async function deleteSetup(setup) {
     if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not delete setup'));
 
     await Promise.all([loadSetups(), loadSettings()]);
-    showToast('✅ Setup deleted');
+    showToast('Setup deleted');
   } catch (err) {
     showToast('❌ ' + (err.message || 'Could not delete setup'));
   }
@@ -1834,7 +1848,7 @@ async function putJson(url, body, successMsg) {
       const d = await res.json();
       throw new Error(getApiErrorMessage(d, 'Update failed'));
     }
-    showToast('✅ ' + successMsg);
+    showToast('' + successMsg);
   } catch (err) {
     showToast('❌ ' + (err.message || 'Request failed'));
   }
@@ -1922,7 +1936,7 @@ on('version-chip', 'click', () => {
     return;
   }
   const engine = engineVersion ? ` · engine ${engineVersion}` : '';
-  showToast(`✅ Up to date (v${BUNDLE_VERSION ?? '?'})${engine}`);
+  showToast(`Up to date (v${BUNDLE_VERSION ?? '?'})${engine}`);
 });
 
 /* ── Service worker registration ────────────────────────────────────────── */

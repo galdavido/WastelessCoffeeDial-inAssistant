@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Barista AI</title>
   <meta name="description" content="AI-powered espresso dial-in assistant" />
-  <meta name="theme-color" content="#0f0a06" />
+  <meta name="theme-color" content="#12100E" />
   <link rel="manifest" href="/static/manifest.json" />
 
   <!-- iOS PWA -->
@@ -14,11 +14,12 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Barista AI" />
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=26" />
+  <link rel="stylesheet" href="/static/style.css?v=29" />
 </head>
 <body>
   <div id="app">
@@ -26,7 +27,12 @@
     <!-- ── Header ──────────────────────────────────────────────────────── -->
     <header class="header">
       <div class="header-inner">
-        <span class="header-logo">☕</span>
+        <svg class="header-logo" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <circle cx="32" cy="32" r="27" stroke="var(--border-2)" stroke-width="4.5" stroke-dasharray="2.2 5.13"/>
+          <path d="M32 2.5V10.5" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="32" cy="32" r="18.5" fill="var(--accent)"/>
+          <path d="M32 15.5C26.5 22 26.5 27 32 32c5.5 5 5.5 10 0 16.5" stroke="var(--bg)" stroke-width="4" stroke-linecap="round"/>
+        </svg>
         <span class="header-title">Barista AI</span>
         <!-- Which setup a recipe belongs to, on every screen: a grind number
              means something different on each. Tap to switch. -->
@@ -50,26 +56,28 @@
         <div class="home-scroll">
 
           <!-- Journey 1: a bag you have never seen -->
-          <div class="scan-hero">
-            <div class="scan-ring">
-              <svg class="scan-ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M6.5 6.5h11v9a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3v-9z"/>
-                <path d="M17.5 9h1a2 2 0 0 1 0 4h-1"/>
-                <path d="M6 3h12"/>
-              </svg>
+          <div class="hero-card">
+            <div class="scan-hero">
+              <div class="scan-ring">
+                <svg class="scan-ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M6.5 6.5h11v9a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3v-9z"/>
+                  <path d="M17.5 9h1a2 2 0 0 1 0 4h-1"/>
+                  <path d="M6 3h12"/>
+                </svg>
+              </div>
+              <h2 class="scan-title">Scan your coffee</h2>
+              <p class="scan-subtitle">Take a photo of the bag for a starting recipe</p>
             </div>
-            <h2 class="scan-title">Scan Your Coffee</h2>
-            <p class="scan-subtitle">Take a photo of the bag for a starting recipe</p>
-          </div>
 
-          <label class="btn btn-primary btn-scan" id="btn-scan" for="file-input">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
-            </svg>
-            Scan a new bag
-          </label>
-          <input type="file" id="file-input" accept="image/*" capture="environment" class="file-input-hidden" />
+            <label class="btn btn-primary btn-scan" id="btn-scan" for="file-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              Scan a new bag
+            </label>
+            <input type="file" id="file-input" accept="image/*" capture="environment" class="file-input-hidden" />
+          </div>
 
           <div class="install-hint" id="install-hint" hidden>
             <strong>iPhone install tip:</strong> in Safari, tap Share then Add to Home Screen.
@@ -98,7 +106,9 @@
 
         <!-- Nothing on the bench yet -->
         <div id="recipe-empty" class="flow-panel scan-success">
-          <div class="success-icon">☕</div>
+          <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 8h12v7a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M17 10.5h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 2.5v2.5M12 2v3M16 2.5v2.5"/>
+          </svg>
           <h2 class="success-title">No coffee on the bench</h2>
           <p class="success-sub">Scan a bag or pick one of your coffees to get a recipe.</p>
           <button class="btn btn-primary" id="btn-go-home">Choose a coffee</button>
@@ -108,7 +118,10 @@
         <div id="scan-loading" class="flow-panel scan-loading hidden">
           <div class="loader">
             <div class="loader-ring"></div>
-            <span class="loader-icon">☕</span>
+            <svg class="loader-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <circle cx="32" cy="32" r="18.5" fill="var(--accent)"/>
+              <path d="M32 15.5C26.5 22 26.5 27 32 32c5.5 5 5.5 10 0 16.5" stroke="var(--bg)" stroke-width="4" stroke-linecap="round"/>
+            </svg>
           </div>
           <p class="loading-text" id="loading-text">Analysing your coffee…</p>
           <p class="loading-sub" id="loading-sub">Consulting the AI barista</p>
@@ -118,7 +131,11 @@
         <div id="recipe-view" class="flow-panel scan-results hidden">
           <div class="coffee-card">
             <div class="coffee-card-header">
-              <div class="coffee-badge">☕</div>
+              <div class="coffee-badge">
+                <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                  <path d="M32 15.5C26.5 22 26.5 27 32 32c5.5 5 5.5 10 0 16.5" stroke="var(--on-accent)" stroke-width="5" stroke-linecap="round"/>
+                </svg>
+              </div>
               <div class="coffee-card-info">
                 <h3 class="coffee-name" id="result-name">—</h3>
                 <p class="coffee-roaster" id="result-roaster">—</p>
@@ -141,7 +158,9 @@
 
           <div class="recommendation-card">
             <div class="rec-header">
-              <span class="rec-icon">💡</span>
+              <svg class="rec-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3.5l1.7 4.1 4.1 1.7-4.1 1.7L12 15.1l-1.7-4.1L6.2 9.3l4.1-1.7z"/><path d="M18 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/>
+              </svg>
               <h3 class="rec-title">Recommendation</h3>
             </div>
             <div class="recipe-grid" id="recipe-grid"></div>
@@ -153,7 +172,9 @@
           <!-- What you have tried on this bag, and which way it moved. -->
           <section class="recommendation-card history-strip" id="dial-in-history" hidden>
             <div class="rec-header">
-              <span class="rec-icon">📈</span>
+              <svg class="rec-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 20h18"/><path d="M5 16l4.5-5 3.5 3 5.5-7"/>
+              </svg>
               <h3 class="rec-title">Your last shots on this bag</h3>
             </div>
             <div id="history-rows"></div>
@@ -179,7 +200,9 @@
 
         <!-- Success state -->
         <div id="scan-success" class="flow-panel scan-success hidden">
-          <div class="success-icon">✅</div>
+          <svg class="success-icon success-icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16 9.5"/>
+          </svg>
           <h2 class="success-title">Shot logged</h2>
           <p class="success-sub" id="success-sub">Every measured shot sharpens the next recommendation.</p>
           <button class="btn btn-primary" id="btn-log-another">Next shot</button>
@@ -377,6 +400,12 @@
       <!-- Step 2 — the timer. The pane itself is the button. -->
       <section class="wizard-pane hidden" id="wizard-step-2">
         <button class="timer-surface" id="timer-surface" type="button" data-stage="idle">
+          <!-- A stopwatch sweep, one turn per minute. Driven from renderTimer()
+               through the CSSOM, since the CSP forbids inline style attributes. -->
+          <svg class="timer-ring" viewBox="0 0 240 240" aria-hidden="true">
+            <circle class="timer-ring-track" cx="120" cy="120" r="108"/>
+            <circle class="timer-ring-arc" id="timer-ring-arc" cx="120" cy="120" r="108"/>
+          </svg>
           <span class="timer-phase" id="timer-phase">Pre-infusion</span>
           <span class="timer-clock" id="timer-clock">0.0</span>
           <span class="timer-prompt" id="timer-prompt">Tap anywhere to start</span>
@@ -598,6 +627,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=26"></script>
+  <script src="/static/app.js?v=29"></script>
 </body>
 </html>

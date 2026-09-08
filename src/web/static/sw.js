@@ -3,10 +3,16 @@
 // CSS and JS are NOT precached by bare path: they are versioned URLs, and
 // precaching the unversioned path is what previously let a stale app.js pair
 // up with a fresh style.css. They are cached on first fetch instead.
-const CACHE = 'wcda-v26';
+const CACHE = 'wcda-v29';
 const PRECACHE = [
   '/',
   '/static/manifest.json',
+  // The faces are versioned by this cache, not by a query string, and the
+  // app looks wrong in the fallback stack -- so they are precached.
+  '/static/fonts/hanken-grotesk-latin.woff2',
+  '/static/fonts/hanken-grotesk-latin-ext.woff2',
+  '/static/fonts/instrument-serif-latin.woff2',
+  '/static/fonts/instrument-serif-latin-ext.woff2',
 ];
 
 self.addEventListener('install', event => {
