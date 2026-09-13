@@ -33,6 +33,7 @@ from .web_helpers import (
     get_active_setup,
     get_default_dose_g,
     get_grind_offset_clicks,
+    latest_photo_log,
     parse_roast_date,
     read_asset_version,
     resolve_log_values,
@@ -515,6 +516,11 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             if bean.logs:
                 latest_log = max(bean.logs, key=lambda log: log.created_at)
 
+            # The bag photo is taken once, on the first shot of a coffee, so it
+            # lives on an older log than latest_log as soon as a second shot is
+            # recorded. Look past latest_log for it, or the card loses the photo.
+            bag_log = latest_photo_log(bean.logs)
+
             entries.append(
                 {
                     "bean_id": bean.id,
@@ -545,9 +551,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                         "time_s": latest_log.time_s,
                         "rating": latest_log.rating,
                         "tasting_notes": latest_log.tasting_notes,
-                        "image_name": latest_log.image_path,
-                        "image_url": f"/api/log-images/{latest_log.image_path}"
-                        if latest_log.image_path
+                        "image_name": bag_log.image_path if bag_log else None,
+                        "image_url": f"/api/log-images/{bag_log.image_path}"
+                        if bag_log
                         else None,
                     }
                     if latest_log

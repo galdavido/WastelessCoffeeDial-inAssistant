@@ -217,6 +217,21 @@ def bean_coffee_data(bean: Bean) -> dict[str, Any]:
     }
 
 
+def latest_photo_log(logs: Any) -> DialInLog | None:
+    """The most recent shot on a coffee that carries a bag photo, if any.
+
+    The photo is taken once, on the first shot after a scan; every later shot
+    is logged with no image. So a coffee's photo lives on an older log than its
+    newest one, and the recents list must look past `latest_log` to find it --
+    otherwise the card loses the photo the moment a second shot is recorded.
+    """
+    return max(
+        (log for log in logs if log.image_path),
+        key=lambda log: log.created_at,
+        default=None,
+    )
+
+
 _CACHE_VERSION_RE = re.compile(r"const CACHE\s*=\s*'wcda-v(\d+)'")
 
 
