@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .brewing import (
     GrinderCaps,
@@ -50,6 +50,9 @@ class Calibration:
     n_eff: int = 0
     click_span: float = 0.0
     confidence: float = 0.0
+    # Every bean on this setup, not just the one asked about: a coffee with no
+    # shots of its own is started from the offsets of the ones that resemble it.
+    bean_offsets: dict[int, float] = field(default_factory=dict)
 
     @property
     def is_fitted(self) -> bool:
@@ -112,6 +115,38 @@ def _usable(shots: Sequence[ShotRecord]) -> list[tuple[float, float]]:
     return out
 
 
+def bean_offsets(
+    shots: Sequence[ShotRecord], alpha: float | None, beta: float | None
+) -> dict[int, float]:
+    """The per-bean intercept offset delta_bean, for every bean in `shots`.
+
+    This is the term that makes one coffee sit finer or coarser than another
+    on the same grinder at the same target -- see docs/science.md#beta-law. A
+    positive offset means the coffee runs slower than the setup's average at a
+    given setting, so it wants a coarser dial.
+
+    Shrunk toward zero on the same argument as beta: one shot on a new bag
+    should nudge the offset, not define it.
+    """
+    if alpha is None or not beta:
+        return {}
+
+    residuals: dict[int, list[float]] = {}
+    for shot in shots:
+        tr = normalised_time(shot)
+        if shot.bean_id is None or shot.grind_clicks is None or tr is None or tr <= 0:
+            continue
+        residuals.setdefault(shot.bean_id, []).append(
+            math.log(tr) - (alpha + beta * shot.grind_clicks)
+        )
+
+    kappa_bean = value_of("kappa_bean")
+    return {
+        bean_id: (len(rs) / (len(rs) + kappa_bean)) * statistics.median(rs)
+        for bean_id, rs in residuals.items()
+    }
+
+
 def fit_setup(
     shots: Sequence[ShotRecord],
     method: Method,
@@ -156,21 +191,8 @@ def fit_setup(
     if points and beta:
         alpha = statistics.median(y - beta * x for x, y in points)
 
-    delta = 0.0
-    if bean_id is not None and alpha is not None and beta:
-        residuals = [
-            y - (alpha + beta * x)
-            for shot, (x, y) in zip(
-                [s for s in shots if normalised_time(s) and s.grind_clicks is not None],
-                points,
-                strict=False,
-            )
-            if shot.bean_id == bean_id
-        ]
-        if residuals:
-            kappa_bean = value_of("kappa_bean")
-            shrink = len(residuals) / (len(residuals) + kappa_bean)
-            delta = shrink * statistics.median(residuals)
+    offsets = bean_offsets(shots, alpha, beta)
+    delta = offsets.get(bean_id, 0.0) if bean_id is not None else 0.0
 
     cap = 1.0
     if method == "pourover":
@@ -187,6 +209,7 @@ def fit_setup(
         n_eff=n_eff,
         click_span=span,
         confidence=round(confidence, 2),
+        bean_offsets=offsets,
     )
 
 

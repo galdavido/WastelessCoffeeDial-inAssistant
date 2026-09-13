@@ -29,10 +29,12 @@ from .brewing import (
     Recipe,
     apply_guardrails,
     beta_prior,
+    clicks_for_target,
     cold_start_clicks,
     correct,
     prep_advice,
     resistance_disagreement,
+    snap_to_step,
     target_for,
     temp_band_for_roast,
 )
@@ -40,10 +42,13 @@ from .calibration import Calibration, confidence_label, fit_setup
 from .retrieval import (
     CALIBRATION_PROTOCOL,
     BeanFeatures,
+    borrow_bean_offset,
     classify_tier,
+    fetch_bean_features,
     fetch_calibration_shots,
     fetch_exemplars,
     get_active_setup_method,
+    shots_for_bean,
 )
 
 ENGINE_VERSION = "1.0.0"
@@ -116,36 +121,37 @@ def recommend(
     target = target_for(method, style)
 
     setup_id = setup.id if setup else None
+    bean_id = bean.id if bean else None
     history = fetch_calibration_shots(db, owner, setup_id, method)
-    tier = classify_tier(history, bean.id if bean else None, caps.has_range)
+    # The two roles of history, kept apart. beta is a property of the grinder,
+    # so it is fitted across every bean on the setup, where data accumulates
+    # fastest. The shot a correction is anchored on is a property of the
+    # *coffee*, so it is drawn only from this bag -- anchoring on the last
+    # thing pulled on the machine took the previous coffee's grind, dose,
+    # temperature and taste and applied them to this one.
+    bean_history = shots_for_bean(history, bean_id)
+    tier = classify_tier(history, bean_id, caps.has_range)
 
     prior = beta_prior(method, caps)
-    calibration = fit_setup(
-        history, method, caps, prior, bean_id=bean.id if bean else None
-    )
+    calibration = fit_setup(history, method, caps, prior, bean_id=bean_id)
     label = confidence_label(calibration)
 
     days = _days_since_roast(bean.roast_date if bean else None)
     roast_ord = bean.roast_level_ord if bean else None
 
-    exemplars = fetch_exemplars(
-        db,
-        owner,
-        BeanFeatures(
-            roast_level_ord=roast_ord,
-            process=bean.process if bean else None,
-            origin=bean.origin if bean else None,
-            days_since_roast=days,
-        ),
-        setup_id,
-        method,
+    target_features = BeanFeatures(
+        roast_level_ord=roast_ord,
+        process=bean.process if bean else None,
+        origin=bean.origin if bean else None,
+        days_since_roast=days,
     )
+    exemplars = fetch_exemplars(db, owner, target_features, setup_id, method)
 
     protocol: str | None = None
-    if history:
-        # Correct from the most recent measured shot.
+    if bean_history:
+        # Correct from the most recent measured shot of this coffee.
         recipe = correct(
-            history[0],
+            bean_history[0],
             target,
             calibration.beta,
             caps,
@@ -155,20 +161,58 @@ def recommend(
         )
         basis = "calibrated" if calibration.is_fitted else "history"
     else:
-        # Cold start. Everything but the grind comes from the target band;
-        # the grind number comes from hardware midpoint, or not at all.
-        # Estimate the dial position for the reference particle size rather
-        # than taking the middle of the hardware range -- that range spans
-        # espresso to French press, so its midpoint is far too coarse.
-        grind = cold_start_clicks(caps, method)
-        if grind is None:
-            # Tier E: nothing measured and no way to locate the dial. Any
-            # click number here would be invented, so ask for one measurement.
-            protocol = CALIBRATION_PROTOCOL.format(
-                dose=dose_g, yield_=round(dose_g * target.ratio_aim, 1)
+        # No shots on this coffee yet. Where the setup has a fitted law, solve
+        # it for the target rather than correcting from a different coffee,
+        # seeding the per-bean offset from the coffees this one resembles.
+        notes: list[str] = []
+        tr_aim = (
+            (target.tr_lo + target.tr_hi) / 2.0
+            if target.tr_lo is not None and target.tr_hi is not None
+            else None
+        )
+        delta, borrowed = borrow_bean_offset(
+            target_features,
+            calibration.bean_offsets,
+            fetch_bean_features(db, owner, calibration.bean_offsets),
+        )
+        grind = (
+            clicks_for_target(calibration.alpha, calibration.beta, tr_aim, delta)
+            if tr_aim is not None
+            else None
+        )
+        if grind is not None:
+            grind = snap_to_step(grind, caps)
+            basis = "setup_law"
+            notes.append(
+                "this is your first shot on this coffee, so the setting comes "
+                "from how your grinder has behaved"
+                + (
+                    ", nudged toward the similar coffees you have brewed"
+                    if borrowed
+                    else " across everything you have brewed on it"
+                )
+                + " rather than from a correction to another coffee"
             )
+        else:
+            # Cold start. Everything but the grind comes from the target band;
+            # the grind number comes from hardware midpoint, or not at all.
+            # Estimate the dial position for the reference particle size rather
+            # than taking the middle of the hardware range -- that range spans
+            # espresso to French press, so its midpoint is far too coarse.
+            basis = "prior"
+            grind = cold_start_clicks(caps, method)
+            if grind is None:
+                # Tier E: nothing measured and no way to locate the dial. Any
+                # click number here would be invented, so ask for one
+                # measurement.
+                protocol = CALIBRATION_PROTOCOL.format(
+                    dose=dose_g, yield_=round(dose_g * target.ratio_aim, 1)
+                )
+                notes.append(protocol)
         recipe = Recipe(
             method=method,
+            # The caller's dose, not whatever was in the basket for a
+            # different coffee.
             dose_g=dose_g,
             grind_clicks=grind,
             yield_g=round(dose_g * target.ratio_aim, 1)
@@ -186,9 +230,8 @@ def recommend(
                 else None
             ),
             target_time_s=target.time_hi,
-            notes=(protocol,) if protocol else (),
+            notes=tuple(notes),
         )
-        basis = "prior"
 
     recipe = Recipe(
         **{
@@ -197,13 +240,28 @@ def recommend(
             "confidence": calibration.confidence,
         }
     )
-    recipe = apply_guardrails(recipe, caps, machine_caps, history, target)
+    # The channeling floor is bean-scoped for the same reason the anchor is.
+    # Its triggers compare normalised times against each other ("a finer
+    # setting that ran no slower means the water channeled") and read the
+    # finest setting that has *tasted* right -- and delta_bean is precisely
+    # the statement that those are not comparable across coffees. A dense
+    # natural at 36 would otherwise hold a washed Ethiopian at a floor it has
+    # no reason to obey. A coffee with no shots of its own falls back to the
+    # setup, which is the conservative direction: more triggers, not fewer.
+    recipe = apply_guardrails(
+        recipe, caps, machine_caps, bean_history or history, target
+    )
 
     # Pre-infusion: a second resistance reading, and advice once there is
     # enough of it to say anything honest.
     prep_notes: list[str] = []
-    if history:
-        disagreement = resistance_disagreement(history[0], history)
+    if bean_history:
+        # The reading is about this coffee's puck, so the shot examined is
+        # this coffee's. The peers it is compared against stay setup-wide on
+        # purpose: the comparison needs shots at the *same click number*, and
+        # what it detects -- distribution, tamp, channeling -- is a property
+        # of how the puck was prepared rather than of the bean.
+        disagreement = resistance_disagreement(bean_history[0], history)
         if disagreement:
             prep_notes.append(disagreement)
     pi_s, pause_s, prep_note = prep_advice(history)
@@ -218,7 +276,10 @@ def recommend(
         }
     )
 
-    context_lines = [f"Tier {tier} ({len(history)} measured shots on this setup)."]
+    context_lines = [
+        f"Tier {tier} ({len(history)} measured shots on this setup, "
+        f"{len(bean_history)} of them on this coffee)."
+    ]
     context_lines.extend(recipe.notes)
     if exemplars:
         context_lines.append(

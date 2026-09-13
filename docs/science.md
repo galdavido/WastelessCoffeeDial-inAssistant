@@ -110,15 +110,47 @@ a linear grinder dial (`d = d₀ + u·(c − c₀)`, `u` µm per click):
 ln T_r = α_setup + δ_bean + β_setup · c        β = −2u / d_ref
 ```
 
-which inverts to the one correction the engine actually makes:
+`α` is the setup's intercept, `δ_bean` a per-bean offset. Both are fitted; `β`
+starts from the physical prior in [#beta-prior](#beta-prior) and is shrunk
+toward the fitted value as data arrives ([#shrinkage](#shrinkage)).
+
+**Which term the engine uses depends on whether it has brewed this coffee.**
+
+*Shots on this coffee.* The law is used in **differential** form — the one
+correction the engine makes — anchored on this coffee's own most recent
+measured shot:
 
 ```
 c* = c + (ln T_r_target − ln T_r_observed) / β
 ```
 
-`α` is the setup's intercept, `δ_bean` a per-bean offset. Both are fitted; `β`
-starts from the physical prior in [#beta-prior](#beta-prior) and is shrunk
-toward the fitted value as data arrives ([#shrinkage](#shrinkage)).
+`α` and `δ_bean` cancel, which is why they need not be known accurately. The
+anchor must be a shot of the *same* coffee: `δ_bean` is precisely the
+statement that `c` and `T_r` from a different bag do not belong on this
+coffee's curve. Dose, brew temperature, ratio and taste are also read off that
+anchor, so a foreign anchor gets all of them wrong too.
+
+The same restriction applies to the anti-channeling floor
+([#cameron](#cameron)): its triggers compare normalised times against one
+another and read the finest setting that has *tasted* right, and neither
+comparison survives a change of coffee.
+
+*No shots on this coffee.* Nothing to correct from, so the law is used in
+**absolute** form and solved for the dial:
+
+```
+c = (ln T_r_target − α − δ̂_bean) / β
+```
+
+`δ̂_bean` is borrowed from the coffees this one resembles, weighted by the
+similarity score ([#similarity](#similarity)); with nothing similar enough it
+is 0, i.e. the setup's average bean. Falling back to another coffee's last
+shot instead is the failure this replaced: every bean on a setup came back
+with the same number.
+
+*Neither.* No fitted `α` — a new grinder, or moka, which has no grind law at
+all — so the dial cannot be located from history and the engine falls back to
+the cold start in [#cold-start](#cold-start).
 
 ### 2.5 Extraction yield {#ey-formula}
 
@@ -305,6 +337,14 @@ fitted. Pure guess, easily revised.
 same setup 0.40, roast level 0.25, process 0.15, origin 0.10, freshness 0.10;
 match floor 0.45; recency multiplier `0.97^weeks_ago`. Setup dominates because
 a click number from a different grinder is close to meaningless.
+
+**Bean-offset floor 0.25.** When seeding `δ̂_bean` for a coffee with no shots
+([#beta-law](#beta-law)), every candidate is already on this setup, so the
+0.40 setup term is excluded — it would add the same amount to all of them and
+flatten the only comparison that carries information. That puts the ceiling at
+0.60, so 0.25 asks for roughly a close roast match plus one of process or
+origin. Below it, borrowing an offset is worse than assuming the setup's
+average bean. Another pure guess.
 
 ### 5.3 Roast-level time modifier {#roast-time-modifier}
 

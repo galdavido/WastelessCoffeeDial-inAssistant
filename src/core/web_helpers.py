@@ -469,6 +469,11 @@ def save_dial_in_log(
                 origin=bean_origin,
                 process=bean_process,
                 roast_level=bean_roast_level,
+                # Derive the ordinal at the point of saving. It drives the
+                # roast-level temperature band and the roast term in
+                # similarity, so a bean stored without it is invisible to
+                # both -- which is what left every stored bean at NULL.
+                roast_level_ord=roast_level_ordinal(bean_roast_level),
             )
             db.add(bean)
             db.commit()

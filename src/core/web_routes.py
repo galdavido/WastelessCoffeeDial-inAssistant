@@ -952,13 +952,15 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         try:
+            roast_level = as_non_empty_text(body.roast_level)
             bean = Bean(
                 owner=owner,
                 roaster=as_non_empty_text(body.roaster),
                 name=as_non_empty_text(body.name),
                 origin=as_non_empty_text(body.origin),
                 process=as_non_empty_text(body.process),
-                roast_level=as_non_empty_text(body.roast_level),
+                roast_level=roast_level,
+                roast_level_ord=roast_level_ordinal(roast_level),
             )
             db.add(bean)
             db.commit()

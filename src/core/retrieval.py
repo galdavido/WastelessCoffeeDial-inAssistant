@@ -20,7 +20,7 @@ by migration 0003 can never come back.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -188,6 +188,84 @@ def fetch_calibration_shots(
     return [
         to_shot_record(log, bean, method) for log, bean in db.execute(stmt).tuples()
     ]
+
+
+def shots_for_bean(
+    shots: Sequence[ShotRecord], bean_id: int | None
+) -> list[ShotRecord]:
+    """The part of a setup's history that is *this* coffee, newest first.
+
+    The shot a correction is anchored on has to be the same coffee. Dose,
+    brew temperature, ratio and taste axis are all read off that anchor, so
+    anchoring on the last thing pulled on the machine gets every one of them
+    from the wrong bag.
+
+    An empty list is the right answer for a coffee scanned for the first time:
+    `web_routes._bean_for` hands the engine a transient Bean with no id, and
+    the caller falls through to solving the grind law instead.
+    """
+    if bean_id is None:
+        return []
+    return [shot for shot in shots if shot.bean_id == bean_id]
+
+
+def fetch_bean_features(
+    db: Session, owner: str, bean_ids: Iterable[int]
+) -> dict[int, BeanFeatures]:
+    """Roast, process and origin for the beans behind a setup's history.
+
+    ``ShotRecord`` deliberately carries no bean attributes -- it is the physics
+    row -- so scoring one bean against another needs this lookup.
+    """
+    ids = {bean_id for bean_id in bean_ids if bean_id is not None}
+    if not ids:
+        return {}
+    stmt = select(Bean).where(Bean.owner == owner).where(Bean.id.in_(ids))
+    return {
+        bean.id: BeanFeatures(
+            roast_level_ord=bean.roast_level_ord,
+            process=bean.process,
+            origin=bean.origin,
+        )
+        for bean in db.execute(stmt).scalars()
+    }
+
+
+def borrow_bean_offset(
+    target: BeanFeatures,
+    offsets: Mapping[int, float],
+    features: Mapping[int, BeanFeatures],
+    floor: float | None = None,
+) -> tuple[float, int]:
+    """Seed a new coffee's delta_bean from the coffees that resemble it.
+
+    Scored with ``same_setup=False`` on purpose: every candidate is already on
+    this setup, so keeping that term would add the same 0.40 to all of them
+    and flatten the comparison that actually carries information here --
+    roast level, process and origin.
+
+    Returns the weighted offset and how many coffees contributed, so the
+    rationale can say whether it borrowed anything. ``(0.0, 0)`` means nothing
+    cleared the floor, which degrades to the setup's average bean -- still a
+    far better starting point than another coffee's last shot.
+    """
+    threshold = value_of("bean_offset_floor") if floor is None else floor
+    weighted = 0.0
+    total = 0.0
+    used = 0
+    for bean_id, delta in offsets.items():
+        candidate = features.get(bean_id)
+        if candidate is None:
+            continue
+        score = similarity(target, candidate, same_setup=False)
+        if score < threshold:
+            continue
+        weighted += score * delta
+        total += score
+        used += 1
+    if total <= 0:
+        return 0.0, 0
+    return weighted / total, used
 
 
 def fetch_exemplars(

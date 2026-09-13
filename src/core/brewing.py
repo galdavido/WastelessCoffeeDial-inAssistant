@@ -131,6 +131,14 @@ CONSTANTS: dict[str, Constant] = {
     "similarity_freshness": Constant(0.10, "weight", "HEURISTIC", "#similarity"),
     "similarity_floor": Constant(0.45, "score", "HEURISTIC", "#similarity"),
     "similarity_recency_decay": Constant(0.97, "per_week", "HEURISTIC", "#similarity"),
+    "bean_offset_floor": Constant(
+        0.25,
+        "score",
+        "HEURISTIC",
+        "#similarity",
+        "bean-only similarity, so the 0.40 setup term is excluded and 0.60 is "
+        "the ceiling; below this an offset is not worth borrowing",
+    ),
     "roast_time_modifier_s": Constant(1.0, "s", "HEURISTIC", "#roast-time-modifier"),
     "fresh_band_widening": Constant(2.0, "factor", "HEURISTIC", "#fresh-band"),
     "fresh_correction_damping": Constant(0.5, "factor", "HEURISTIC", "#fresh-band"),
@@ -476,6 +484,32 @@ def solve_grind(
     return current_clicks + (math.log(tr_target) - math.log(tr_observed)) / beta
 
 
+def clicks_for_target(
+    alpha: float | None,
+    beta: float | None,
+    tr_target: float,
+    delta_bean: float = 0.0,
+) -> float | None:
+    """Where to set the dial for a coffee with no shots of its own.
+
+    Solves docs/science.md#beta-law for c rather than correcting from a
+    measured shot:
+
+        c = (ln T_r_target - alpha - delta_bean) / beta
+
+    This is the honest answer for a new bag on a calibrated setup. Correcting
+    from the last shot would be correcting from a *different* coffee, which is
+    what made every bean on a setup come back with the same number.
+
+    Returns None when the setup has no fitted intercept or no slope -- moka,
+    or a grinder nothing has been measured on -- so the caller can fall back
+    to the cold start instead of solving with a term it does not have.
+    """
+    if alpha is None or not beta or tr_target <= 0:
+        return None
+    return (math.log(tr_target) - alpha - delta_bean) / beta
+
+
 def snap_to_step(clicks: float, caps: GrinderCaps) -> float:
     """Round to something the grinder can actually be set to."""
     step = caps.step_clicks or 1.0
@@ -721,7 +755,10 @@ class Recipe:
     # there is enough variation to say whether changing it helps.
     preinfusion_s: float | None = None
     pause_s: float | None = None
-    basis: Literal["prior", "history", "calibrated"] = "prior"
+    # Where the numbers came from. "history" and "calibrated" mean a
+    # correction to this coffee's own last shot; "setup_law" means the coffee
+    # is new and the dial was solved from the grinder's fitted law instead.
+    basis: Literal["prior", "history", "calibrated", "setup_law"] = "prior"
     confidence: float = 0.0
     guardrails_hit: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
