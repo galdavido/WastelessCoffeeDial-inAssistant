@@ -494,6 +494,9 @@ on('btn-cancel-record', 'click', () => closeRecordEditor());
 on('setup-select', 'change', (event) => selectSetup(event.target.value));
 on('setup-chip', 'click', () => openSetupSwitch());
 on('btn-close-setup-switch', 'click', () => closeDialog('setup-switch-dialog'));
+on('btn-fit-view', 'click', () => openFitView());
+on('btn-close-fit', 'click', () => closeDialog('fit-dialog'));
+fitBindProbe();
 on('btn-switch-manage', 'click', () => {
   closeDialog('setup-switch-dialog');
   showTab('tab-settings');
@@ -947,6 +950,10 @@ function renderRecipe(data) {
   $('recommendation-text').textContent = prose || '—';
   $('recipe-confidence').textContent = data.confidence_label || '';
 
+  // The working is only offered once there is a recipe to explain.
+  const fitBtn = $('btn-fit-view');
+  if (fitBtn) fitBtn.hidden = !r;
+
   // Attribute the numbers to a setup: the same grind means something
   // different on a different grinder.
   const setupLine = $('recipe-setup-line');
@@ -956,6 +963,421 @@ function renderRecipe(data) {
       ? `for ${activeSetupName}${method ? ` · ${method}` : ''}`
       : '';
   }
+}
+
+/* ── Behind the curtain: the fit ────────────────────────────────────────── */
+/* The recommendation is a number with no working shown, and that gap once hid
+   a real bug for months: the slope was being fitted across coffees instead of
+   within one, and nothing in the app could have revealed it. This view draws
+   the fit rather than asserting it.
+
+   Every number is read from GET /api/fit, which re-runs the engine pass the
+   recipe came from with the prose switched off. Nothing is recomputed here —
+   a picture that did its own arithmetic could disagree with the number the
+   user was actually given, which would be worse than no picture. */
+
+/* Three hues, and never hue alone: clay against green measures ΔE 7.1 under
+   protanopia, inside the band that is only legal with a second encoding. So
+   every coffee also gets a shape, and every line is direct-labelled. */
+const FIT_HUES = ['var(--cat-1)', 'var(--cat-2)', 'var(--cat-3)'];
+
+/* What each tier has and what the engine does with it. Static: it describes
+   the engine, not this particular fit. */
+const FIT_TIERS = [
+  ['A', '3+ shots on this coffee, at 2+ settings', 'full fit, own offset'],
+  ['B', 'shots on the setup, none on this bag', 'law solved, offset borrowed'],
+  ['C', 'one measured shot', 'anchors on it, physical slope'],
+  ['D', 'no shots, grinder specs known', 'derives a starting point'],
+  ['E', 'no shots, no specs', 'refuses to name a number'],
+];
+
+const FIT_Y_TICKS = [2, 2.5, 3, 4, 5, 6, 8, 10, 12.5, 15, 20, 25, 30, 40, 50];
+
+/* The payload behind the view that is currently open, kept so tapping a mark
+   can read the shot back out. Hover is not available on a phone, so the marks
+   are tap targets and the caption under the chart is the tooltip. */
+let fitPayload = null;
+
+function fitN(value, digits = 2) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  return Number(value).toFixed(digits);
+}
+
+function fitMark(shape, x, y, hue, opacity = 1) {
+  const common = `fill="${hue}" fill-opacity="${opacity}" stroke="var(--bg-card)" stroke-width="2"`;
+  if (shape === 1) return `<rect x="${x - 5}" y="${y - 5}" width="10" height="10" ${common}/>`;
+  if (shape === 2) return `<polygon points="${x},${y - 6} ${x + 6},${y + 4} ${x - 6},${y + 4}" ${common}/>`;
+  return `<circle cx="${x}" cy="${y}" r="5.6" ${common}/>`;
+}
+
+async function openFitView() {
+  openDialog('fit-dialog');
+  const status = $('fit-status');
+  const content = $('fit-content');
+  if (content) content.hidden = true;
+  if (status) { status.hidden = false; status.textContent = 'Reading the fit…'; }
+
+  try {
+    const query = currentBeanId ? `?bean_id=${encodeURIComponent(currentBeanId)}` : '';
+    const res = await fetch(`/api/fit${query}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    renderFit(await res.json());
+  } catch (err) {
+    if (status) {
+      status.hidden = false;
+      status.textContent = 'Could not read the fit. Check your connection and try again.';
+    }
+    if (content) content.hidden = true;
+  }
+}
+
+function renderFit(data) {
+  fitPayload = data;
+  const law = data.law || {};
+  const beans = data.beans || [];
+  const shots = data.shots || [];
+  const pairs = (data.pairs || []).filter((p) => p.slope !== null);
+
+  // Identity per coffee, assigned once and shared by every panel.
+  const meta = new Map();
+  beans.forEach((bean, i) => meta.set(bean.id, {
+    ...bean, hue: FIT_HUES[i % FIT_HUES.length], shape: i % 3,
+  }));
+
+  const host = $('fit-chart');
+  const width = host && host.clientWidth ? host.clientWidth : window.innerWidth;
+  const narrow = width < 520;
+
+  $('fit-status').hidden = true;
+  $('fit-content').hidden = false;
+
+  // A law with no slope cannot be drawn: below tier C there is nothing fitted
+  // to show, and an empty pair of axes would imply there is.
+  const drawable = Number.isFinite(law.beta_used) && law.beta_used !== 0
+    && Number.isFinite(law.alpha) && shots.some((s) => s.tr && s.clicks !== null);
+
+  $('fit-chart-section').hidden = !drawable;
+  if (drawable) fitDrawChart(data, meta, narrow);
+
+  $('fit-strip-section').hidden = pairs.length === 0;
+  if (pairs.length) fitDrawStrip(data, pairs, meta, narrow);
+
+  fitDrawConfidence(law);
+  $('fit-empty').hidden = drawable;
+}
+
+/* The fit chart: shots, the law through them, and the recommendation as the
+   place that line crosses the target band. T_r on a log axis, because the law
+   is linear in ln T_r — so the fit draws straight while the reader still sees
+   seconds per ratio. */
+function fitDrawChart(data, meta, narrow) {
+  const law = data.law, beans = data.beans || [], shots = data.shots || [];
+  const target = data.target || {}, floor = data.floor || {}, recipe = data.recipe || {};
+  const finerIsLower = (data.grinder?.finer_direction || 'lower_is_finer') === 'lower_is_finer';
+
+  // The bottom band is deep because four things stack under the axis: the
+  // ticks, where the law points, what you were actually told, and which way
+  // is finer. Overlap any two of them and the chart starts lying.
+  const G = narrow
+    ? { W: 420, H: 412, L: 36, R: 62, T: 26, B: 72, f: 13, chars: 8 }
+    : { W: 700, H: 440, L: 48, R: 118, T: 24, B: 70, f: 12, chars: 16 };
+  const pw = G.W - G.L - G.R, ph = G.H - G.T - G.B;
+
+  const current = beans.find((b) => b.is_current) || beans[0] || null;
+  const trAim = (target.tr_lo != null && target.tr_hi != null)
+    ? (target.tr_lo + target.tr_hi) / 2 : null;
+  const solve = (tr, delta) => (Math.log(tr) - law.alpha - delta) / law.beta_used;
+  // Where the law says the band is reached, before any guardrail clamps it.
+  const wants = (trAim !== null && current) ? solve(trAim, current.delta_bean) : null;
+
+  const drawn = shots.filter((s) => s.tr && s.clicks !== null);
+  const xs = drawn.map((s) => s.clicks)
+    .concat([floor.clicks, recipe.grind_clicks, wants].filter((v) => v !== null && v !== undefined));
+  const x0 = Math.floor(Math.min(...xs) - 2), x1 = Math.ceil(Math.max(...xs) + 2);
+  const trs = drawn.map((s) => s.tr)
+    .concat([target.tr_lo, target.tr_hi].filter((v) => v != null));
+  const y0 = Math.min(...trs) * 0.82, y1 = Math.max(...trs) * 1.18;
+
+  const X = (c) => G.L + ((c - x0) / (x1 - x0)) * pw;
+  const Y = (tr) => G.T + ((Math.log(y1) - Math.log(tr)) / (Math.log(y1) - Math.log(y0))) * ph;
+  const clampX = (x) => Math.max(G.L + 4, Math.min(x, G.L + pw - 4));
+
+  const p = [];
+  p.push(`<defs><pattern id="fit-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+    <rect width="7" height="7" fill="var(--bad)" fill-opacity=".035"/>
+    <line x1="0" y1="0" x2="0" y2="7" stroke="var(--bad)" stroke-opacity=".2" stroke-width="1.4"/>
+  </pattern></defs>`);
+
+  // The band we are aiming at, drawn first so everything reads on top of it.
+  if (target.tr_lo != null && target.tr_hi != null) {
+    p.push(`<rect x="${G.L}" y="${Y(target.tr_hi)}" width="${pw}" height="${Y(target.tr_lo) - Y(target.tr_hi)}" fill="var(--cat-3)" fill-opacity=".12"/>`);
+    p.push(`<text x="${G.L + pw - 4}" y="${Y(target.tr_hi) - 6}" text-anchor="end" font-size="${G.f}" fill="var(--cat-3)">target ${fitN(target.tr_lo, 1)}–${fitN(target.tr_hi, 1)}</text>`);
+  }
+
+  // Everything finer than the floor is refused, so it is struck out rather
+  // than merely annotated.
+  if (floor.clicks != null) {
+    const fx = X(floor.clicks);
+    const from = finerIsLower ? G.L : fx;
+    const w = finerIsLower ? fx - G.L : G.L + pw - fx;
+    p.push(`<rect x="${from}" y="${G.T}" width="${Math.max(0, w)}" height="${ph}" fill="url(#fit-hatch)"/>`);
+    p.push(`<line x1="${fx}" y1="${G.T}" x2="${fx}" y2="${G.T + ph}" stroke="var(--bad)" stroke-width="1.5" stroke-dasharray="5 4"/>`);
+    p.push(`<text x="${fx + (finerIsLower ? -6 : 6)}" y="${G.T + 14}" text-anchor="${finerIsLower ? 'end' : 'start'}" font-size="${G.f}" fill="var(--bad)">⚠ no finer</text>`);
+  }
+
+  const step = [1, 2, 5, 10, 20, 50].find((s) => (x1 - x0) / s <= 7) || 100;
+  for (let c = Math.ceil(x0 / step) * step; c <= x1; c += step) {
+    p.push(`<line x1="${X(c)}" y1="${G.T}" x2="${X(c)}" y2="${G.T + ph}" stroke="var(--border)" stroke-width="1"/>`);
+    p.push(`<text x="${X(c)}" y="${G.T + ph + 18}" text-anchor="middle" font-size="${G.f}" fill="var(--text-3)">${c}</text>`);
+  }
+  FIT_Y_TICKS.filter((v) => v >= y0 && v <= y1).forEach((v) => {
+    p.push(`<line x1="${G.L}" y1="${Y(v)}" x2="${G.L + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-width="1"/>`);
+    p.push(`<text x="${G.L - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="${G.f}" fill="var(--text-3)">${v}</text>`);
+  });
+  p.push(`<text x="${G.L - 6}" y="${G.T - 8}" text-anchor="end" font-size="${G.f}" fill="var(--text-3)">T_r</text>`);
+  p.push(`<text x="${G.L}" y="${G.H - 6}" font-size="${G.f}" fill="var(--text-3)">${finerIsLower ? '← finer' : 'coarser →'}</text>`);
+  p.push(`<text x="${G.L + pw}" y="${G.H - 6}" text-anchor="end" font-size="${G.f}" fill="var(--text-3)">clicks ${finerIsLower ? 'coarser →' : '← finer'}</text>`);
+
+  // One line per coffee: the same slope, shifted by that bag's offset. They
+  // are parallel by construction, and that parallelism is exactly what
+  // δ_bean means — it is the clearest argument for why pairing shots across
+  // two bags was wrong.
+  beans.forEach((bean) => {
+    const m = meta.get(bean.id);
+    if (!m) return;
+    const tr = (c) => Math.exp(law.alpha + bean.delta_bean + law.beta_used * c);
+    const a = Math.max(y0, Math.min(y1, tr(x0))), z = Math.max(y0, Math.min(y1, tr(x1)));
+    const ca = solve(a, bean.delta_bean), cz = solve(z, bean.delta_bean);
+    p.push(`<line x1="${X(ca)}" y1="${Y(a)}" x2="${X(cz)}" y2="${Y(z)}" stroke="${m.hue}" stroke-width="${bean.is_current ? 2.4 : 1.6}" stroke-opacity="${bean.is_current ? 1 : 0.6}"/>`);
+    const name = bean.name.length > G.chars ? `${bean.name.slice(0, G.chars - 1)}…` : bean.name;
+    p.push(`<text x="${Math.min(X(cz) + 8, G.L + pw + 6)}" y="${Math.max(G.T + 10, Math.min(Y(z) + 4, G.T + ph))}" font-size="${G.f}" fill="${m.hue}">${escapeHtml(name)}</text>`);
+  });
+
+  // The shots. Ghosted when they did not feed the fit, and each one is a tap
+  // target — the caption under the chart is this app's tooltip.
+  drawn.forEach((s) => {
+    const m = meta.get(s.bean_id) || { hue: 'var(--text-3)', shape: 0, name: 'shot' };
+    p.push(`<g class="fit-shot" data-shot="${s.index}" role="button" tabindex="0"><title>${escapeHtml(fitShotLine(s, m))}</title>
+      <circle cx="${X(s.clicks)}" cy="${Y(s.tr)}" r="13" fill="transparent"/>
+      ${fitMark(m.shape, X(s.clicks), Y(s.tr), m.hue, s.used_in_fit ? 1 : 0.28)}</g>`);
+  });
+
+  // The answer, as a place on the axis rather than a pronouncement.
+  if (wants !== null && wants >= x0 && wants <= x1) {
+    p.push(`<line x1="${X(wants)}" y1="${Y(trAim)}" x2="${X(wants)}" y2="${G.T + ph}" stroke="var(--cat-1)" stroke-width="1.2" stroke-dasharray="3 4" stroke-opacity=".8"/>`);
+    p.push(`<circle cx="${X(wants)}" cy="${Y(trAim)}" r="4" fill="none" stroke="var(--cat-1)" stroke-width="2"/>`);
+    p.push(`<text x="${clampX(X(wants))}" y="${G.T + ph + 36}" text-anchor="middle" font-size="${G.f}" fill="var(--cat-1)">law: ${fitN(wants, 1)}</text>`);
+  }
+  if (recipe.grind_clicks != null) {
+    p.push(`<line x1="${X(recipe.grind_clicks)}" y1="${G.T}" x2="${X(recipe.grind_clicks)}" y2="${G.T + ph}" stroke="var(--text-1)" stroke-width="2"/>`);
+    p.push(`<text x="${clampX(X(recipe.grind_clicks))}" y="${G.T + ph + 52}" text-anchor="middle" font-size="${G.f}" fill="var(--text-1)">you were told ${fitN(recipe.grind_clicks, 0)}</text>`);
+  }
+
+  $('fit-chart').innerHTML =
+    `<svg viewBox="0 0 ${G.W} ${G.H}" role="img" aria-label="Normalised shot time against grinder clicks, with the fitted law for each coffee">${p.join('')}</svg>`;
+
+  $('fit-legend').innerHTML = beans.map((bean) => {
+    const m = meta.get(bean.id);
+    return `<span><svg width="13" height="13" aria-hidden="true">${fitMark(m.shape, 6.5, 6.5, m.hue)}</svg>${escapeHtml(bean.name)}${bean.is_current ? ' (in the basket)' : ''} · δ ${bean.delta_bean > 0 ? '+' : ''}${fitN(bean.delta_bean, 3)}</span>`;
+  }).join('') + (floor.clicks != null
+    ? `<span><svg width="22" height="13" aria-hidden="true"><line x1="0" y1="6.5" x2="22" y2="6.5" stroke="var(--bad)" stroke-width="2" stroke-dasharray="5 4"/></svg>channeling floor</span>`
+    : '');
+
+  fitSetProbe('Tap a shot to read it. T_r is the shot time normalised to a 1:2 ratio, so shots at different doses compare.');
+
+  // The headline, written out of the numbers rather than asserted over them.
+  const gap = $('fit-gap');
+  if (wants !== null && recipe.grind_clicks != null && floor.clicks != null) {
+    const blocked = finerIsLower ? wants < floor.clicks : wants > floor.clicks;
+    gap.hidden = false;
+    gap.innerHTML = blocked
+      ? `<h5>The gap you can feel</h5>
+         <p>Solved outright, your law puts the target band at about
+         <b>${fitN(wants, 1)} clicks</b>. The anti-channeling floor will not go
+         finer than <b>${fitN(floor.clicks, 0)}</b>, so the number you were given
+         is <b>${fitN(recipe.grind_clicks, 0)}</b> — no finer than shots you have
+         already pulled. That is the engine declining to chase a target it
+         believes is on the far side of channeling, and it is why the advice can
+         read as “go finer” while naming a setting that is not.</p>
+         ${floor.reason ? `<p class="fit-why">Why the floor is there: ${escapeHtml(floor.reason)}.</p>` : ''}`
+      : `<h5>Where the number comes from</h5>
+         <p>Your law crosses the target band at about <b>${fitN(wants, 1)} clicks</b>,
+         and nothing is blocking it, so you were told
+         <b>${fitN(recipe.grind_clicks, 0)}</b>.</p>`;
+  } else {
+    gap.hidden = true;
+  }
+}
+
+function fitShotLine(shot, m) {
+  const when = shot.created_at
+    ? new Date(shot.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })
+    : '';
+  const bits = [
+    when, m.name || '', `${fitN(shot.clicks, 0)} clicks`,
+    shot.time_s != null ? `${fitN(shot.time_s, 0)} s` : null,
+    `T_r ${fitN(shot.tr)}`,
+    shot.dose_g != null ? `${fitN(shot.dose_g, 1)} g in` : null,
+    shot.yield_g != null ? `${fitN(shot.yield_g, 1)} g out` : null,
+    shot.brew_temp_c != null ? `${fitN(shot.brew_temp_c, 0)} °C` : null,
+    shot.taste_axis || null,
+  ].filter(Boolean);
+  const tail = shot.used_in_fit ? '' : ` — left out: ${shot.excluded_reason || 'not comparable'}`;
+  return bits.join(' · ') + tail;
+}
+
+function fitSetProbe(text) {
+  const probe = $('fit-probe');
+  if (probe) probe.textContent = text;
+}
+
+/* Theil–Sen is the median of every pairwise slope, so the honest way to show
+   it is to show the terms. The spread is the point: it is the noise the
+   engine cannot yet see past. */
+function fitDrawStrip(data, pairs, meta, narrow) {
+  const law = data.law;
+  const slopes = pairs.map((p) => p.slope).slice().sort((a, b) => a - b);
+  const G = narrow
+    ? { W: 420, H: 210, L: 20, R: 20, T: 40, B: 44, f: 12 }
+    : { W: 700, H: 220, L: 30, R: 30, T: 42, B: 46, f: 11.5 };
+  const pw = G.W - G.L - G.R;
+
+  const q = (frac) => {
+    const i = (slopes.length - 1) * frac, lo = Math.floor(i), hi = Math.ceil(i);
+    return slopes[lo] + (slopes[hi] - slopes[lo]) * (i - lo);
+  };
+  const marks = [law.beta_prior, law.beta_used, law.beta_fitted].filter((v) => Number.isFinite(v));
+  const lo = Math.min(...slopes.concat(marks)) - 0.06;
+  const hi = Math.max(...slopes.concat(marks)) + 0.06;
+  const X = (v) => G.L + ((v - lo) / (hi - lo)) * pw;
+  const clampX = (x) => Math.max(G.L + 26, Math.min(x, G.L + pw - 26));
+  const mid = G.T + 42;
+  const p = [];
+
+  // The interquartile box is captioned in the legend rather than over the
+  // plot: in here it lands on top of the prior's label.
+  p.push(`<rect x="${X(q(0.25))}" y="${mid - 24}" width="${Math.max(1, X(q(0.75)) - X(q(0.25)))}" height="48" fill="var(--text-2)" fill-opacity=".1" rx="2"/>`);
+
+  // Zero is the sign boundary the physics check cares about: a term on the
+  // wrong side says the finer shot ran faster.
+  if (lo < 0 && hi > 0) {
+    p.push(`<line x1="${X(0)}" y1="${G.T + 2}" x2="${X(0)}" y2="${mid + 36}" stroke="var(--bad)" stroke-width="1.2" stroke-dasharray="4 4" stroke-opacity=".75"/>`);
+    p.push(`<text x="${clampX(X(0))}" y="${G.T - 6}" text-anchor="middle" font-size="${G.f}" fill="var(--bad)">0 — finer ran faster →</text>`);
+  }
+  p.push(`<line x1="${G.L}" y1="${mid}" x2="${G.L + pw}" y2="${mid}" stroke="var(--border-2)" stroke-width="1"/>`);
+
+  pairs.forEach((pair) => {
+    const m = meta.get(pair.bean_id) || { hue: 'var(--text-3)', shape: 0 };
+    p.push(`<g><title>${fitN(pair.slope, 4)} per click — the pair of shots ${pair.a_index} and ${pair.b_index}</title>${fitMark(m.shape, X(pair.slope), mid, m.hue, 0.92)}</g>`);
+  });
+
+  // These three land within a few hundredths of each other, so they are
+  // stacked at separate depths; labelled in place they overprint.
+  // Every leader first, then every label: the deepest label's leader has to
+  // pass the shallower one's text, and a struck-through number is unreadable.
+  // The halo on the text then keeps that crossing clean.
+  const callouts = [['textbook', law.beta_prior, 'var(--text-3)', -32],
+    ['you were given', law.beta_used, 'var(--text-1)', 32],
+    ['your shots alone', law.beta_fitted, 'var(--cat-1)', 54]]
+    .filter(([, v]) => Number.isFinite(v));
+  callouts.forEach(([, v, hue, dy]) => {
+    const up = dy < 0;
+    p.push(`<line x1="${X(v)}" y1="${mid + (up ? -12 : 12)}" x2="${X(v)}" y2="${mid + dy + (up ? 5 : -5)}" stroke="${hue}" stroke-width="2"/>`);
+  });
+  callouts.forEach(([label, v, hue, dy]) => {
+    const up = dy < 0, y = mid + dy;
+    p.push(`<text x="${clampX(X(v))}" y="${up ? y - 4 : y + 11}" text-anchor="middle" font-size="${G.f}" fill="${hue}" stroke="var(--bg-input)" stroke-width="3.5" paint-order="stroke" stroke-linejoin="round">${label} ${fitN(v, 3)}</text>`);
+  });
+
+  p.push(`<text x="${G.L}" y="${G.H - 8}" font-size="${G.f}" fill="var(--text-3)">← one click does less</text>`);
+  p.push(`<text x="${G.L + pw}" y="${G.H - 8}" text-anchor="end" font-size="${G.f}" fill="var(--text-3)">steeper →</text>`);
+
+  $('fit-strip').innerHTML =
+    `<svg viewBox="0 0 ${G.W} ${G.H}" role="img" aria-label="Every pairwise slope that fed the median">${p.join('')}</svg>`;
+
+  const rejected = data.pairs_rejected_by_reason || {};
+  const rejectedTotal = Object.values(rejected).reduce((a, b) => a + b, 0);
+  $('fit-strip-legend').innerHTML =
+    `<span>${slopes.length} pairs used</span><span>${rejectedTotal} turned away</span>` +
+    `<span><svg width="14" height="12" aria-hidden="true"><rect width="14" height="12" rx="2" fill="var(--text-2)" fill-opacity=".22"/></svg>middle half of the terms</span>` +
+    Object.entries(rejected).map(([k, v]) => `<span>· ${v} — ${escapeHtml(k)}</span>`).join('');
+
+  const wrongSign = slopes.filter((s) => s > 0).length;
+  const crossBean = rejected['a different coffee'] || 0;
+  const spread = $('fit-spread');
+  spread.hidden = false;
+  spread.innerHTML =
+    `<h5>Read the spread, not just the median</h5>
+     <p>These ${slopes.length} terms run from <b>${fitN(slopes[0], 3)}</b> to
+     <b>${fitN(slopes[slopes.length - 1], 3)}</b> for a median of
+     <b>${fitN(law.beta_fitted, 3)}</b>${wrongSign ? ` — ${wrongSign} of them even come out the wrong sign` : ''}.
+     That disagreement is the noise the engine cannot yet see past: a single
+     shot carries several clicks of it, which is why a one-click correction is
+     often below the resolution of the measurement.</p>
+     ${crossBean ? `<p>The <b>${crossBean} pairs turned away for being a different coffee</b>
+     are the ones that used to be counted. Nothing in the shots above looks
+     excluded — every shot still pairs with its own bag — so this count is the
+     only place that fix is visible.</p>` : ''}`;
+}
+
+/* Confidence is a composition, so it is decomposed rather than printed as one
+   opaque number. */
+function fitDrawConfidence(law) {
+  const w = law.shrink_weight;
+  const prov = $('fit-prov');
+  if (Number.isFinite(w)) {
+    prov.hidden = false;
+    // The CSP forbids inline styles, so the widths go through the CSSOM.
+    const bar = $('fit-prov-bar');
+    bar.innerHTML = '<i class="fit-prov-mine"></i><i class="fit-prov-prior"></i>';
+    bar.querySelector('.fit-prov-mine').style.setProperty('width', `${(w * 100).toFixed(1)}%`);
+    bar.querySelector('.fit-prov-prior').style.setProperty('width', `${((1 - w) * 100).toFixed(1)}%`);
+    $('fit-prov-key').innerHTML =
+      `<span class="fit-key-mine">${(w * 100).toFixed(0)}% your shots</span>
+       <span class="fit-key-prior">${((1 - w) * 100).toFixed(0)}% textbook prior</span>
+       <span>w = n/(n+κ) = ${law.n_eff}/(${law.n_eff}+${fitN(law.kappa, 0)})</span>`;
+  } else {
+    prov.hidden = true;
+  }
+
+  // exp(β) − 1 is the per-click change in shot time, which is the only form
+  // of β anyone can act on.
+  const perClick = Number.isFinite(law.beta_used)
+    ? `β · ${fitN((Math.exp(law.beta_used) - 1) * 100, 1)}% shot time per click`
+    : 'β · not fitted yet';
+  $('fit-tiles').innerHTML = [
+    ['slope used', fitN(law.beta_used, 3), perClick],
+    ['distinct settings', law.n_eff ?? '—', 'not shots — repeats teach nothing'],
+    ['click span', fitN(law.click_span, 0), 'range the fit can see'],
+    ['confidence', fitN(law.confidence, 2), `tier ${law.tier || '—'}`],
+  ].map(([k, v, n]) =>
+    `<div class="fit-tile"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div><div class="n">${escapeHtml(n)}</div></div>`
+  ).join('');
+
+  $('fit-ladder').innerHTML = FIT_TIERS.map(([tier, has, does]) =>
+    `<li class="${tier === law.tier ? 'on' : ''}"><span class="t">${tier}</span><span>${escapeHtml(has)}</span><span class="c">${escapeHtml(does)}</span></li>`
+  ).join('');
+}
+
+/* Tap a mark to read the shot: there is no hover on a phone, so the caption
+   under the chart carries what a tooltip would. */
+function fitBindProbe() {
+  const host = $('fit-chart');
+  if (!host) return;
+  const read = (event) => {
+    const group = event.target.closest('.fit-shot');
+    if (!group || !fitPayload) return;
+    const shot = (fitPayload.shots || []).find((s) => s.index === Number(group.dataset.shot));
+    if (!shot) return;
+    host.querySelectorAll('.fit-shot.is-read').forEach((el) => el.classList.remove('is-read'));
+    group.classList.add('is-read');
+    const bean = (fitPayload.beans || []).find((b) => b.id === shot.bean_id) || {};
+    fitSetProbe(fitShotLine(shot, bean));
+  };
+  host.addEventListener('click', read);
+  host.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); read(event); }
+  });
 }
 
 /* ── Shot wizard ────────────────────────────────────────────────────────── */
