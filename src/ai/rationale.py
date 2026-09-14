@@ -33,7 +33,11 @@ from pydantic import BaseModel
 from core.brewing import Recipe
 from core.optional_deps import require_genai
 
-from .model_selection import GEMINI_MODEL_CANDIDATES, try_model_candidates
+from .model_selection import (
+    GEMINI_MODEL_CANDIDATES,
+    thinking_level_for,
+    try_model_candidates,
+)
 
 _NUMERAL = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -182,14 +186,21 @@ def write_rationale(
     def call_model(model_name: str) -> Any:
         nonlocal used_model
         used_model = model_name
+        config: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "response_schema": Rationale,
+            "temperature": 0.2,
+        }
+        # Prose only: the engine has already fixed every number, and
+        # scrub_numerals rejects any the model invents. Extended reasoning has
+        # nothing to decide here, so it would only add latency to a wait.
+        level = thinking_level_for(model_name)
+        if level:
+            config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
         return client.models.generate_content(
             model=model_name,
             contents=[prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=Rationale,
-                temperature=0.2,
-            ),
+            config=types.GenerateContentConfig(**config),
         )
 
     def evaluate(response: Any) -> tuple[bool, str | None]:

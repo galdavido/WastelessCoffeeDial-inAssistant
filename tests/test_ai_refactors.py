@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import os
 import unittest
 
-from ai.model_selection import try_model_candidates
+from ai.model_selection import (
+    GEMINI_MODEL_CANDIDATES,
+    thinking_level_for,
+    try_model_candidates,
+)
 from ai.vision import _parse_coffee_data_response
 
 
@@ -67,6 +72,53 @@ class TestAiRefactors(unittest.TestCase):
         self.assertIsNotNone(parsed_valid)
         self.assertEqual(parsed_valid["origin"], "Ethiopia")
         self.assertIsNone(parsed_invalid)
+
+
+class TestThinkingLevel(unittest.TestCase):
+    """Only Gemini 3.x takes thinking_level, and sending it elsewhere aborts.
+
+    try_model_candidates treats an unrecognised-parameter error as
+    non-transient and stops the chain, so the version gate has to hold for
+    every fallback entry, not just the ones we expect to be reached.
+    """
+
+    def setUp(self) -> None:
+        self._saved = os.environ.pop("WCDA_GEMINI_THINKING", None)
+
+    def tearDown(self) -> None:
+        os.environ.pop("WCDA_GEMINI_THINKING", None)
+        if self._saved is not None:
+            os.environ["WCDA_GEMINI_THINKING"] = self._saved
+
+    def test_pre_3x_models_never_get_the_parameter(self) -> None:
+        for model in (
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest",
+        ):
+            self.assertIsNone(thinking_level_for(model), model)
+
+    def test_3x_models_default_to_low(self) -> None:
+        self.assertEqual(thinking_level_for("gemini-3.8-flash"), "low")
+
+    def test_the_env_override_wins_on_3x(self) -> None:
+        os.environ["WCDA_GEMINI_THINKING"] = "high"
+        self.assertEqual(thinking_level_for("gemini-3.8-flash"), "high")
+        # ...but cannot force it onto a model that would reject it.
+        self.assertIsNone(thinking_level_for("gemini-2.5-flash"))
+
+    def test_off_disables_it(self) -> None:
+        os.environ["WCDA_GEMINI_THINKING"] = "off"
+        self.assertIsNone(thinking_level_for("gemini-3.8-flash"))
+
+    def test_an_unrecognised_value_falls_back_to_the_default(self) -> None:
+        os.environ["WCDA_GEMINI_THINKING"] = "maximum"
+        self.assertEqual(thinking_level_for("gemini-3.8-flash"), "low")
+
+    def test_every_shipped_candidate_is_classified(self) -> None:
+        """No candidate may sit in the gap between the two rules."""
+        for model in GEMINI_MODEL_CANDIDATES:
+            self.assertIn(thinking_level_for(model), (None, "low", "high"), model)
 
 
 if __name__ == "__main__":

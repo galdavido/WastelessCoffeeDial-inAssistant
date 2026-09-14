@@ -5,7 +5,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ai.model_selection import GEMINI_MODEL_CANDIDATES, try_model_candidates
+from ai.model_selection import (
+    GEMINI_MODEL_CANDIDATES,
+    thinking_level_for,
+    try_model_candidates,
+)
 from core.optional_deps import (
     load_dotenv_if_available,
     require_genai,
@@ -96,14 +100,18 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
         parsed_payload: dict[str, Any] | None = None
 
         def call_model(model_name: str) -> Any:
+            config: dict[str, Any] = {
+                "response_mime_type": "application/json",
+                "response_schema": CoffeeData,
+                "temperature": 0.1,
+            }
+            level = thinking_level_for(model_name)
+            if level:
+                config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
             return client.models.generate_content(
                 model=model_name,
                 contents=[prompt, img],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=CoffeeData,
-                    temperature=0.1,
-                ),
+                config=types.GenerateContentConfig(**config),
             )
 
         def evaluate_response(response: Any) -> tuple[bool, str | None]:
