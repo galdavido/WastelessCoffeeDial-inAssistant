@@ -82,6 +82,11 @@ class TestScienceDoc(unittest.TestCase):
             "sca-bands",
             "cameron",
             "taste-mapping",
+            # Recorded decisions, not yet a constant: each explains a policy
+            # conclusion and the shape a future threshold would take, without
+            # fixing a number the engine uses today.
+            "target-reachability",
+            "deadband",
         }
         cited = {c.anchor.lstrip("#") for c in CONSTANTS.values()}
         orphans = _doc_anchors() - cited - narrative

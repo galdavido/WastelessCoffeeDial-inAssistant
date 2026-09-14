@@ -152,6 +152,24 @@ with the same number.
 all — so the dial cannot be located from history and the engine falls back to
 the cold start in [#cold-start](#cold-start).
 
+**Missing term: dose. Recorded 2026-09-13.** The law has no dose term, and it
+should. Cameron et al. state it plainly: when the coffee mass changes *"the
+only parameter that needs to be altered is the bed depth, L"*, and bed depth is
+**directly proportional to the dose**. Darcy (§2.1) then makes the pressure
+drop — and so the shot time — scale with `L`. A dose change is therefore a
+first-order effect on `T_r` that the engine currently attributes to something
+else.
+
+That something else is `δ_bean`, and on the reference history the two are
+**completely confounded**: one coffee was always dosed 18 g and the other
+always 16 g, so the fitted offsets (−0.043 and +0.142, a gap worth about two
+clicks) cannot distinguish "this bean grinds differently" from "this bean was
+dosed 2 g lighter". [#similarity](#similarity) notes that origin and process
+have no published effect on how a coffee grinds, which makes the dose reading
+the more likely one. The fix is to put `+ γ·ln(dose)` in the law and re-fit,
+leaving `δ_bean` to carry only what is genuinely the coffee — until then,
+`δ_bean` should be read as "this bag, at the dose you use for it".
+
 ### 2.5 Extraction yield {#ey-formula}
 
 ```
@@ -181,15 +199,49 @@ strength/texture lever rather than an extraction lever.
 Normale **1:2** (band 1:1.8–1:2.5), **25–30 s**, brew temperature
 **90.5–96 °C**.
 
-### 3.3 Ristretto {#ratio-ristretto}
+**The time half of this band is contested by our own load-bearing source.**
+Cameron et al. name it directly: *"The Specialty Coffee Association espresso
+parameters mandate that the extraction should take 20–30 s; we speculate that
+this might be partially responsible for the prevailing empirical truth that
+most coffee is brewed using grind settings that cause partially
+clogged/inhomogeneous flow."* Their own reproducibility route
+([#cameron-reproducibility](#cameron-reproducibility)) explicitly produces
+**shots under 15 s** and calls that a success, not a fault.
+
+So a band of 25–30 s is a *taste convention*, not a physical optimum, and an
+engine that treats it as a target will drive every coffee finer until it hits
+the clogged regime and then report that it is stuck. Treat a persistently fast
+shot that tastes balanced as a valid operating point rather than an error to
+be corrected. See [#target-reachability](#target-reachability).
+
+### 3.3 Pressure, and whether the band is reachable {#target-reachability}
+
+Cameron et al. give the pressure dependence explicitly: increasing the pump
+overpressure increases the Darcy flux in direct proportion, so **shot time
+falls inversely with pressure**. Pressure therefore moves `α` in
+[#beta-law](#beta-law), not `β` — it shifts the whole curve rather than
+changing its slope.
+
+It also moves the clogging onset. They ran at **9 bar first and could not use
+fine settings at all** — it clogged — and dropped to **6 bar** specifically to
+open up the grind range. So a machine at higher pressure reaches the
+inhomogeneous regime at a *coarser* setting than one at lower pressure.
+
+The practical consequence for this app: on a fixed, unregulated machine the
+25–30 s band may simply be unreachable, and the honest output is to say so
+rather than to keep recommending finer. A target band is only meaningful
+relative to the pressure the machine actually delivers, which we cannot
+measure.
+
+### 3.4 Ristretto {#ratio-ristretto}
 
 **1:1–1:1.5**, aim 1:1.25, 20–28 s. Same temperature band.
 
-### 3.4 Lungo {#ratio-lungo}
+### 3.5 Lungo {#ratio-lungo}
 
 **1:2.5–1:3**, aim 1:2.75, 28–36 s. Same temperature band.
 
-### 3.5 Pour-over, V60 {#ratio-pourover}
+### 3.6 Pour-over, V60 {#ratio-pourover}
 
 Golden ratio **1:16** (≈60 g/L), band 1:15–1:17; water **92–96 °C**; total
 drawdown **2:45–3:15** for a ~15 g single; medium-fine grind, ~600–800 µm.
@@ -197,7 +249,7 @@ drawdown **2:45–3:15** for a ~15 g single; medium-fine grind, ~600–800 µm.
 The dominant levers — pour schedule, agitation, bloom, pour height — are not
 recorded by this app. See [#method-levers](#method-levers).
 
-### 3.6 Moka pot {#ratio-moka}
+### 3.7 Moka pot {#ratio-moka}
 
 Steam pressure **1–2 bar**, ratio **1:7–1:10** (aim 1:8), grind
 **360–660 µm**, water reaching the bed at roughly **93 °C** and *rising through
@@ -207,7 +259,7 @@ Brew time is set by stove heat input, not by bed permeability, so the engine
 does not solve grind from time for this method and does not state a target
 time it cannot control.
 
-### 3.7 Degassing {#degassing}
+### 3.8 Degassing {#degassing}
 
 Coffee released **5–14 days** post-roast is the commonly cited window. Fresher
 coffee releases CO₂ during extraction, causing faster and more erratic flow,
@@ -215,7 +267,7 @@ early blonding and a raised channeling risk. Qualitatively well established;
 the specific magnitudes we apply are heuristic
 ([#fresh-band](#fresh-band)).
 
-### 3.8 The extraction peak is not monotonic {#cameron}
+### 3.9 The extraction peak is not monotonic {#cameron}
 
 Cameron et al., *Matter* 2020, is the load-bearing citation for this project.
 A mathematical model assuming homogeneous flow predicts extraction yield
@@ -231,9 +283,26 @@ engine now refuses to cross an empirically detected floor.
 
 The onset setting is device-specific (their instrument showed it below ~1.7 on
 its own dial), which is why the engine detects it from the user's own data
-rather than hardcoding a number.
+rather than hardcoding a number. They quantify the cost of crossing it: at
+grind settings of 1.5, 1.3 and 1.1 the measured yield falls **2.6%, 6.1% and
+13.1%** below the homogeneous-flow prediction.
 
-### 3.9 The reproducibility recipe {#cameron-reproducibility}
+**What clogging does *not* do is stop the shot getting slower.** In their
+Figure 4A shot time stays inversely proportional to grind setting with
+**R² = 0.995 across both regimes** — the clogged points sit on the same line.
+Extraction yield turns over at the onset; shot time does not. A time-based
+plateau is therefore *not* a literature signature of channeling, and
+[#channeling-detection](#channeling-detection) should not be read as if it
+were. The signatures the paper does offer are a **falling extraction yield
+while time keeps rising** (needs a refractometer) and a cup that reads as
+**bitter and sour at the same time** — under- and over-extracted regions
+brewed together, which a single sour↔bitter axis cannot represent.
+
+Tamp force is not one of the signatures: they varied it deliberately and
+**observed no appreciable variation in shot time or yield**, standardising at
+98 N only for convenience.
+
+### 3.10 The reproducibility recipe {#cameron-reproducibility}
 
 The same paper's affirmative recommendation: **reduce the dry dose and grind
 coarser** — 20 g → 15 g in their protocol, up to **25% less coffee** — which
@@ -241,10 +310,10 @@ raised extraction yield *and* improved shot-to-shot reproducibility. Validated
 in production at a roastery across **27,850 beverages** over roughly a year.
 
 Lower bed depth `L` reduces the pressure drop (2.1), which reduces the
-channeling that (3.8) describes. For an app named "Wasteless", using a quarter
+channeling that (3.9) describes. For an app named "Wasteless", using a quarter
 less coffee for a better shot is the headline move.
 
-### 3.10 Temperature by roast level {#temp-by-roast}
+### 3.11 Temperature by roast level {#temp-by-roast}
 
 Within the SCA band, lighter roasts are conventionally brewed hotter (more
 soluble material, denser cell structure), darker roasts cooler (more soluble,
@@ -252,7 +321,7 @@ more prone to harsh extraction): light 94–96 °C, medium 92–94 °C,
 dark 90.5–92.5 °C. The band edges are literature; the split points are our
 interpolation.
 
-### 3.11 Sour/bitter is not a reliable extraction readout {#taste-mapping}
+### 3.12 Sour/bitter is not a reliable extraction readout {#taste-mapping}
 
 "Sour means under-extracted, bitter means over-extracted" is the industry
 default and is **not** dependable:
@@ -337,6 +406,14 @@ fitted. Pure guess, easily revised.
 same setup 0.40, roast level 0.25, process 0.15, origin 0.10, freshness 0.10;
 match floor 0.45; recency multiplier `0.97^weeks_ago`. Setup dominates because
 a click number from a different grinder is close to meaningless.
+
+**Caveat on the bean terms, recorded 2026-09-13.** Uman et al. (*Sci Rep*
+2016) found particle size distribution to be **independent of bean origin and
+processing method** — the two terms carrying 0.15 and 0.10 here. Roast level
+and grinding temperature did matter. So origin and process are defensible as
+*taste* neighbours for retrieving exemplars, but they have no published basis
+as predictors of how a coffee grinds, and `δ_bean` should not be justified by
+them. See the confound noted in [#beta-law](#beta-law).
 
 **Bean-offset floor 0.25.** When seeding `δ̂_bean` for a coffee with no shots
 ([#beta-law](#beta-law)), every candidate is already on this setup, so the
@@ -440,6 +517,49 @@ safe — the cost of refusing to go finer when you could have is one extra
 iteration, while the cost of chasing the channeling regime is wasted coffee and
 an undiagnosable shot.
 
+**Known weakness, recorded 2026-09-13.** The trigger "a finer setting ran no
+slower, so the water is channeling" is *our* inference, not a literature
+result, and [#cameron](#cameron) points the other way: shot time stayed
+monotonic in grind setting through the clogged regime at R² = 0.995. What
+turns over at the onset is extraction yield, which we cannot see without a
+refractometer.
+
+Worse, at realistic sample sizes the trigger cannot tell a plateau from noise.
+On the reference history (10 shots) the pooled within-setting spread of
+`ln T_r` was **0.395** — one bean gave `T_r` 4.17 and 10.11 at the *same*
+setting — against **0.084–0.168 per click**. A single shot therefore carries
+**2.4–4.7 clicks** of noise, so a three-point "plateau" is indistinguishable
+from a flat line drawn through scatter. The floor fired on both beans there
+and pinned the recommendation at a setting no finer than the one already used,
+while the prose still said "go finer". Failing safe is the right instinct, but
+a detector with no noise model fails safe *always*, which is its own failure.
+
+Until this is replaced, treat the floor as a soft warning rather than a hard
+clamp, and see [#deadband](#deadband) for the minimum move that is worth
+naming at all.
+
+### 5.8 The deadband: when not to change anything {#deadband}
+
+There is currently **no deadband** — the engine will name a new click number
+for a difference far below what a single shot can resolve. Nothing in the
+literature gives a shot-time variance directly, but three independent
+anchors bound it:
+
+- Cameron et al. collected data in **pentaplicate** (n = 5 per point, n = 20
+  for calibration) under tight control — ±0.5 g dose, ±1 g beverage mass
+  (shots outside it discarded), fixed 92 °C, automated tamping to ±3 N. Five
+  replicates is what a controlled rig needed for one usable point.
+- The Espresso Protocol, a professional sensory standard, tolerates
+  **25 s ± 3 s** as "the same shot" — an accepted band, not a measured sigma.
+- Practitioner reports put fixed-setting shot time at roughly **±3–5 s**, and
+  our own reference history gives 2.4–4.7 clicks (above).
+
+None of these is a peer-reviewed sigma, so any threshold built on them is a
+`HEURISTIC`. The defensible shape is: require the solved move to exceed the
+observed within-setting spread before naming a new number, and otherwise say
+"pull the same shot again" — which is also how you buy the replicate the
+estimate needs.
+
 ---
 
 ## 6. Method levers, and what we cannot see {#method-levers}
@@ -479,8 +599,33 @@ production module may import it, and a convention test enforces that.
   Mathematical Modeling and Experiment." *Matter* 2(3), 631–648, 2020.
   <https://www.cell.com/matter/fulltext/S2590-2385(19)30410-2>
   — non-monotonic extraction yield; the 20 g → 15 g reproducibility protocol;
-  27,850-beverage validation. Summary coverage:
+  27,850-beverage validation. Also: shot time linear in grind setting at
+  R² = 0.995 *across both flow regimes*; clogging costs 2.6 / 6.1 / 13.1 % of
+  yield at GS 1.5 / 1.3 / 1.1; tamp force does not measurably affect shot time
+  or yield; pressure raised to 9 bar clogged fine settings, so the study ran at
+  6 bar; shot time inversely proportional to pressure; bed depth proportional
+  to dose; and the explicit criticism of the SCA 20–30 s mandate. Full text:
+  <https://pages.uoregon.edu/chendon/publications/2020/74.%20Matter,%20Espresso%20extraction.pdf>
+  Summary coverage:
   <https://www.sciencedaily.com/releases/2020/01/200122110447.htm>
+- Uman, E. et al. "The effect of bean origin and temperature on grinding
+  roasted coffee." *Scientific Reports* 6, 24483, 2016.
+  <https://www.nature.com/articles/srep24483>
+  — particle size distribution is **independent of origin and processing
+  method**; grinding colder narrows the distribution and lowers mean particle
+  size. The basis for the caveat in [#similarity](#similarity).
+- "Cross-Cultural Comparison of the Espresso Protocol Repeatability", 2025.
+  <https://pmc.ncbi.nlm.nih.gov/articles/PMC11854300/>
+  — a professional sensory protocol's own extraction tolerance, 25 s ± 3 s at
+  9 bar, 92–94 °C, 15–17 g ± 1 g. Used only as a tolerance anchor in
+  [#deadband](#deadband); it reports no shot-time variance of its own.
+- Wadsworth, F. B. et al. "A model for the permeability of coffee pucks
+  validated using X-ray computed micro-tomography." *Royal Society Open
+  Science* 13(4), 252031, 2026. <https://doi.org/10.1098/rsos.252031>
+  — permeability from pore volume fraction and specific surface area,
+  validated against lattice-Boltzmann simulation on XCT scans of real pucks at
+  eleven grind settings; introduces a Forchheimer number for the onset of
+  inertial flow. (Full text not retrieved — abstract only.)
 - SCA Brewing Control Chart / Coffee Brewing Institute (Lockhart, MIT, 1950s) —
   extraction 18–22%, espresso TDS 8–12%.
   <https://www.baristainstitute.com/blog/jori-korhonen/january-2019/how-measure-extraction-coffee>
