@@ -48,7 +48,7 @@ from .calibration import (
     Calibration,
     confidence_label,
     fit_setup,
-    theil_sen_terms,
+    theil_sen_pairs,
 )
 from .retrieval import (
     CALIBRATION_PROTOCOL,
@@ -441,7 +441,7 @@ def serialize_fit(
 
     Everything here is read off the pass that produced the recipe rather than
     recomputed, so the picture cannot drift from the numbers the user was
-    given. `theil_sen_terms()` is the same list `theil_sen_comparable()` took
+    given. The accepted pairs are the same list `theil_sen_comparable()` took
     the median of, and the shot indices point into `history` in this order.
     """
     calibration = result.calibration
@@ -449,8 +449,18 @@ def serialize_fit(
     target = result.target
     caps = result.caps or GrinderCaps()
 
-    terms = theil_sen_terms(history)
+    candidates = theil_sen_pairs(history)
+    terms = [pair for pair in candidates if pair.used]
     used = {index for term in terms for index in (term.a_index, term.b_index)}
+
+    # Why pairs were turned away, counted. On a two-coffee history the
+    # cross-bean rejections are the whole story and are invisible in the shots
+    # themselves -- every shot still pairs with its own bag, so nothing looks
+    # excluded until you count the pairs that never happened.
+    rejected_counts: dict[str, int] = {}
+    for pair in candidates:
+        if pair.rejected:
+            rejected_counts[pair.rejected] = rejected_counts.get(pair.rejected, 0) + 1
 
     # Same arguments apply_guardrails used, so the floor drawn is the floor
     # that actually clamped the recipe.
@@ -512,13 +522,25 @@ def serialize_fit(
         "shots": shots,
         "pairs": [
             {
-                "slope": round(term.slope, 5),
+                "slope": round(term.slope, 5) if term.slope is not None else None,
                 "a_index": term.a_index,
                 "b_index": term.b_index,
                 "bean_id": term.bean_id,
             }
             for term in terms
         ],
+        "pairs_rejected": [
+            {
+                "a_index": pair.a_index,
+                "b_index": pair.b_index,
+                "bean_id": pair.bean_id,
+                "other_bean_id": pair.other_bean_id,
+                "reason": pair.rejected,
+            }
+            for pair in candidates
+            if pair.rejected
+        ],
+        "pairs_rejected_by_reason": rejected_counts,
         "target": {
             "tr_lo": target.tr_lo if target else None,
             "tr_hi": target.tr_hi if target else None,

@@ -128,6 +128,31 @@ class TestThePictureMatchesTheEngine(unittest.TestCase):
         ]
         self.assertEqual(crossing, [])
 
+    def test_the_rejected_cross_bean_pairs_are_reported(self) -> None:
+        """Otherwise the exclusion is invisible.
+
+        Every shot here still pairs with its own bag, so nothing reads as
+        excluded in the shots themselves. The only way to see that the two
+        coffees were kept apart is to count the pairs that never happened.
+        """
+        payload = serialize_fit(_result(), NAMES, RWANDA)
+        self.assertTrue(all(s["used_in_fit"] for s in payload["shots"]))
+        counts = payload["pairs_rejected_by_reason"]
+        self.assertEqual(counts.get("a different coffee"), 6)  # 3 Rwanda x 2 Brazil
+        for rejected in payload["pairs_rejected"]:
+            self.assertNotEqual(rejected["bean_id"], rejected["other_bean_id"])
+
+    def test_accepted_and_rejected_partition_the_candidates(self) -> None:
+        """One decision per pair -- a pair is never in both lists or neither."""
+        payload = serialize_fit(_result(), NAMES, RWANDA)
+        accepted = {(p["a_index"], p["b_index"]) for p in payload["pairs"]}
+        rejected = {(p["a_index"], p["b_index"]) for p in payload["pairs_rejected"]}
+        self.assertEqual(accepted & rejected, set())
+        self.assertEqual(
+            len(accepted) + len(rejected),
+            len(payload["pairs"]) + len(payload["pairs_rejected"]),
+        )
+
     def test_every_shot_marked_used_really_fed_a_pair(self) -> None:
         payload = serialize_fit(_result(), NAMES, RWANDA)
         fed = {i for t in theil_sen_terms(HISTORY) for i in (t.a_index, t.b_index)}

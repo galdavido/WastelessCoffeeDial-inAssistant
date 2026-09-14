@@ -34,7 +34,7 @@ from .brewing import (
     Method,
     ShotRecord,
     normalised_time,
-    prep_comparable,
+    prep_incomparable_reason,
     value_of,
 )
 
@@ -81,26 +81,33 @@ def theil_sen_slope(points: Sequence[tuple[float, float]]) -> float | None:
 
 
 @dataclass(frozen=True)
-class SlopeTerm:
-    """One pairwise slope, and which two shots produced it.
+class SlopePair:
+    """One candidate pair of shots, and whether it fed the slope.
 
-    Indices are positions in the sequence handed to theil_sen_terms(), so a
+    Indices are positions in the sequence handed to `theil_sen_pairs()`, so a
     caller that serialises the same sequence can point at the exact shots.
+    `rejected` is None for the pairs the median was taken of, and otherwise
+    says why this one was left out.
     """
 
-    slope: float
     a_index: int
     b_index: int
     bean_id: int | None
+    other_bean_id: int | None
+    slope: float | None
+    rejected: str | None
+
+    @property
+    def used(self) -> bool:
+        return self.rejected is None and self.slope is not None
 
 
-def theil_sen_terms(shots: Sequence[ShotRecord]) -> list[SlopeTerm]:
-    """Every pairwise slope the fit is built from, in order.
+def theil_sen_pairs(shots: Sequence[ShotRecord]) -> list[SlopePair]:
+    """Every candidate pair, accepted or rejected, with the reason.
 
-    `theil_sen_comparable()` is the median of these, which is the whole reason
-    this is exposed: a view that wants to show the working can draw the terms
-    the fit actually used rather than recomputing them and drifting out of
-    step with the engine.
+    One place decides what counts, so the accepted list and the rejected list
+    can never disagree about a pair -- which matters because "why is this pair
+    not in the fit?" is the question the whole fit view exists to answer.
 
     Two kinds of pair are dropped. **Prepared differently** -- a pair whose
     pre-infusion, pause or brew temperature differs measures preparation as
@@ -115,7 +122,7 @@ def theil_sen_terms(shots: Sequence[ShotRecord]) -> list[SlopeTerm]:
     Because the estimator is built from pairwise slopes, excluding a pair is
     exactly one term dropped -- no reweighting, no model change.
     """
-    terms: list[SlopeTerm] = []
+    pairs: list[SlopePair] = []
     usable = [
         (index, shot, normalised_time(shot))
         for index, shot in enumerate(shots)
@@ -125,32 +132,46 @@ def theil_sen_terms(shots: Sequence[ShotRecord]) -> list[SlopeTerm]:
         for j, b, tr_b in usable[position + 1 :]:
             if a.grind_clicks is None or b.grind_clicks is None:
                 continue
+            reason: str | None = None
             if a.grind_clicks == b.grind_clicks:
+                # Not a rejection worth reporting: two shots at one setting
+                # carry no slope between them by definition.
                 continue
-            if a.bean_id != b.bean_id:
-                continue
-            if not prep_comparable(a, b):
-                continue
-            if tr_a is None or tr_b is None or tr_a <= 0 or tr_b <= 0:
-                continue
-            terms.append(
-                SlopeTerm(
-                    slope=(math.log(tr_b) - math.log(tr_a))
-                    / (b.grind_clicks - a.grind_clicks),
+            elif a.bean_id != b.bean_id:
+                reason = "a different coffee"
+            elif tr_a is None or tr_b is None or tr_a <= 0 or tr_b <= 0:
+                reason = "no usable time"
+            else:
+                reason = prep_incomparable_reason(a, b)
+            slope = (
+                (math.log(tr_b) - math.log(tr_a)) / (b.grind_clicks - a.grind_clicks)
+                if reason is None and tr_a and tr_b
+                else None
+            )
+            pairs.append(
+                SlopePair(
                     a_index=i,
                     b_index=j,
                     bean_id=a.bean_id,
+                    other_bean_id=b.bean_id,
+                    slope=slope,
+                    rejected=reason,
                 )
             )
-    return terms
+    return pairs
+
+
+def theil_sen_terms(shots: Sequence[ShotRecord]) -> list[SlopePair]:
+    """Only the pairs the fit is built from. `theil_sen_comparable()` medians these."""
+    return [pair for pair in theil_sen_pairs(shots) if pair.used]
 
 
 def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
     """The median of the pairwise slopes in `theil_sen_terms()`."""
-    terms = theil_sen_terms(shots)
-    if not terms:
+    slopes = [pair.slope for pair in theil_sen_terms(shots) if pair.slope is not None]
+    if not slopes:
         return None
-    return statistics.median(term.slope for term in terms)
+    return statistics.median(slopes)
 
 
 def _usable(shots: Sequence[ShotRecord]) -> list[tuple[float, float]]:
