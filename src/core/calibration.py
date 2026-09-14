@@ -79,6 +79,13 @@ def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
     incomparable pair is exactly one term dropped -- no reweighting, no model
     change. A pair whose pre-infusion differs measures preparation as much as
     grind, and including it would put that difference into the slope.
+
+    Pairs must also stay within one coffee. delta_bean is precisely the
+    statement that two bags sit at different intercepts, so a cross-bean pair's
+    rise is the grind difference *plus* that gap -- and where one coffee runs
+    faster than the other, that gap can outweigh the grind term and invert the
+    sign, which makes fit_setup discard the whole fit. Beta is still fitted
+    across every bag: each coffee contributes its own pairs to the same median.
     """
     slopes: list[float] = []
     usable = [
@@ -91,6 +98,8 @@ def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
             if a.grind_clicks is None or b.grind_clicks is None:
                 continue
             if a.grind_clicks == b.grind_clicks:
+                continue
+            if a.bean_id != b.bean_id:
                 continue
             if not prep_comparable(a, b):
                 continue

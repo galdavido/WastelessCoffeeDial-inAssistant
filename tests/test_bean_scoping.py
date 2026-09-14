@@ -31,7 +31,7 @@ from core.brewing import (
     target_for,
     value_of,
 )
-from core.calibration import bean_offsets, fit_setup
+from core.calibration import bean_offsets, fit_setup, theil_sen_comparable
 from core.retrieval import BeanFeatures, borrow_bean_offset, shots_for_bean
 
 K6 = GrinderCaps(
@@ -187,6 +187,61 @@ class TestBeanOffsets(unittest.TestCase):
         self.assertAlmostEqual(
             calibration.delta_bean, calibration.bean_offsets[RWANDA], places=9
         )
+
+
+class TestSlopeIsFittedWithinCoffees(unittest.TestCase):
+    """A pairwise slope must not straddle two bean intercepts.
+
+    beta stays a property of the grinder and is still fitted across every bag,
+    but by pooling each coffee's own *pairs* into one median -- not by pairing
+    one coffee's shot against another's. The rise of a cross-bean pair is the
+    grind difference plus the delta_bean gap, and REPORTED is exactly the case
+    where that gap is the larger of the two.
+    """
+
+    def test_a_cross_bean_pair_is_not_evidence_about_the_grinder(self) -> None:
+        # The Rwanda at 28 is seven clicks finer than the Brazil at 35 and ran
+        # faster anyway. Read as one curve that is a *rising* slope, which
+        # contradicts the physics -- and fit_setup discards the whole fit.
+        cross_only = [REPORTED[0], REPORTED[1]]  # one Brazil, one Rwanda
+        self.assertIsNone(theil_sen_comparable(cross_only))
+
+    def test_the_slope_is_the_median_of_what_each_coffee_measured(self) -> None:
+        slope = theil_sen_comparable(REPORTED)
+        assert slope is not None
+        brazil = math.log(15 / 16)  # 35 -> 36 clicks, T_r 16.0 -> 15.0
+        rwanda = math.log(9 / 11) / 2  # 28 -> 30 clicks, T_r 11.0 -> 9.0
+        self.assertAlmostEqual(slope, (brazil + rwanda) / 2, places=6)
+        # Four of the six pooled pairs are cross-bean and all four come out
+        # positive, so pooling them returned +0.046 -- not a shallow slope but
+        # the wrong sign, which is the channeling signature, not a grinder.
+        self.assertLess(slope, -0.05)
+
+    def test_a_mixed_history_fits_the_grinder_not_the_gap_between_bags(self) -> None:
+        calibration = fit_setup(
+            REPORTED, "espresso", K6, beta_prior("espresso", K6), bean_id=RWANDA
+        )
+        # The regression this guards: the pooled median was +0.046, so the
+        # sign check in fit_setup threw the fit away and quietly returned the
+        # untouched prior at zero confidence -- on a history with four shots
+        # across two settings per bag, which is enough to fit.
+        self.assertEqual(calibration.beta_source, "shrunk")
+        assert calibration.beta is not None
+        self.assertLess(calibration.beta, -0.08)
+
+    def test_shots_with_no_bean_recorded_still_pair_together(self) -> None:
+        """Bean-less records are one pool -- the simulator tests rely on it."""
+        anonymous = [
+            ShotRecord(
+                method="espresso",
+                dose_g=18.0,
+                grind_clicks=clicks,
+                yield_g=36.0,
+                time_s=time_s,
+            )
+            for clicks, time_s in ((28.0, 32.0), (32.0, 26.0), (36.0, 22.0))
+        ]
+        self.assertIsNotNone(theil_sen_comparable(anonymous))
 
 
 class TestBorrowingForANewCoffee(unittest.TestCase):

@@ -135,6 +135,26 @@ The same restriction applies to the anti-channeling floor
 another and read the finest setting that has *tasted* right, and neither
 comparison survives a change of coffee.
 
+**And to the pairs the slope is fitted from. Recorded 2026-09-14.** `β` is a
+property of the grinder, so it is fitted across every bag on the setup — but
+by pooling each coffee's own *pairs* into one median, never by pairing one
+coffee's shot against another's. A cross-bean pair's rise is `β·Δc` plus
+`δ_bean_a − δ_bean_b`; the second term is not a grind effect, and where it
+dominates the fitted slope comes back too shallow or with the **wrong sign**,
+which `fit_setup` then reads as the channeling signature and discards, falling
+back to the prior at zero confidence.
+
+On the reference history this was **latent, not active**: the two bags were
+brewed in different temperature bands (94–96 °C and 91–92 °C), so
+[#temp-covariate](#temp-covariate) already dropped every cross-bean pair for
+an unrelated reason — 0 of the 14 surviving pairs crossed bags, and the fit
+was correct by luck. Hold that history at one temperature and 24 of 42 pairs
+cross, dragging the median from **−0.150** to **−0.050**: three times too
+shallow, so a correction three times too large, with `max_move_fraction`'s
+cap — itself `0.25·|1/β|` — widening in step instead of catching it. Being
+saved by a covariate filter aimed at something else is not a safeguard, and
+it disappears as soon as two bags are brewed at the same temperature.
+
 *No shots on this coffee.* Nothing to correct from, so the law is used in
 **absolute** form and solved for the dial:
 
