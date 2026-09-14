@@ -23,6 +23,7 @@ from .engine import (
     persist_recommendation,
     recommend,
     render_legacy_text,
+    serialize_fit,
     serialize_result,
 )
 from .retrieval import get_active_setup_method, to_shot_record
@@ -481,6 +482,53 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             "dose_g": get_default_dose_g(db, owner),
             "grind_offset_clicks": get_grind_offset_clicks(db, owner),
         }
+
+    @app.get("/api/fit")
+    def get_fit(
+        bean_id: int | None = None,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
+    ) -> dict[str, Any]:
+        """The working behind the current recommendation.
+
+        Read-only and model-free: it runs the same engine pass the recipe came
+        from with the prose switched off, so what it returns is the fit that
+        produced the number rather than a reconstruction that could disagree
+        with it. Nothing is persisted -- opening the view must not write a
+        recommendation row.
+        """
+        bean: Bean | None = None
+        if bean_id is not None:
+            bean = (
+                db.query(Bean).filter(Bean.id == bean_id, Bean.owner == owner).first()
+            )
+            if bean is None:
+                raise HTTPException(status_code=404, detail="Coffee not found")
+
+        setup = get_active_setup(db, owner)
+        try:
+            result = recommend(
+                db,
+                owner,
+                setup,
+                bean,
+                get_default_dose_g(db, owner),
+                explain=False,
+            )
+        except Exception as exc:
+            raise _server_error(exc, "build fit view") from exc
+
+        bean_ids = {s.bean_id for s in result.history if s.bean_id is not None}
+        bean_ids.update(result.calibration.bean_offsets)
+        names: dict[int, str] = {}
+        if bean_ids:
+            names = {
+                row.id: row.name
+                for row in db.query(Bean).filter(
+                    Bean.id.in_(bean_ids), Bean.owner == owner
+                )
+            }
+        return serialize_fit(result, names, bean_id)
 
     @app.get("/api/logs")
     def get_logs(

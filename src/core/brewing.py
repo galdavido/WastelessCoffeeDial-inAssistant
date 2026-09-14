@@ -534,21 +534,35 @@ def prep_comparable(a: ShotRecord, b: ShotRecord) -> bool:
     Unknown on either side counts as comparable -- otherwise nothing would
     ever be comparable for a user who does not record it.
     """
+    return prep_incomparable_reason(a, b) is None
+
+
+def prep_incomparable_reason(a: ShotRecord, b: ShotRecord) -> str | None:
+    """Why these two shots cannot be compared, or None if they can.
+
+    The same rule as prep_comparable(), which delegates here, so the reason
+    shown to a user can never disagree with the decision the fit acted on.
+    """
     tolerance = value_of("prep_tolerance_s")
-    for lhs, rhs in ((a.preinfusion_s, b.preinfusion_s), (a.pause_s, b.pause_s)):
+    for label, lhs, rhs in (
+        ("pre-infusion", a.preinfusion_s, b.preinfusion_s),
+        ("pause before the pull", a.pause_s, b.pause_s),
+    ):
         if lhs is not None and rhs is not None and abs(lhs - rhs) > tolerance:
-            return False
+            return f"{label} differs by more than {tolerance:g} s"
 
     # Temperature is a covariate for the same reason. Hotter water is less
     # viscous and extracts faster, so it shortens the shot and shifts the
     # taste independently of the grind. Comparing shots pulled at different
     # temperatures puts that difference into the grind slope.
     temp_tolerance = value_of("temp_tolerance_c")
-    return not (
+    if (
         a.brew_temp_c is not None
         and b.brew_temp_c is not None
         and abs(a.brew_temp_c - b.brew_temp_c) > temp_tolerance
-    )
+    ):
+        return f"brew temperature differs by more than {temp_tolerance:g} C"
+    return None
 
 
 def is_finer(a: float, b: float, caps: GrinderCaps) -> bool:

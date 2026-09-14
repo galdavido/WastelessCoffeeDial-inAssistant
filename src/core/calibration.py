@@ -53,6 +53,14 @@ class Calibration:
     # Every bean on this setup, not just the one asked about: a coffee with no
     # shots of its own is started from the offsets of the ones that resemble it.
     bean_offsets: dict[int, float] = field(default_factory=dict)
+    # How beta was arrived at: beta == w*beta_fitted + (1-w)*beta_prior.
+    # Kept so the shrinkage can be shown rather than asserted -- beta_fitted is
+    # None when there was no usable fit, or when the one there was disagreed
+    # with the physics and was discarded.
+    beta_prior_value: float | None = None
+    beta_fitted: float | None = None
+    shrink_weight: float = 0.0
+    kappa: float = 0.0
 
     @property
     def is_fitted(self) -> bool:
@@ -72,29 +80,49 @@ def theil_sen_slope(points: Sequence[tuple[float, float]]) -> float | None:
     return statistics.median(slopes)
 
 
-def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
-    """Theil-Sen over shot pairs that were actually prepared the same way.
+@dataclass(frozen=True)
+class SlopeTerm:
+    """One pairwise slope, and which two shots produced it.
 
-    Because the estimator is built from pairwise slopes, excluding an
-    incomparable pair is exactly one term dropped -- no reweighting, no model
-    change. A pair whose pre-infusion differs measures preparation as much as
-    grind, and including it would put that difference into the slope.
-
-    Pairs must also stay within one coffee. delta_bean is precisely the
-    statement that two bags sit at different intercepts, so a cross-bean pair's
-    rise is the grind difference *plus* that gap -- and where one coffee runs
-    faster than the other, that gap can outweigh the grind term and invert the
-    sign, which makes fit_setup discard the whole fit. Beta is still fitted
-    across every bag: each coffee contributes its own pairs to the same median.
+    Indices are positions in the sequence handed to theil_sen_terms(), so a
+    caller that serialises the same sequence can point at the exact shots.
     """
-    slopes: list[float] = []
+
+    slope: float
+    a_index: int
+    b_index: int
+    bean_id: int | None
+
+
+def theil_sen_terms(shots: Sequence[ShotRecord]) -> list[SlopeTerm]:
+    """Every pairwise slope the fit is built from, in order.
+
+    `theil_sen_comparable()` is the median of these, which is the whole reason
+    this is exposed: a view that wants to show the working can draw the terms
+    the fit actually used rather than recomputing them and drifting out of
+    step with the engine.
+
+    Two kinds of pair are dropped. **Prepared differently** -- a pair whose
+    pre-infusion, pause or brew temperature differs measures preparation as
+    much as grind, and including it would put that difference into the slope.
+    **Different coffees** -- delta_bean is precisely the statement that two
+    bags sit at different intercepts, so a cross-bean pair's rise is the grind
+    difference *plus* that gap; where one coffee runs faster than the other
+    that gap can outweigh the grind term and invert the sign, which makes
+    fit_setup discard the whole fit. Beta is still fitted across every bag:
+    each coffee contributes its own pairs to the same median.
+
+    Because the estimator is built from pairwise slopes, excluding a pair is
+    exactly one term dropped -- no reweighting, no model change.
+    """
+    terms: list[SlopeTerm] = []
     usable = [
-        (s, normalised_time(s))
-        for s in shots
-        if s.grind_clicks is not None and normalised_time(s) not in (None, 0)
+        (index, shot, normalised_time(shot))
+        for index, shot in enumerate(shots)
+        if shot.grind_clicks is not None and normalised_time(shot) not in (None, 0)
     ]
-    for i, (a, tr_a) in enumerate(usable):
-        for b, tr_b in usable[i + 1 :]:
+    for position, (i, a, tr_a) in enumerate(usable):
+        for j, b, tr_b in usable[position + 1 :]:
             if a.grind_clicks is None or b.grind_clicks is None:
                 continue
             if a.grind_clicks == b.grind_clicks:
@@ -105,12 +133,24 @@ def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
                 continue
             if tr_a is None or tr_b is None or tr_a <= 0 or tr_b <= 0:
                 continue
-            slopes.append(
-                (math.log(tr_b) - math.log(tr_a)) / (b.grind_clicks - a.grind_clicks)
+            terms.append(
+                SlopeTerm(
+                    slope=(math.log(tr_b) - math.log(tr_a))
+                    / (b.grind_clicks - a.grind_clicks),
+                    a_index=i,
+                    b_index=j,
+                    bean_id=a.bean_id,
+                )
             )
-    if not slopes:
+    return terms
+
+
+def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
+    """The median of the pairwise slopes in `theil_sen_terms()`."""
+    terms = theil_sen_terms(shots)
+    if not terms:
         return None
-    return statistics.median(slopes)
+    return statistics.median(term.slope for term in terms)
 
 
 def _usable(shots: Sequence[ShotRecord]) -> list[tuple[float, float]]:
@@ -219,6 +259,10 @@ def fit_setup(
         click_span=span,
         confidence=round(confidence, 2),
         bean_offsets=offsets,
+        beta_prior_value=beta_prior_value,
+        beta_fitted=fitted,
+        shrink_weight=weight,
+        kappa=kappa,
     )
 
 

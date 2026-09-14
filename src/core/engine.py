@@ -13,6 +13,7 @@ given anything to say about it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -27,18 +28,28 @@ from .brewing import (
     MachineCaps,
     Method,
     Recipe,
+    ShotRecord,
+    Target,
     apply_guardrails,
     beta_prior,
     clicks_for_target,
     cold_start_clicks,
     correct,
+    finest_useful_clicks,
+    normalised_time,
     prep_advice,
+    prep_incomparable_reason,
     resistance_disagreement,
     snap_to_step,
     target_for,
     temp_band_for_roast,
 )
-from .calibration import Calibration, confidence_label, fit_setup
+from .calibration import (
+    Calibration,
+    confidence_label,
+    fit_setup,
+    theil_sen_terms,
+)
 from .retrieval import (
     CALIBRATION_PROTOCOL,
     BeanFeatures,
@@ -62,6 +73,12 @@ class EngineResult:
     tier: str
     llm_model: str | None
     protocol: str | None = None
+    # The inputs this pass actually used, kept so a view can show the working
+    # without re-running retrieval and drifting from the numbers above.
+    history: tuple[ShotRecord, ...] = ()
+    bean_history: tuple[ShotRecord, ...] = ()
+    target: Target | None = None
+    caps: GrinderCaps | None = None
 
 
 def _grinder_caps(grinder: Equipment | None) -> GrinderCaps:
@@ -107,11 +124,16 @@ def recommend(
     bean: Bean | None,
     dose_g: float,
     style: str | None = None,
+    explain: bool = True,
 ) -> EngineResult:
     """Produce a recommendation for the active setup and this coffee.
 
     Every shot the engine learns from is scoped to ``owner`` so users on the
     same instance never inform each other's numbers or rationale.
+
+    ``explain=False`` swaps the language model for the deterministic template.
+    Every number is unaffected -- only the prose around them changes -- which
+    is what lets the fit view show this same pass without a model call.
     """
     method: Method = get_active_setup_method(setup)
     grinder = setup.grinder if setup else None
@@ -285,7 +307,12 @@ def recommend(
         context_lines.append(
             f"{len(exemplars)} similar well-rated shots informed this."
         )
-    rationale, llm_model = write_rationale(recipe, label, "\n".join(context_lines))
+    if explain:
+        rationale, llm_model = write_rationale(recipe, label, "\n".join(context_lines))
+    else:
+        # The fit view wants the arithmetic, not prose, and is opened often
+        # enough that paying for a model call each time would be waste.
+        rationale, llm_model = render_template(recipe, label), None
 
     return EngineResult(
         recipe=recipe,
@@ -294,6 +321,10 @@ def recommend(
         tier=tier,
         llm_model=llm_model,
         protocol=protocol,
+        history=tuple(history),
+        bean_history=tuple(bean_history),
+        target=target,
+        caps=caps,
     )
 
 
@@ -362,6 +393,152 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
         "confidence_label": confidence_label(result.calibration),
         "tier": result.tier,
         "protocol": result.protocol,
+    }
+
+
+def _exclusion_reason(
+    shot: ShotRecord, index: int, history: Sequence[ShotRecord]
+) -> str:
+    """Why this shot fed no pairwise slope.
+
+    Answered against the same predicates the fit used, so the explanation can
+    never contradict the decision. A shot pairs with nothing for one of three
+    reasons: it carries no usable measurement, every other shot sits at its
+    exact setting, or each candidate partner was ruled out.
+    """
+    if shot.grind_clicks is None or not normalised_time(shot):
+        return "no grind setting or no time recorded"
+
+    reasons: list[str] = []
+    for other_index, other in enumerate(history):
+        if other_index == index:
+            continue
+        if other.grind_clicks is None or not normalised_time(other):
+            continue
+        if other.grind_clicks == shot.grind_clicks:
+            continue
+        if other.bean_id != shot.bean_id:
+            reasons.append("a different coffee")
+            continue
+        prep = prep_incomparable_reason(shot, other)
+        reasons.append(prep if prep else "comparable")
+
+    if not reasons:
+        return "no other shot of this coffee at a different setting yet"
+    # One distinct reason is worth naming; a mixture is not.
+    distinct = set(reasons)
+    if len(distinct) == 1:
+        return f"every other shot it could pair with is {reasons[0]}"
+    return "not comparable with any other shot of this coffee"
+
+
+def serialize_fit(
+    result: EngineResult,
+    bean_names: dict[int, str],
+    bean_id: int | None,
+) -> dict[str, Any]:
+    """The working behind the recipe: the shots, the terms, and the law.
+
+    Everything here is read off the pass that produced the recipe rather than
+    recomputed, so the picture cannot drift from the numbers the user was
+    given. `theil_sen_terms()` is the same list `theil_sen_comparable()` took
+    the median of, and the shot indices point into `history` in this order.
+    """
+    calibration = result.calibration
+    history = list(result.history)
+    target = result.target
+    caps = result.caps or GrinderCaps()
+
+    terms = theil_sen_terms(history)
+    used = {index for term in terms for index in (term.a_index, term.b_index)}
+
+    # Same arguments apply_guardrails used, so the floor drawn is the floor
+    # that actually clamped the recipe.
+    floor = finest_useful_clicks(result.bean_history or result.history, caps, target)
+
+    shots = []
+    for index, shot in enumerate(history):
+        tr = normalised_time(shot)
+        shots.append(
+            {
+                "index": index,
+                "bean_id": shot.bean_id,
+                "clicks": shot.grind_clicks,
+                "tr": round(tr, 3) if tr else None,
+                "time_s": shot.time_s,
+                "dose_g": shot.dose_g,
+                "yield_g": shot.yield_g,
+                "water_g": shot.water_g,
+                "brew_temp_c": shot.brew_temp_c,
+                "preinfusion_s": shot.preinfusion_s,
+                "pause_s": shot.pause_s,
+                "taste_axis": shot.taste_axis,
+                "rating": shot.rating,
+                "created_at": shot.created_at.isoformat() if shot.created_at else None,
+                "used_in_fit": index in used,
+                "excluded_reason": None
+                if index in used
+                else _exclusion_reason(shot, index, history),
+            }
+        )
+
+    return {
+        "law": {
+            "alpha": calibration.alpha,
+            "beta_used": calibration.beta,
+            "beta_fitted": calibration.beta_fitted,
+            "beta_prior": calibration.beta_prior_value,
+            "beta_source": calibration.beta_source,
+            # Not rounded: the view reconstructs beta_used from this, and a
+            # display-rounded weight breaks that identity by ~1e-6.
+            "shrink_weight": calibration.shrink_weight,
+            "kappa": calibration.kappa,
+            "n_eff": calibration.n_eff,
+            "click_span": calibration.click_span,
+            "confidence": calibration.confidence,
+            "confidence_label": confidence_label(calibration),
+            "tier": result.tier,
+        },
+        "beans": [
+            {
+                "id": candidate_id,
+                "name": bean_names.get(candidate_id, f"Coffee {candidate_id}"),
+                "delta_bean": round(offset, 4),
+                "shots_used": sum(1 for s in history if s.bean_id == candidate_id),
+                "is_current": candidate_id == bean_id,
+            }
+            for candidate_id, offset in sorted(calibration.bean_offsets.items())
+        ],
+        "shots": shots,
+        "pairs": [
+            {
+                "slope": round(term.slope, 5),
+                "a_index": term.a_index,
+                "b_index": term.b_index,
+                "bean_id": term.bean_id,
+            }
+            for term in terms
+        ],
+        "target": {
+            "tr_lo": target.tr_lo if target else None,
+            "tr_hi": target.tr_hi if target else None,
+            "time_lo": target.time_lo if target else None,
+            "time_hi": target.time_hi if target else None,
+            "ratio_aim": target.ratio_aim if target else None,
+        },
+        "floor": {"clicks": floor.clicks, "reason": floor.reason},
+        "grinder": {
+            "min_clicks": caps.min_clicks,
+            "max_clicks": caps.max_clicks,
+            "step_clicks": caps.step_clicks,
+            "um_per_click": caps.um_per_click,
+            "finer_direction": caps.finer_direction,
+        },
+        "recipe": {
+            "grind_clicks": result.recipe.grind_clicks,
+            "basis": result.recipe.basis,
+            "guardrails_hit": list(result.recipe.guardrails_hit),
+        },
     }
 
 
