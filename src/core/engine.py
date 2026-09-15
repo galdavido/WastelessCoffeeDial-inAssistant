@@ -37,6 +37,7 @@ from .brewing import (
     correct,
     finest_useful_clicks,
     normalised_time,
+    preinfusion_experiment,
     prep_advice,
     prep_incomparable_reason,
     resistance_disagreement,
@@ -286,8 +287,26 @@ def recommend(
         disagreement = resistance_disagreement(bean_history[0], history)
         if disagreement:
             prep_notes.append(disagreement)
-    pi_s, pause_s, prep_note = prep_advice(history)
-    prep_notes.append(prep_note)
+    # When the channeling floor has taken the grind lever away, a longer
+    # pre-infusion is the only move left -- and prep_advice cannot make it,
+    # because it reports back the duration the user already uses. Run it as an
+    # explicit experiment instead, holding the grind so the next shot measures
+    # one change and not two.
+    experiment = preinfusion_experiment(
+        history,
+        method,
+        grind_is_stuck="grind_channeling_floor" in recipe.guardrails_hit,
+    )
+    pi_s: float | None
+    pause_s: float | None
+    if experiment is not None:
+        pi_s, pause_s = experiment.preinfusion_s, experiment.pause_s
+        # The experiment's note replaces prep_advice's, which would otherwise
+        # tell the user to keep pre-infusion exactly where it is.
+        prep_notes.append(experiment.note)
+    else:
+        pi_s, pause_s, prep_note = prep_advice(history)
+        prep_notes.append(prep_note)
 
     recipe = Recipe(
         **{
