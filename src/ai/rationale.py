@@ -34,7 +34,10 @@ from core.brewing import Recipe
 from core.optional_deps import require_genai
 
 from .model_selection import (
+    ATTEMPT_CEILING_MS,
+    DEFAULT_ATTEMPT_TIMEOUT_S,
     GEMINI_MODEL_CANDIDATES,
+    resolve_budget_s,
     thinking_level_for,
     try_model_candidates,
 )
@@ -89,12 +92,32 @@ def scrub_numerals(text: str, allowed: frozenset[str]) -> str | None:
     return text
 
 
-def _allowed_tokens(recipe: Recipe) -> frozenset[str]:
+def _allowed_tokens(recipe: Recipe, *engine_text: str) -> frozenset[str]:
+    """Every number the model is permitted to repeat.
+
+    The rule being enforced is "no number the *engine* did not produce", and
+    the engine produces more than the recipe fields: its notes and confidence
+    label name past grind settings, shot counts and the like, and the prompt
+    puts all of them in front of the model and invites it to explain them.
+    Allowing only ``recipe.numeric_tokens()`` therefore rejected responses for
+    quoting the engine's own words back -- a real recommendation was thrown
+    away for saying "26", a setting the engine itself had just described.
+
+    Passing the engine-authored prompt text here keeps the guarantee intact
+    while removing the false rejection: a figure the model invents still
+    appears nowhere in ``engine_text`` and is still refused.
+    """
     tokens = set(recipe.numeric_tokens())
     # Ratio, as it is usually written in prose ("1:2").
     if recipe.yield_g and recipe.dose_g:
         ratio = recipe.yield_g / recipe.dose_g
         tokens.update({f"{ratio:g}", f"{ratio:.1f}"})
+    for source in engine_text:
+        for match in _NUMERAL.finditer(source or ""):
+            token = match.group(0).replace(",", ".")
+            tokens.add(token)
+            if "." in token:
+                tokens.add(token.rstrip("0").rstrip("."))
     return frozenset(tokens)
 
 
@@ -171,14 +194,17 @@ def write_rationale(
     deterministic template was used, which is a normal outcome, not an error.
     """
     template = render_template(recipe, confidence_label)
-    allowed = _allowed_tokens(recipe)
+    allowed = _allowed_tokens(recipe, confidence_label, context, str(recipe))
 
     try:
         genai, types = require_genai()
     except RuntimeError:
         return template, None
 
-    client = genai.Client()
+    # The ceiling is not the budget -- the API rejects a deadline under 10s
+    # (it doubles as X-Server-Timeout). try_model_candidates enforces the real
+    # budget; this only stops an abandoned attempt lingering indefinitely.
+    client = genai.Client(http_options=types.HttpOptions(timeout=ATTEMPT_CEILING_MS))
     prompt = _build_prompt(recipe, confidence_label, context)
     parsed: Rationale | None = None
     used_model: str | None = None
@@ -219,18 +245,25 @@ def write_rationale(
         parsed = candidate
         return True, None
 
+    def close_client() -> None:
+        # Deferred to try_model_candidates: an abandoned attempt is still
+        # using this client, and closing it underneath one raises
+        # "[Errno 9] Bad file descriptor" in that thread.
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
     try:
         try_model_candidates(
             GEMINI_MODEL_CANDIDATES,
             call_model=call_model,
             evaluate_result=evaluate,
+            budget_s=resolve_budget_s(),
+            attempt_timeout_s=DEFAULT_ATTEMPT_TIMEOUT_S,
+            on_all_done=close_client,
         )
     except Exception:
         return template, None
-    finally:
-        close = getattr(client, "close", None)
-        if callable(close):
-            close()
 
     if parsed is None:
         return template, None

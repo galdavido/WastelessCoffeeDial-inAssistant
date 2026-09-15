@@ -7,6 +7,10 @@ from pydantic import BaseModel
 
 from ai.model_selection import (
     GEMINI_MODEL_CANDIDATES,
+    VISION_ATTEMPT_CEILING_MS,
+    VISION_ATTEMPT_TIMEOUT_S,
+    VISION_BUDGET_S,
+    resolve_budget_s,
     thinking_level_for,
     try_model_candidates,
 )
@@ -50,7 +54,10 @@ def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
         _set_last_vision_error(str(exc))
         return None
 
-    return image_module, genai.Client(), types
+    client = genai.Client(
+        http_options=types.HttpOptions(timeout=VISION_ATTEMPT_CEILING_MS)
+    )
+    return image_module, client, types
 
 
 def _build_prompt() -> str:
@@ -96,49 +103,56 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
 
     prompt = _build_prompt()
 
-    try:
-        parsed_payload: dict[str, Any] | None = None
+    parsed_payload: dict[str, Any] | None = None
 
-        def call_model(model_name: str) -> Any:
-            config: dict[str, Any] = {
-                "response_mime_type": "application/json",
-                "response_schema": CoffeeData,
-                "temperature": 0.1,
-            }
-            level = thinking_level_for(model_name)
-            if level:
-                config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
-            return client.models.generate_content(
-                model=model_name,
-                contents=[prompt, img],
-                config=types.GenerateContentConfig(**config),
-            )
-
-        def evaluate_response(response: Any) -> tuple[bool, str | None]:
-            nonlocal parsed_payload
-
-            text = getattr(response, "text", None)
-            if text is None:
-                return False, "empty response"
-
-            parsed = _parse_coffee_data_response(text)
-            if parsed is None:
-                return False, "invalid JSON schema in response"
-
-            parsed_payload = parsed
-            return True, None
-
-        _response, last_error = try_model_candidates(
-            GEMINI_MODEL_CANDIDATES,
-            call_model=call_model,
-            evaluate_result=evaluate_response,
+    def call_model(model_name: str) -> Any:
+        config: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "response_schema": CoffeeData,
+            "temperature": 0.1,
+        }
+        level = thinking_level_for(model_name)
+        if level:
+            config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
+        return client.models.generate_content(
+            model=model_name,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(**config),
         )
 
-        if parsed_payload is not None:
-            _set_last_vision_error(None)
-            return parsed_payload
+    def evaluate_response(response: Any) -> tuple[bool, str | None]:
+        nonlocal parsed_payload
 
-        _set_last_vision_error(last_error or "Unknown extraction error")
-        return None
-    finally:
-        client.close()
+        text = getattr(response, "text", None)
+        if text is None:
+            return False, "empty response"
+
+        parsed = _parse_coffee_data_response(text)
+        if parsed is None:
+            return False, "invalid JSON schema in response"
+
+        parsed_payload = parsed
+        return True, None
+
+    _response, last_error = try_model_candidates(
+        GEMINI_MODEL_CANDIDATES,
+        call_model=call_model,
+        evaluate_result=evaluate_response,
+        # Reading a bag photo is legitimately slower than writing prose
+        # about numbers that are already decided, and there is no
+        # deterministic fallback for OCR -- failing fast here would just
+        # mean the user retypes the bag by hand. Hence a wider budget than
+        # the rationale call's, and a per-attempt cap wide enough for a
+        # real reading (12.6-19.3s measured) rather than the prose call's.
+        budget_s=resolve_budget_s(VISION_BUDGET_S, "WCDA_VISION_BUDGET_S"),
+        attempt_timeout_s=VISION_ATTEMPT_TIMEOUT_S,
+        # Deferred: an abandoned attempt still holds this client.
+        on_all_done=client.close,
+    )
+
+    if parsed_payload is not None:
+        _set_last_vision_error(None)
+        return parsed_payload
+
+    _set_last_vision_error(last_error or "Unknown extraction error")
+    return None
