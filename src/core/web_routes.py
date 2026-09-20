@@ -25,6 +25,7 @@ from .engine import (
     render_legacy_text,
     serialize_result,
 )
+from .quota import AiCall, allowance, consume, report, resets_on
 from .retrieval import get_active_setup_method, to_shot_record
 from .web_helpers import (
     as_non_empty_text,
@@ -302,6 +303,24 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 detail=f"Image exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
             )
 
+        # Checked after the cheap validations so a malformed upload does not
+        # cost anyone a scan, and consumed *before* the model runs: reading a
+        # bag is the only call here with no free fallback, and charging only
+        # for successes would make an image that always fails an unlimited
+        # supply of Gemini calls. The commit is what makes that hold -- left
+        # in this transaction, a later error would roll the counter back.
+        scans = allowance(db, owner, AiCall.VISION)
+        if scans.exhausted:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"You have used all {scans.limit} bag scans this month. "
+                    f"They reset on {resets_on()}. Your saved coffees and "
+                    "recipes are unaffected."
+                ),
+            )
+        consume(db, owner, AiCall.VISION, commit=True)
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
@@ -472,6 +491,18 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.rollback()
             raise _server_error(exc, "update machine") from exc
         return {"status": "updated"}
+
+    @app.get("/api/usage")
+    def get_usage(
+        db: Session = Depends(get_db), owner: str = Depends(get_owner)
+    ) -> dict[str, Any]:
+        """What this owner has spent against the AI quota this month.
+
+        Read by the app to show how many scans are left before the button
+        stops working, which is the difference between a considered upgrade
+        and a confusing 429 at the machine.
+        """
+        return report(db, owner)
 
     @app.get("/api/settings")
     def get_settings(
