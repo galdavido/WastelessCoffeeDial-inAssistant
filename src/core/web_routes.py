@@ -13,18 +13,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from ai.vision import analyze_coffee_bag, get_last_vision_error
-from database.models import (
-    AiUsage,
-    AppSetting,
-    Bean,
-    BrewSetup,
-    DialInLog,
-    Equipment,
-    RationaleCache,
-    Recommendation,
-)
+from database.models import Bean, BrewSetup, DialInLog, Equipment, Recommendation
 
-from .apple_auth import AppleAuthError, issue_session, verify_identity_token
 from .auth import auth_mode, get_owner
 from .brewing import normalised_time, target_for
 from .db_session import get_db
@@ -35,7 +25,6 @@ from .engine import (
     render_legacy_text,
     serialize_result,
 )
-from .quota import AiCall, allowance, consume, report, resets_on
 from .retrieval import get_active_setup_method, to_shot_record
 from .web_helpers import (
     as_non_empty_text,
@@ -57,7 +46,6 @@ from .web_helpers import (
     set_setting,
 )
 from .web_schemas import (
-    AppleSignInRequest,
     BeanRecordInput,
     DoseUpdate,
     EquipmentLibraryCreateInput,
@@ -262,11 +250,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         return {
             "asset_version": asset_version,
             "engine_version": ENGINE_VERSION,
-            # Which identity flow this instance speaks. Public, DB-free and
-            # unauthenticated on purpose: a native client has to know whether
-            # to present a sign-in button *before* it makes a call that would
-            # come back 401, or the first run looks like a broken server.
-            "auth_mode": auth_mode(),
         }
 
     @app.get("/api/whoami")
@@ -279,100 +262,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         elsewhere) in a single request.
         """
         return {"owner": owner, "auth_mode": auth_mode()}
-
-    @app.post("/api/auth/apple")
-    def sign_in_with_apple(
-        body: AppleSignInRequest,
-    ) -> dict[str, Any]:
-        """Exchange an Apple identity token for a session on this server.
-
-        Deliberately the one route with no owner dependency: the caller has
-        no identity here yet, which is the whole point of the request.
-        """
-        if auth_mode() != "apple":
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "This server does not use Sign in with Apple. It is "
-                    f"running in {auth_mode()} mode."
-                ),
-            )
-        try:
-            identity = verify_identity_token(body.identity_token, nonce=body.nonce)
-            token, expires = issue_session(identity.owner)
-        except AppleAuthError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
-
-        return {
-            "session_token": token,
-            "expires_at": expires.isoformat(),
-            "owner": identity.owner,
-        }
-
-    @app.delete("/api/account")
-    def delete_account(
-        db: Session = Depends(get_db), owner: str = Depends(get_owner)
-    ) -> dict[str, str]:
-        """Erase everything belonging to this owner, including bag photos.
-
-        Anywhere real accounts exist, people are entitled to remove them,
-        and some app stores require it outright. Refused in single-user mode, where "the account"
-        is the whole instance and this would be a foot-gun rather than a
-        privacy control.
-        """
-        if auth_mode() == "single":
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "This instance is single-user: there is no account to "
-                    "delete. Remove individual coffees instead."
-                ),
-            )
-
-        try:
-            # Collect the photos first: once the rows are gone there is
-            # nothing left pointing at the files, and they would sit on disk
-            # as orphaned personal data.
-            photos = [
-                row.image_path
-                for row in db.query(DialInLog.image_path)
-                .filter(DialInLog.owner == owner, DialInLog.image_path.isnot(None))
-                .all()
-                if row.image_path
-            ]
-
-            # Order follows the foreign keys: logs point at recommendations,
-            # beans and setups; recommendations point at beans and setups.
-            for model in (
-                DialInLog,
-                Recommendation,
-                Bean,
-                BrewSetup,
-                AppSetting,
-                AiUsage,
-                RationaleCache,
-            ):
-                db.query(model).filter(model.owner == owner).delete(
-                    synchronize_session=False
-                )
-            db.commit()
-        except Exception as exc:
-            db.rollback()
-            raise _server_error(exc, "delete account") from exc
-
-        if uploads_dir:
-            for name in photos:
-                safe_name = os.path.basename(name)
-                if not safe_name or safe_name != name:
-                    continue
-                try:
-                    os.unlink(os.path.join(uploads_dir, safe_name))
-                except OSError:
-                    # The row is already gone; a leftover file is untidy but
-                    # not a reason to fail a deletion the user asked for.
-                    logger.warning("Could not remove log image %s", safe_name)
-
-        return {"status": "deleted"}
 
     @app.get("/sw.js", include_in_schema=False)
     def service_worker() -> FileResponse:
@@ -412,24 +301,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 status_code=413,
                 detail=f"Image exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
             )
-
-        # Checked after the cheap validations so a malformed upload does not
-        # cost anyone a scan, and consumed *before* the model runs: reading a
-        # bag is the only call here with no free fallback, and charging only
-        # for successes would make an image that always fails an unlimited
-        # supply of Gemini calls. The commit is what makes that hold -- left
-        # in this transaction, a later error would roll the counter back.
-        scans = allowance(db, owner, AiCall.VISION)
-        if scans.exhausted:
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    f"You have used all {scans.limit} bag scans this month. "
-                    f"They reset on {resets_on()}. Your saved coffees and "
-                    "recipes are unaffected."
-                ),
-            )
-        consume(db, owner, AiCall.VISION, commit=True)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content)
@@ -601,18 +472,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.rollback()
             raise _server_error(exc, "update machine") from exc
         return {"status": "updated"}
-
-    @app.get("/api/usage")
-    def get_usage(
-        db: Session = Depends(get_db), owner: str = Depends(get_owner)
-    ) -> dict[str, Any]:
-        """What this owner has spent against the AI quota this month.
-
-        Read by the app to show how many scans are left before the button
-        stops working, which is the difference between a considered upgrade
-        and a confusing 429 at the machine.
-        """
-        return report(db, owner)
 
     @app.get("/api/settings")
     def get_settings(

@@ -63,24 +63,6 @@ The two stacks run side by side on one host, so they must not share a port:
   `WCDA_AUTH_MODE=single` — publishing on `0.0.0.0` while in `tailscale` mode
   lets anyone on the LAN forge the identity header. DB is internal-only; the
   web container is `read_only` with `cap_drop: ALL`.
-- **Public (native clients):** `docker compose -f compose.public.yaml
-  --env-file .env.public up -d --build` (compose.public.yaml, project
-  `wcda-public`).
-  `WCDA_AUTH_MODE=apple`: identity comes from a session token this server
-  issues after verifying a Sign in with Apple identity token, so it rests on
-  a signature rather than on the network boundary. Bound to
-  `127.0.0.1:8083`, fronted by Caddy on the host for TLS. **It refuses to
-  start without `WCDA_SESSION_SECRET` and `WCDA_APPLE_BUNDLE_ID`** — either
-  one missing means forged sessions would be accepted. Owners look like
-  `apple:<sub>`; the prefix keeps the identity source visible and makes a
-  collision with a Tailscale login impossible. Full setup:
-  **`docs/public-deploy.md`**.
-- `GET /api/version` reports `auth_mode` unauthenticated, which is how a
-  client knows whether to show a sign-in button before making a call that
-  would come back 401.
-- `DELETE /api/account` erases everything an owner has, including their bag
-  photos on disk. Refused in `single` mode, where "the account" is the whole
-  instance.
 - Identity headers are populated for tailnet users, **including external users
   who accepted a node share** — that is what lets friends in — but never for
   *tagged* devices, which is the usual cause of an unexpected 401.
@@ -155,43 +137,10 @@ The two stacks run side by side on one host, so they must not share a port:
 - `ruff check .` and `ruff format --check .`; `mypy src`.
 - Dev install: `pip install -e '.[dev]'` (or run the checks in a throwaway
   `python:3.14-slim` container with the repo mounted).
-- **The agent container's default `python3` is 3.11, which cannot even parse
-  this code** — `model_selection.py` uses PEP 695 generics (`def f[T](...)`),
-  which need 3.12+. `python3.13` *is* installed, so the whole suite runs
-  locally with `uv venv --python 3.13 .venv && uv pip install -e '.[dev]'`.
-  Do that rather than concluding the tests cannot run here.
 - CI: `.github/workflows/ci.yml` (quality / test / docker-build). **CI's
   Postgres service is plain `postgres:16-alpine`** — a migration that runs
   `CREATE EXTENSION vector` would fail CI; add pgvector to the CI service if
   that ever happens.
-
-## AI cost and quotas
-
-The Gemini key is one shared credential with a daily ceiling, so every
-billable call is counted per owner per calendar month (`src/core/quota.py`,
-`ai_usage` table). Before this existed nothing counted what the app spent,
-and a single enthusiastic user could exhaust the key for everyone.
-
-- **The two call kinds fail differently, deliberately.** A bag scan
-  (`vision`) has no non-AI fallback, so over quota `/api/analyze` returns
-  **429**. The prose around a recipe (`rationale`) has a deterministic
-  template, so over quota it **degrades silently** — and the numbers are
-  identical either way, because the engine fixes every one of them and
-  `scrub_numerals` rejects any figure the model invents. A free-tier user
-  loses the phrasing, not the recipe.
-- **Vision is consumed before the call, and committed on its own.** Charging
-  only for successes would make an image that always fails an unlimited
-  supply of Gemini calls; leaving the counter in the request transaction
-  would let a later error roll it back. Both are the same hole.
-- **`single` mode is never metered.** That instance is the owner's own
-  machine using the owner's own key.
-- `core.prose.rationale_for` is the only path to the prose model. It answers
-  three questions in order: already written (`rationale_cache`, keyed on a
-  hash of the *prompt*), allowed, then what the model says. Never call
-  `write_rationale` directly from a request path.
-- Entitlement is an env allowlist (`WCDA_ENTITLED_OWNERS`) — the seam a real
-  subscription lookup replaces. **Shipping this to the friends instance drops
-  everyone not listed to the free tier.**
 
 ## Frontend conventions
 

@@ -188,62 +188,6 @@ class DialInLog(Base):
 
 
 # 4. Simple key-value settings table for app preferences.
-# Every billable AI call is counted here before it is made. The Gemini key is
-# a single shared credential with a daily ceiling, so an unmetered instance is
-# one enthusiastic user away from being unusable for everyone -- see
-# core.quota for the limits and how they are enforced.
-class AiUsage(Base):
-    __tablename__ = "ai_usage"
-    __table_args__ = (
-        UniqueConstraint(
-            "owner", "period", "kind", name="uq_ai_usage_owner_period_kind"
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner: Mapped[str] = mapped_column(String, index=True)
-    # Calendar month as "YYYY-MM", in UTC. A rolling window would be fairer
-    # but needs per-call rows; a month is what the user is told and what the
-    # counter resets on.
-    period: Mapped[str] = mapped_column(String(7), index=True)
-    # core.quota.AiCall: "vision" (reading a bag) or "rationale" (the prose).
-    kind: Mapped[str] = mapped_column(String(16))
-    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-# Prose already written for an identical recipe. The client refreshes the
-# recommendation on every dose change, every setup switch and after every
-# saved shot, so the same explanation was being paid for repeatedly. Keyed on
-# a hash of the prompt itself, so a cache hit is byte-identical to what the
-# model would have been asked.
-class RationaleCache(Base):
-    __tablename__ = "rationale_cache"
-    __table_args__ = (
-        UniqueConstraint(
-            "owner", "fingerprint", name="uq_rationale_cache_owner_fingerprint"
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    # Scoped per owner even though the prompt hash would collide safely: the
-    # context line carries the owner's own shot history, so sharing rows
-    # across users would leak one person's history into another's prose.
-    owner: Mapped[str] = mapped_column(String, index=True)
-    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
-    headline: Mapped[str] = mapped_column(Text)
-    why: Mapped[str] = mapped_column(Text)
-    what_to_watch: Mapped[str] = mapped_column(Text)
-    # Which model wrote it; NULL is never stored here, because a template
-    # rationale costs nothing and is not worth caching.
-    model: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
 # Settings are per-owner: active_setup_id, default_dose_g and
 # default_grind_offset_clicks were global singletons before multi-user, so the
 # unique key is (owner, key), not key alone.

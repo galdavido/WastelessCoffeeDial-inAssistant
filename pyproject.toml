@@ -22,7 +22,6 @@ dependencies = [
     "python-dotenv==1.2.2",
     "google-genai==1.67.0",
     "pillow==12.1.1",
-    "pyjwt[crypto]==2.10.1",
 ]
 
 [project.optional-dependencies]

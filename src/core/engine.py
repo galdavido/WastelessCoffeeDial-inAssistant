@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ai.rationale import Rationale, render_template
+from ai.rationale import Rationale, render_template, write_rationale
 from database.models import Bean, BrewSetup, Equipment, Recommendation
 
 from .brewing import (
@@ -39,7 +39,6 @@ from .brewing import (
     temp_band_for_roast,
 )
 from .calibration import Calibration, confidence_label, fit_setup
-from .prose import rationale_for
 from .retrieval import (
     CALIBRATION_PROTOCOL,
     BeanFeatures,
@@ -286,12 +285,7 @@ def recommend(
         context_lines.append(
             f"{len(exemplars)} similar well-rated shots informed this."
         )
-    # Goes through core.prose rather than straight to the model: the clients
-    # ask for a recommendation far more often than a person reads a new
-    # explanation, so this is where a cached or template rationale is chosen.
-    rationale, llm_model = rationale_for(
-        db, owner, recipe, label, "\n".join(context_lines)
-    )
+    rationale, llm_model = write_rationale(recipe, label, "\n".join(context_lines))
 
     return EngineResult(
         recipe=recipe,

@@ -25,7 +25,6 @@ removed.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from typing import Any, Literal
 
@@ -129,18 +128,6 @@ def render_template(recipe: Recipe, confidence_label: str) -> Rationale:
         why=" ".join(why_parts),
         what_to_watch=watch,
     )
-
-
-def prompt_fingerprint(recipe: Recipe, confidence_label: str, context: str = "") -> str:
-    """A stable key for the prose this prompt would produce.
-
-    Hashing the built prompt rather than the recipe fields means a cache hit
-    is byte-identical to what the model would have been asked -- if the
-    prompt wording ever changes, every key changes with it and the cache
-    refills rather than serving prose written against the old instructions.
-    """
-    prompt = _build_prompt(recipe, confidence_label, context)
-    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
 def _build_prompt(recipe: Recipe, confidence_label: str, context: str) -> str:
