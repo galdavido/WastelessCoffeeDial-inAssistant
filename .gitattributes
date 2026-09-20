@@ -4,3 +4,10 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# Assets shipped inside the native apps. text=auto already detects these as
+# binary, but say it outright: a line-ending filter run over a TTF or a PNG
+# corrupts it silently.
+*.ttf binary
+*.png binary
+*.woff2 binary

@@ -50,6 +50,19 @@ class RecommendationRequest(BaseModel):
         return self
 
 
+class AppleSignInRequest(BaseModel):
+    """What the app posts after Sign in with Apple returns.
+
+    ``nonce`` is the *raw* random string the app hashed into the
+    authorization request. Apple echoes the hash in the token, so sending
+    the raw value lets the server prove this token answers this request
+    rather than being a replay of an older one.
+    """
+
+    identity_token: str
+    nonce: str | None = None
+
+
 class EquipmentUpdate(BaseModel):
     brand: str
     model: str

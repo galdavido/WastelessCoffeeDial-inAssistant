@@ -1,0 +1,162 @@
+# The public stack: a deployment a native client can reach from anywhere.
+#
+#   docker compose -f compose.public.yaml --env-file .env.public up -d --build
+#
+# Deliberately a third file rather than a flag on compose.prod.yaml. The two
+# differ in the one place it matters most -- who is trusted to say who you
+# are -- and a stack whose identity model depends on an environment variable
+# is a stack that will one day come up in the wrong one.
+#
+#   compose.yaml        dev,     single user,  LAN,       port 8082
+#   compose.prod.yaml   friends, Tailscale,    loopback,  port 8081
+#   compose.public.yaml public,  Apple,        loopback,  port 8083
+#
+# All three bind to loopback or the LAN only. This one is public through
+# Caddy on the host, which terminates TLS and forwards to 127.0.0.1:8083 --
+# see docs/public-deploy.md. Nothing here should ever be published on
+# 0.0.0.0 directly: TLS is not optional once real accounts exist.
+name: wcda-public
+
+services:
+  db:
+    # pgvector image: the schema uses the `vector` extension
+    # (scraped_equipment.embedding). Plain postgres:* will not work.
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-barista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-barista_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-barista} -d ${POSTGRES_DB:-barista_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    # A unique alias, not the bare service name. Both other stacks also have
+    # a service called `db`, so a container that ends up on two compose
+    # networks resolves `db` to whichever answers first -- that is exactly
+    # how the dev app came to read the friends' database for half a day.
+    networks:
+      backend:
+        aliases:
+          - wcda-public-db
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    environment:
+      # Addressed as wcda-public-db so a container that ends up on two
+      # compose networks cannot resolve a bare `db` to another stack's
+      # database -- that happened once and the dev app served the friends'
+      # rows for half a day. See CLAUDE.md.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-barista}:${POSTGRES_PASSWORD}@wcda-public-db:5432/${POSTGRES_DB:-barista_db}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      WEB_PORT: "8080"
+      LOG_IMAGES_DIR: /app/data/log_images
+      PYTHONUNBUFFERED: "1"
+
+      # Identity comes from a signature, not from the network boundary: the
+      # app signs in with Apple and this server issues its own session token.
+      # The app refuses to start without both of the secrets below, because
+      # either one missing means it would accept forged sessions.
+      WCDA_AUTH_MODE: apple
+      WCDA_APPLE_BUNDLE_ID: ${WCDA_APPLE_BUNDLE_ID:?WCDA_APPLE_BUNDLE_ID is required}
+      WCDA_SESSION_SECRET: ${WCDA_SESSION_SECRET:?WCDA_SESSION_SECRET is required}
+      WCDA_SESSION_DAYS: ${WCDA_SESSION_DAYS:-90}
+
+      # AI spending limits. Strangers can reach this instance, so the free
+      # tier is what stands between one script and an exhausted Gemini key.
+      WCDA_FREE_SCANS_PER_MONTH: ${WCDA_FREE_SCANS_PER_MONTH:-5}
+      WCDA_PAID_SCANS_PER_MONTH: ${WCDA_PAID_SCANS_PER_MONTH:-100}
+      WCDA_FREE_PROSE_PER_MONTH: ${WCDA_FREE_PROSE_PER_MONTH:-0}
+      WCDA_PAID_PROSE_PER_MONTH: ${WCDA_PAID_PROSE_PER_MONTH:--1}
+      WCDA_ENTITLED_OWNERS: ${WCDA_ENTITLED_OWNERS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Loopback only. Caddy on the host holds the certificate and forwards
+    # here; binding this to 0.0.0.0 would serve the app over plain HTTP to
+    # the internet, session tokens and all.
+    ports:
+      - "127.0.0.1:8083:8080"
+    read_only: true
+    volumes:
+      - log_images:/app/data/log_images
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 200
+    mem_limit: 768m
+    cpus: 1.5
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nightly pg_dump with rotation, into ./backups/public-db/ on the host.
+  # `docker compose up -d --build web` starts only web and its depends_on,
+  # never this -- bring the stack up without naming a service, or the dump
+  # quietly never runs.
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: wcda-public-db
+      POSTGRES_DB: ${POSTGRES_DB:-barista_db}
+      POSTGRES_USER: ${POSTGRES_USER:-barista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_EXTRA_OPTS: "--no-owner --no-privileges"
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: "14"
+      BACKUP_KEEP_WEEKS: "8"
+      BACKUP_KEEP_MONTHS: "6"
+      HEALTHCHECK_PORT: "8080"
+    volumes:
+      - ./backups/public-db:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  log_images:
+
+networks:
+  backend:
+    driver: bridge
