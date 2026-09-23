@@ -19,7 +19,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=39" />
+  <link rel="stylesheet" href="/static/style.css?v=40" />
 </head>
 <body>
   <div id="app">
@@ -145,6 +145,24 @@
             <p class="recipe-for" id="recipe-setup-line"></p>
           </div>
 
+          <!-- Arriving here to fine-tune means you have not brewed yet, so the
+               action is "record what happens", not "confirm it worked". It sits
+               at the top so it is reachable without scrolling past the rationale
+               and shot history. -->
+          <div class="feedback-bar">
+            <p class="feedback-label">Pull the shot, then record it</p>
+            <div class="feedback-actions">
+              <button class="btn btn-success" id="btn-worked">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>
+                </svg>
+                Log this shot
+              </button>
+              <button class="btn btn-ghost" id="btn-scan-again">Back to my coffees</button>
+            </div>
+            <p class="feedback-hint">Opens the pre-infusion timer, grind, weights and taste.</p>
+          </div>
+
           <div class="dose-adjust">
             <label class="dose-adjust-label" for="scan-dose-input">Dose for this shot</label>
             <div class="dose-adjust-row">
@@ -184,22 +202,6 @@
             <div id="history-rows"></div>
             <p class="dialog-hint" id="history-note"></p>
           </section>
-
-          <!-- Arriving here to fine-tune means you have not brewed yet, so the
-               action is "record what happens", not "confirm it worked". -->
-          <div class="feedback-bar">
-            <p class="feedback-label">Pull the shot, then record it</p>
-            <div class="feedback-actions">
-              <button class="btn btn-success" id="btn-worked">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>
-                </svg>
-                Log this shot
-              </button>
-              <button class="btn btn-ghost" id="btn-scan-again">Back to my coffees</button>
-            </div>
-            <p class="feedback-hint">Opens the pre-infusion timer, grind, weights and taste.</p>
-          </div>
         </div>
 
         <!-- Success state -->
@@ -678,6 +680,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=39"></script>
+  <script src="/static/app.js?v=40"></script>
 </body>
 </html>
