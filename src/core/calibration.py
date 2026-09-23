@@ -33,6 +33,7 @@ from .brewing import (
     GrinderCaps,
     Method,
     ShotRecord,
+    dose_log,
     normalised_time,
     prep_incomparable_reason,
     value_of,
@@ -61,6 +62,17 @@ class Calibration:
     beta_fitted: float | None = None
     shrink_weight: float = 0.0
     kappa: float = 0.0
+    # The dose term: ln T_r gains gamma * ln(dose). Zero where the law has no
+    # dose term (pour-over, moka) -- see docs/science.md#dose-term. Shrunk
+    # toward the Darcy prior exactly as beta is.
+    gamma: float = 0.0
+    gamma_prior: float = 0.0
+    gamma_fitted: float | None = None
+    gamma_weight: float = 0.0
+    n_dose_pairs: int = 0
+    # The gamma beta's pairs were adjusted with, so a view can rebuild exactly
+    # the terms the median was taken of.
+    pair_gamma: float = 0.0
 
     @property
     def is_fitted(self) -> bool:
@@ -89,7 +101,11 @@ class SlopePair:
         return self.rejected is None and self.slope is not None
 
 
-def theil_sen_pairs(shots: Sequence[ShotRecord]) -> list[SlopePair]:
+def _dose_log(shot: ShotRecord) -> float:
+    return dose_log(shot.dose_g)
+
+
+def theil_sen_pairs(shots: Sequence[ShotRecord], gamma: float = 0.0) -> list[SlopePair]:
     """Every candidate pair, accepted or rejected, with the reason.
 
     One place decides what counts, so the accepted list and the rejected list
@@ -108,6 +124,11 @@ def theil_sen_pairs(shots: Sequence[ShotRecord]) -> list[SlopePair]:
 
     Because the estimator is built from pairwise slopes, excluding a pair is
     exactly one term dropped -- no reweighting, no model change.
+
+    Dose is not a reason to drop a pair: its effect is known in form
+    (``gamma * ln dose``, docs/science.md#dose-term) and is taken out of the
+    rise before dividing by the click difference, so two shots at different
+    doses still measure the grinder.
     """
     pairs: list[SlopePair] = []
     usable = [
@@ -131,7 +152,12 @@ def theil_sen_pairs(shots: Sequence[ShotRecord]) -> list[SlopePair]:
             else:
                 reason = prep_incomparable_reason(a, b)
             slope = (
-                (math.log(tr_b) - math.log(tr_a)) / (b.grind_clicks - a.grind_clicks)
+                (
+                    math.log(tr_b)
+                    - math.log(tr_a)
+                    - gamma * (_dose_log(b) - _dose_log(a))
+                )
+                / (b.grind_clicks - a.grind_clicks)
                 if reason is None and tr_a and tr_b
                 else None
             )
@@ -148,35 +174,98 @@ def theil_sen_pairs(shots: Sequence[ShotRecord]) -> list[SlopePair]:
     return pairs
 
 
-def theil_sen_terms(shots: Sequence[ShotRecord]) -> list[SlopePair]:
+def theil_sen_terms(shots: Sequence[ShotRecord], gamma: float = 0.0) -> list[SlopePair]:
     """Only the pairs the fit is built from. `theil_sen_comparable()` medians these."""
-    return [pair for pair in theil_sen_pairs(shots) if pair.used]
+    return [pair for pair in theil_sen_pairs(shots, gamma) if pair.used]
 
 
-def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
+def theil_sen_comparable(
+    shots: Sequence[ShotRecord], gamma: float = 0.0
+) -> float | None:
     """The median of the pairwise slopes in `theil_sen_terms()`.
 
     A median, so a minority of mis-logged shots barely moves it.
     """
-    slopes = [pair.slope for pair in theil_sen_terms(shots) if pair.slope is not None]
+    slopes = [
+        pair.slope for pair in theil_sen_terms(shots, gamma) if pair.slope is not None
+    ]
     if not slopes:
         return None
     return statistics.median(slopes)
 
 
-def _usable(shots: Sequence[ShotRecord]) -> list[tuple[float, float]]:
-    """(clicks, ln T_r) for shots that carry both."""
+def dose_slopes(shots: Sequence[ShotRecord], beta: float) -> list[float]:
+    """Pairwise estimates of gamma: d ln T_r / d ln dose, grind taken out.
+
+    The same pairs theil_sen_pairs() would accept -- one coffee, prepared the
+    same way -- restricted to those whose doses differ by enough to measure.
+    Each pair's rise has its grind difference removed with ``beta`` first,
+    so a pair need not share a setting to say something about dose.
+    """
+    min_diff = value_of("dose_pair_min_diff_g")
+    usable = [
+        (shot, normalised_time(shot))
+        for shot in shots
+        if shot.grind_clicks is not None
+        and shot.dose_g
+        and shot.dose_g > 0
+        and normalised_time(shot) not in (None, 0)
+    ]
+    out: list[float] = []
+    for i, (a, tr_a) in enumerate(usable):
+        for b, tr_b in usable[i + 1 :]:
+            if a.bean_id != b.bean_id or abs(a.dose_g - b.dose_g) < min_diff:
+                continue
+            if prep_incomparable_reason(a, b) is not None:
+                continue
+            assert tr_a and tr_b and a.grind_clicks is not None
+            assert b.grind_clicks is not None
+            rise = math.log(tr_b) - math.log(tr_a)
+            rise -= beta * (b.grind_clicks - a.grind_clicks)
+            out.append(rise / (_dose_log(b) - _dose_log(a)))
+    return out
+
+
+def fit_gamma(
+    shots: Sequence[ShotRecord], beta: float, prior: float
+) -> tuple[float, float | None, float, int]:
+    """(gamma, gamma_fitted, weight, pairs): the dose exponent, shrunk.
+
+    A fit at or below zero says a heavier dose ran *faster*, which no bed of
+    coffee does; like a wrong-signed beta it is discarded rather than trusted.
+    """
+    slopes = dose_slopes(shots, beta)
+    if not slopes:
+        return prior, None, 0.0, 0
+    fitted = statistics.median(slopes)
+    if fitted <= 0:
+        return prior, None, 0.0, len(slopes)
+    weight = len(slopes) / (len(slopes) + value_of("kappa_dose"))
+    return weight * fitted + (1.0 - weight) * prior, fitted, weight, len(slopes)
+
+
+def _usable(
+    shots: Sequence[ShotRecord], gamma: float = 0.0
+) -> list[tuple[float, float]]:
+    """(clicks, ln T_r - gamma ln dose) for shots that carry both.
+
+    The dose term is taken out here so everything fitted on these points --
+    the intercept, the bean offsets -- is the law at the reference dose.
+    """
     out: list[tuple[float, float]] = []
     for shot in shots:
         tr = normalised_time(shot)
         if shot.grind_clicks is None or tr is None or tr <= 0:
             continue
-        out.append((shot.grind_clicks, math.log(tr)))
+        out.append((shot.grind_clicks, math.log(tr) - gamma * _dose_log(shot)))
     return out
 
 
 def bean_offsets(
-    shots: Sequence[ShotRecord], alpha: float | None, beta: float | None
+    shots: Sequence[ShotRecord],
+    alpha: float | None,
+    beta: float | None,
+    gamma: float = 0.0,
 ) -> dict[int, float]:
     """The per-bean intercept offset delta_bean, for every bean in `shots`.
 
@@ -197,7 +286,7 @@ def bean_offsets(
         if shot.bean_id is None or shot.grind_clicks is None or tr is None or tr <= 0:
             continue
         residuals.setdefault(shot.bean_id, []).append(
-            math.log(tr) - (alpha + beta * shot.grind_clicks)
+            math.log(tr) - (alpha + beta * shot.grind_clicks + gamma * _dose_log(shot))
         )
 
     kappa_bean = value_of("kappa_bean")
@@ -220,6 +309,11 @@ def fit_setup(
         # law to fit and pretending otherwise would invent a lever.
         return Calibration(beta=None, beta_source="none", confidence=0.0)
 
+    # The dose term is espresso's: a pump holds the pressure fixed, so Darcy's
+    # bed-depth scaling applies. Pour-over drawdown is set by the pour and the
+    # head of water, and moka never reaches here. docs/science.md#dose-term.
+    gamma_prior = value_of("dose_exponent_prior") if method == "espresso" else 0.0
+
     points = _usable(shots)
     distinct = sorted({clicks for clicks, _ in points})
     # Shots at one setting carry no slope information however many there are.
@@ -229,6 +323,7 @@ def fit_setup(
     kappa = value_of("kappa_espresso" if method == "espresso" else "kappa_pourover")
 
     fitted: float | None = None
+    pair_gamma = gamma_prior
     min_span = 3.0 * (caps.step_clicks or 1.0)
     if n_eff >= 3 and span >= min_span:
         # Only comparable pairs count. There is deliberately no fallback to
@@ -236,7 +331,15 @@ def fit_setup(
         # same-coffee, same-preparation pair to learn from, and pooling then
         # measures the gap between bags (or between preparations) instead of
         # the grinder. The prior is the honest answer in that case.
-        fitted = theil_sen_comparable(shots)
+        # Beta first with the prior dose exponent, then gamma given that beta,
+        # then beta again with the gamma actually used. One round is enough:
+        # the two terms are nearly orthogonal unless dose and grind moved
+        # together, and then no amount of iterating separates them.
+        pair_gamma = gamma_prior
+        fitted = theil_sen_comparable(shots, pair_gamma)
+        if gamma_prior and fitted is not None and fitted * beta_prior_value > 0:
+            pair_gamma, *_ = fit_gamma(shots, fitted, gamma_prior)
+            fitted = theil_sen_comparable(shots, pair_gamma)
         # A fit whose sign disagrees with the physics is not a better estimate
         # of the slope -- it is the channeling signature. Discard it and let
         # the guardrail in brewing.finest_useful_clicks deal with it.
@@ -250,11 +353,18 @@ def fit_setup(
         beta = weight * fitted + (1.0 - weight) * beta_prior_value
         source = "shrunk"
 
+    gamma, gamma_fitted, gamma_weight, n_dose_pairs = gamma_prior, None, 0.0, 0
+    if gamma_prior:
+        gamma, gamma_fitted, gamma_weight, n_dose_pairs = fit_gamma(
+            shots, beta, gamma_prior
+        )
+
     alpha = None
+    points = _usable(shots, gamma)
     if points and beta:
         alpha = statistics.median(y - beta * x for x, y in points)
 
-    offsets = bean_offsets(shots, alpha, beta)
+    offsets = bean_offsets(shots, alpha, beta, gamma)
     delta = offsets.get(bean_id, 0.0) if bean_id is not None else 0.0
 
     cap = 1.0
@@ -277,6 +387,12 @@ def fit_setup(
         beta_fitted=fitted,
         shrink_weight=weight,
         kappa=kappa,
+        gamma=gamma,
+        gamma_prior=gamma_prior,
+        gamma_fitted=gamma_fitted,
+        gamma_weight=gamma_weight,
+        n_dose_pairs=n_dose_pairs,
+        pair_gamma=pair_gamma,
     )
 
 

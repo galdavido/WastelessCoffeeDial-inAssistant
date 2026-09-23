@@ -113,9 +113,40 @@ CONSTANTS: dict[str, Constant] = {
     ),
     "k6_um_per_click": Constant(16.0, "um", "CALIBRATED", "#k6-caps"),
     # --- heuristics -------------------------------------------------------
+    "dose_exponent_prior": Constant(
+        2.0,
+        "exponent",
+        "PHYSICS",
+        "#dose-term",
+        "T_r scales as dose^2 at a fixed ratio: Darcy's time goes with volume "
+        "times bed depth, and both go with dose",
+    ),
+    "dose_reference_g": Constant(
+        18.0,
+        "g",
+        "HEURISTIC",
+        "#dose-fit",
+        "the dose the law's intercept is quoted at; a centring choice that "
+        "changes no prediction",
+    ),
     "kappa_espresso": Constant(4.0, "shots", "HEURISTIC", "#shrinkage"),
     "kappa_pourover": Constant(8.0, "shots", "HEURISTIC", "#shrinkage"),
     "kappa_bean": Constant(2.0, "shots", "HEURISTIC", "#shrinkage"),
+    "kappa_dose": Constant(
+        4.0,
+        "pairs",
+        "HEURISTIC",
+        "#dose-fit",
+        "dose pairs at which the fitted dose exponent and the prior weigh equally",
+    ),
+    "dose_pair_min_diff_g": Constant(
+        0.5,
+        "g",
+        "HEURISTIC",
+        "#dose-fit",
+        "dose difference below which a pair says nothing measurable about dose "
+        "-- the scale and basket are not that repeatable",
+    ),
     "similarity_roast": Constant(0.25, "weight", "HEURISTIC", "#similarity"),
     "similarity_process": Constant(0.15, "weight", "HEURISTIC", "#similarity"),
     "similarity_origin": Constant(0.10, "weight", "HEURISTIC", "#similarity"),
@@ -477,18 +508,32 @@ def solve_grind(
     return current_clicks + (math.log(tr_target) - math.log(tr_observed)) / beta
 
 
+def dose_log(dose_g: float | None) -> float:
+    """ln(dose / reference dose): the dose term's variable, docs/science.md#dose-term.
+
+    Centred on the reference dose so alpha stays the intercept at an ordinary
+    dose rather than at 1 g, and 0 for a missing dose -- i.e. "assume the
+    reference", which is what the law meant before it had a dose term.
+    """
+    if not dose_g or dose_g <= 0:
+        return 0.0
+    return math.log(dose_g / value_of("dose_reference_g"))
+
+
 def clicks_for_target(
     alpha: float | None,
     beta: float | None,
     tr_target: float,
     delta_bean: float = 0.0,
+    gamma: float = 0.0,
+    dose_g: float | None = None,
 ) -> float | None:
     """Where to set the dial for a coffee with no shots of its own.
 
     Solves docs/science.md#beta-law for c rather than correcting from a
     measured shot:
 
-        c = (ln T_r_target - alpha - delta_bean) / beta
+        c = (ln T_r_target - alpha - delta_bean - gamma * ln(dose / 18 g)) / beta
 
     This is the honest answer for a new bag on a calibrated setup. Correcting
     from the last shot would be correcting from a *different* coffee, which is
@@ -500,7 +545,8 @@ def clicks_for_target(
     """
     if alpha is None or not beta or tr_target <= 0:
         return None
-    return (math.log(tr_target) - alpha - delta_bean) / beta
+    dose_term = gamma * dose_log(dose_g)
+    return (math.log(tr_target) - alpha - delta_bean - dose_term) / beta
 
 
 def snap_to_step(clicks: float, caps: GrinderCaps) -> float:
@@ -801,6 +847,7 @@ def correct(
     days_since_roast: int | None = None,
     roast_level_ord: int | None = None,
     dose_g: float | None = None,
+    gamma: float = 0.0,
 ) -> Recipe:
     """Propose the next recipe from the last measured shot.
 
@@ -810,13 +857,19 @@ def correct(
 
     ``dose_g`` is the dose the user asked for. Left out, the next shot keeps
     the anchor's dose -- the dose they actually use for this coffee.
+
+    ``gamma`` is the law's dose exponent (docs/science.md#dose-term). The
+    anchor's time is carried to the new dose with it before anything is
+    compared, so a dose change moves the grind by exactly what it is expected
+    to do to the shot. Zero means the law has no dose term for this method.
     """
     notes: list[str] = []
     dose = last.dose_g if dose_g is None else dose_g
-    if abs(dose - last.dose_g) >= 0.5:
-        # The grind law has no dose term yet (docs/science.md#beta-law), so the
-        # setting below is still solved for the anchor's dose. Say so rather
-        # than let the time move without warning.
+    dose_changed = abs(dose - last.dose_g) >= value_of("dose_pair_min_diff_g")
+    if dose_changed and not gamma:
+        # No dose term for this method, so the setting below is still solved
+        # for the anchor's dose. Say so rather than let the time move without
+        # warning.
         notes.append(
             "you changed the dose from your last shot on this coffee, and the "
             "grind is still worked out from that shot -- a heavier dose runs "
@@ -824,6 +877,9 @@ def correct(
         )
     ratio = brew_ratio(last)
     tr = normalised_time(last)
+    if tr is not None and gamma and dose_changed and last.dose_g > 0:
+        # What the anchor shot would have run at the new dose.
+        tr *= (dose / last.dose_g) ** gamma
     grind = last.grind_clicks
     temp_lo, temp_hi = temp_band_for_roast(roast_level_ord)
     temp = (
@@ -893,11 +949,23 @@ def correct(
             if fresh:
                 move *= value_of("fresh_correction_damping")
             direction = "finer" if is_finer(grind + move, grind, grinder) else "coarser"
-            notes.append(
-                f"your shot ran {'long' if tr > tr_hi else 'fast'} for the "
-                f"ratio, so go {direction}"
-            )
+            if dose_changed and gamma:
+                notes.append(
+                    f"at {dose:g} g instead of {last.dose_g:g} g your last shot "
+                    f"would run {'long' if tr > tr_hi else 'fast'} for the "
+                    f"ratio, so go {direction} to keep the time"
+                )
+            else:
+                notes.append(
+                    f"your shot ran {'long' if tr > tr_hi else 'fast'} for the "
+                    f"ratio, so go {direction}"
+                )
             return build(grind_clicks=snap_to_step(grind + move, grinder))
+        if dose_changed and gamma:
+            notes.append(
+                f"at {dose:g} g your last shot's setting should still land in "
+                f"the time range, so the grind stays"
+            )
 
     # 3. Time is fine but it does not taste right.
     offset = taste_offset(last.taste_axis)
