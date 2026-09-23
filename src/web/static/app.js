@@ -271,9 +271,10 @@ function historyNote(shots) {
   const [latest, previous] = measured;
   if (latest.band === 'in') return 'Your last shot landed in the target band.';
   if (latest.band && latest.band === previous.band) {
-    const movedRight = latest.delta_clicks !== null
-      && ((latest.band === 'long' && latest.delta_clicks > 0)
-        || (latest.band === 'fast' && latest.delta_clicks < 0));
+    // `direction` comes from the server, which knows which way this grinder's
+    // dial runs; a bigger number is not coarser on every grinder.
+    const movedRight = (latest.band === 'long' && latest.direction === 'coarser')
+      || (latest.band === 'fast' && latest.direction === 'finer');
     return movedRight
       ? `Two in a row ${latest.band === 'long' ? 'ran long' : 'ran fast'} — `
         + 'the last change went the right way, just not far enough.'

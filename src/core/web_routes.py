@@ -16,10 +16,11 @@ from ai.vision import VisionError, analyze_coffee_bag
 from database.models import Bean, BrewSetup, DialInLog, Equipment, Recommendation
 
 from .auth import auth_mode, get_owner
-from .brewing import normalised_time, target_for
+from .brewing import is_finer, normalised_time, target_for
 from .db_session import get_db
 from .engine import (
     ENGINE_VERSION,
+    _grinder_caps,
     persist_recommendation,
     recommend,
     render_legacy_text,
@@ -635,6 +636,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             older = logs[index + 1] if index + 1 < len(logs) else None
             same_setup = bool(older and older.setup_id == log.setup_id)
             delta = None
+            direction = None
             if (
                 same_setup
                 and older is not None
@@ -642,6 +644,17 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 and older.grind_clicks is not None
             ):
                 delta = float(log.grind_clicks) - float(older.grind_clicks)
+                if delta:
+                    # Which way the dial runs is the grinder's, not a sign
+                    # convention: higher is finer on some grinders.
+                    caps = _grinder_caps(log.grinder)
+                    direction = (
+                        "finer"
+                        if is_finer(
+                            float(log.grind_clicks), float(older.grind_clicks), caps
+                        )
+                        else "coarser"
+                    )
 
             shots.append(
                 {
@@ -662,6 +675,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                     "tr": round(tr, 2) if tr is not None else None,
                     "band": band,
                     "delta_clicks": delta,
+                    "direction": direction,
                     "same_setup_as_prev": same_setup,
                     "suggested_grind_clicks": _as_float(
                         suggested.get(log.recommendation_id or -1)

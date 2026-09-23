@@ -554,3 +554,45 @@ class TestOwnershipOfDerivedRows(FlowTestCase):
             bean = db.get(Bean, bean_id)
             assert bean is not None
             self.assertEqual(bean.roast_level_ord, 5)
+
+
+class TestShotHistory(FlowTestCase):
+    def test_the_direction_of_a_change_follows_the_grinders_dial(self) -> None:
+        """A bigger number is finer on a higher-is-finer grinder."""
+        grinder = self.ok(
+            self.api.post(
+                "/api/equipment/library",
+                json={
+                    "type": "grinder",
+                    "brand": "Reverse",
+                    "model": "Dial",
+                    "finer_direction": "higher_is_finer",
+                },
+            )
+        )["equipment"]
+        machine = self.ok(
+            self.api.post(
+                "/api/equipment/library",
+                json={"type": "espresso_machine", "brand": "Test", "model": "M"},
+            )
+        )["equipment"]
+        setup = self.ok(
+            self.api.post(
+                "/api/setups",
+                json={
+                    "name": "Reverse",
+                    "grinder_id": grinder["id"],
+                    "machine_id": machine["id"],
+                },
+            )
+        )["setup"]
+        self.ok(self.api.put("/api/setups/active", json={"setup_id": setup["id"]}))
+
+        scan = self.scan()
+        self.log_shot(scan["coffee_data"], actual_grind="20")
+        bean_id = self.only_coffee()["bean_id"]
+        self.log_shot({**scan["coffee_data"], "bean_id": bean_id}, actual_grind="22")
+
+        latest = self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["shots"][0]
+        self.assertEqual(latest["delta_clicks"], 2.0)
+        self.assertEqual(latest["direction"], "finer")
