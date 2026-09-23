@@ -175,6 +175,23 @@ CONSTANTS: dict[str, Constant] = {
         "the cause is prep rather than grind",
     ),
     "min_shots_for_prep_advice": Constant(8.0, "shots", "HEURISTIC", "#preinfusion"),
+    "preinfusion_experiment_step_s": Constant(
+        3.0,
+        "s",
+        "HEURISTIC",
+        "#preinfusion",
+        "how much longer the pre-infusion experiment pre-infuses for; larger "
+        "than prep_tolerance_s on purpose, so the experiment's shots are not "
+        "compared against the old ones as grind evidence",
+    ),
+    "min_shots_at_new_prep": Constant(
+        3.0,
+        "shots",
+        "HEURISTIC",
+        "#preinfusion",
+        "shots to gather at the longer pre-infusion before comparing it "
+        "against the old duration",
+    ),
     "dose_min_g": Constant(12.0, "g", "HEURISTIC", "#limits"),
     "dose_max_g": Constant(22.0, "g", "HEURISTIC", "#limits"),
     "basket_fill_lo": Constant(0.75, "fraction", "HEURISTIC", "#limits"),
@@ -495,21 +512,35 @@ def prep_comparable(a: ShotRecord, b: ShotRecord) -> bool:
     Unknown on either side counts as comparable -- otherwise nothing would
     ever be comparable for a user who does not record it.
     """
+    return prep_incomparable_reason(a, b) is None
+
+
+def prep_incomparable_reason(a: ShotRecord, b: ShotRecord) -> str | None:
+    """Why these two shots cannot be compared, or None if they can.
+
+    The same rule as prep_comparable(), which delegates here, so the reason
+    shown to a user can never disagree with the decision the fit acted on.
+    """
     tolerance = value_of("prep_tolerance_s")
-    for lhs, rhs in ((a.preinfusion_s, b.preinfusion_s), (a.pause_s, b.pause_s)):
+    for label, lhs, rhs in (
+        ("pre-infusion", a.preinfusion_s, b.preinfusion_s),
+        ("pause before the pull", a.pause_s, b.pause_s),
+    ):
         if lhs is not None and rhs is not None and abs(lhs - rhs) > tolerance:
-            return False
+            return f"{label} differs by more than {tolerance:g} s"
 
     # Temperature is a covariate for the same reason. Hotter water is less
     # viscous and extracts faster, so it shortens the shot and shifts the
     # taste independently of the grind. Comparing shots pulled at different
     # temperatures puts that difference into the grind slope.
     temp_tolerance = value_of("temp_tolerance_c")
-    return not (
+    if (
         a.brew_temp_c is not None
         and b.brew_temp_c is not None
         and abs(a.brew_temp_c - b.brew_temp_c) > temp_tolerance
-    )
+    ):
+        return f"brew temperature differs by more than {temp_tolerance:g} C"
+    return None
 
 
 def is_finer(a: float, b: float, caps: GrinderCaps) -> bool:
@@ -961,6 +992,99 @@ def resistance_disagreement(
             "than through its depth"
         )
     return None
+
+
+@dataclass(frozen=True)
+class PrepExperiment:
+    """A deliberate one-shot change to pre-infusion, with the grind held.
+
+    The grind is held on the same principle `correct()` already follows: one
+    lever at a time, because changing two things teaches nothing about either.
+    Holding it means *not overriding* the number the guardrails settled on:
+    this experiment only ever runs because the channeling floor clamped the
+    grind, so re-pointing it at the last shot's setting could put it finer
+    than the floor and quietly undo that clamp.
+    """
+
+    preinfusion_s: float
+    pause_s: float | None
+    note: str
+
+
+def preinfusion_experiment(
+    shots: Sequence[ShotRecord],
+    method: Method,
+    grind_is_stuck: bool,
+) -> PrepExperiment | None:
+    """Propose a longer pre-infusion when the grind has nothing left to give.
+
+    There is a dead end this resolves. Once the channeling floor binds, the
+    engine may not grind finer, so a shot that is still too fast has no lever
+    left -- and `prep_advice` would go on reporting back the user's own usual
+    duration while its note told them to try a longer one. Advice and number
+    contradicted each other, and nothing ever changed.
+
+    Pre-infusion is the right lever precisely there: saturating the bed before
+    full pressure is the standard mitigation for the channeling the floor is
+    reacting to, and it is the one variable in this user's history that has
+    never been varied. The target is not arbitrary -- it is
+    `preinfusion_min_for_relief_s`, the duration at which this engine already
+    credits pre-infusion with letting a puck take a finer grind, so a
+    successful experiment also unlocks that step.
+
+    Returns None when the experiment does not apply or has already gathered
+    enough shots, after which `prep_advice` compares the two durations.
+    """
+    # Espresso only: this is about pressurised flow through a puck. A
+    # pour-over bloom is a different mechanism with a different purpose.
+    if method != "espresso":
+        return None
+    if not grind_is_stuck:
+        return None
+
+    recorded = [s for s in shots if s.preinfusion_s is not None and s.preinfusion_s > 0]
+    if len(recorded) < value_of("min_shots_for_prep_advice"):
+        return None
+
+    durations = [s.preinfusion_s for s in recorded if s.preinfusion_s is not None]
+    tolerance = value_of("prep_tolerance_s")
+    floor = min(durations)
+    # The baseline is the habitual duration, not the overall median: once the
+    # experiment is running the long shots would drag a plain median upward
+    # and the target would creep away from where it started.
+    baseline = statistics.median([d for d in durations if d <= floor + tolerance])
+
+    relief_threshold = value_of("preinfusion_min_for_relief_s")
+    if baseline >= relief_threshold:
+        # Already pre-infusing long enough to count as mitigation. Nothing to
+        # test, and the channeling floor is not going to move on this lever.
+        return None
+
+    target = max(baseline + value_of("preinfusion_experiment_step_s"), relief_threshold)
+    target = round(target * 2) / 2
+
+    gathered = sum(1 for d in durations if d >= target - 0.5)
+    if gathered >= value_of("min_shots_at_new_prep"):
+        # Enough shots at the new duration; prep_advice can compare them now.
+        return None
+
+    pause = statistics.median(
+        [s.pause_s for s in recorded if s.pause_s is not None] or [0.0]
+    )
+    note = (
+        f"Leave the grind exactly as given here and pre-infuse for about "
+        f"{target:g} s instead of your usual {baseline:g} s. A finer grind is "
+        f"not available -- the floor is already holding it there -- and "
+        f"pre-infusion is the one thing you have never varied, so it is the "
+        f"only lever left that can still tell us something. Wetting the bed "
+        f"gently before full pressure is what stops water carving a channel "
+        f"through it. Change nothing else, or the result will not be readable."
+    )
+    return PrepExperiment(
+        preinfusion_s=target,
+        pause_s=pause if pause > 0 else None,
+        note=note,
+    )
 
 
 def prep_advice(

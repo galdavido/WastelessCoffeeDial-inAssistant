@@ -199,4 +199,21 @@ The two stacks run side by side on one host, so they must not share a port:
   temperatures are decided in `core/` and returned as `recipe`; the browser
   only displays them, and Gemini's prose is checked against them
   (`ai/rationale.scrub_numerals`). Don't compute a recipe number in `app.js`.
+- **The Gemini chain is bounded by a wall-clock budget, not by the API's
+  mood.** `try_model_candidates` takes `budget_s` (4s for the rationale, 20s
+  for bag OCR) and enforces it client-side in a worker thread, because the SDK
+  cannot: `HttpOptions.timeout` also populates `X-Server-Timeout`, which the
+  API rejects below 10s, and the SDK passes `timeout=None` on each request,
+  overriding any `client_args` timeout. An over-budget attempt is *abandoned*,
+  not cancelled — hence `shutdown(wait=False)`, since the executor's `__exit__`
+  would join exactly the thread being abandoned.
+- **Model availability must be checked by calling, not by `models.list`.**
+  `gemini-2.5-flash-lite` was still listed while returning 404 "no longer
+  available" on every call. A 404 or a 503 now *skips* to the next candidate;
+  only a chain-wide fault (bad API key, permission denied) stops it.
+- **The rationale's numeral allow-list covers the whole engine-authored
+  prompt**, not just `recipe.numeric_tokens()`. The engine's notes and
+  confidence label name past grind settings and shot counts, and the prompt
+  invites the model to explain them — scoping the list to the recipe alone
+  rejected good answers for quoting the engine back.
 - `git commit` trailer: `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.

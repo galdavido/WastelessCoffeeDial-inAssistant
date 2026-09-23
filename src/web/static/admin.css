@@ -11,15 +11,6 @@
   padding-bottom: 48px;
 }
 
-/* Chart series. Three hues rather than three shades of clay, because muted
-   earth tones alone cannot be told apart as series -- checked for lightness,
-   chroma and colour-blind separation against --bg-card. */
-:root {
-  --cat-1: #C68134;
-  --cat-2: #4F7C3A;
-  --cat-3: #6F87D8;
-}
-
 /* ── Chrome ──────────────────────────────────────────────────────────────── */
 .admin-header {
   display: flex; align-items: center; gap: 12px;
