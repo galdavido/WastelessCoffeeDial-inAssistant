@@ -108,12 +108,15 @@ The two stacks run side by side on one host, so they must not share a port:
 
 ## Database
 
-- **PostgreSQL 16.** No migration uses the `vector` extension (the
-  `scraped_equipment.embedding` table this note used to warn about lived in
-  the pre-Alembic database discarded on 2026-09-08), and CI and the tests run
-  on plain `postgres:16`. The compose stacks still use `pgvector/pgvector:pg16`:
-  leave that alone — swapping the image under a live volume is risk for no
-  gain. To confirm on the host: `\dx` and `\dt scraped_equipment` in `psql`.
+- **PostgreSQL 16.** No migration uses the `vector` extension, and CI and the
+  tests run on plain `postgres:16`. Until migration 0009, both live databases
+  still had `vector` installed and an empty, unmodelled `scraped_equipment`
+  table with a `vector(768)` column, left over from the pre-Alembic schema.
+  That made the pgvector image load-bearing: plain postgres could not have read
+  the column. 0009 drops the table and the extension. The compose stacks still
+  use `pgvector/pgvector:pg16`: leave that alone, because swapping the image
+  under a live volume is risk for no gain. To confirm on the host: `\dx` and
+  `\dt scraped_equipment` in `psql` should show neither.
 - SQLAlchemy 2.0 + Alembic. `run_migrations()` runs `alembic upgrade head` on
   startup (lifespan), retrying while the DB comes up. Migrations are
   hand-written; never autogenerate.

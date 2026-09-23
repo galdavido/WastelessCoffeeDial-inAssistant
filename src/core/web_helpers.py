@@ -20,6 +20,7 @@ from database.models import (
     as_float,
 )
 
+from .brewing import value_of
 from .web_schemas import FeedbackRequest, LogDetailsInput
 
 DEFAULT_DOSE_G = 16.0
@@ -70,18 +71,14 @@ _ROAST_ORDINALS: dict[str, int] = {
     "vienna": 5,
 }
 
-# The starting dose for a coffee with no shots of its own, by roast ordinal. A
-# dense dark roast packs less mass into the same basket than a fluffy light
-# one; these are the midpoints of what fits a standard 18 g basket (dark
-# ~16-17 g, light ~18-19 g). It is only a first guess shown with a hint to
-# adjust it, the basket guardrail still applies, and the user's own dose takes
-# over from the first logged shot.
-_STARTING_DOSE_BY_ROAST: dict[int, float] = {
-    1: 18.5,
-    2: 18.5,
-    3: 17.5,
-    4: 17.0,
-    5: 16.5,
+# The starting fill for a coffee with no shots of its own, by roast ordinal.
+# See docs/science.md#starting-dose: the numbers live in brewing.CONSTANTS.
+_STARTING_FILL_BY_ROAST: dict[int, str] = {
+    1: "starting_fill_light",
+    2: "starting_fill_light",
+    3: "starting_fill_medium",
+    4: "starting_fill_medium_dark",
+    5: "starting_fill_dark",
 }
 
 
@@ -134,11 +131,24 @@ def roast_level_ordinal(label: str | None) -> int | None:
     return _ROAST_ORDINALS.get(key)
 
 
-def starting_dose_for_roast(roast_level_ord: int | None) -> float | None:
-    """A first-shot dose for this roast level, or None when it is unknown."""
+def starting_dose_for_roast(
+    roast_level_ord: int | None, basket_size_g: float | None = None
+) -> float | None:
+    """A first-shot dose for this roast level, or None when it is unknown.
+
+    A fill of the brewer's basket when its size is recorded, otherwise of an
+    18 g reference basket -- which reproduces the old fixed table exactly.
+    Rounded to half a gram: it is a first guess shown with a hint to adjust
+    it, the basket guardrail still applies, and the user's own dose takes
+    over from the first logged shot.
+    """
     if roast_level_ord is None:
         return None
-    return _STARTING_DOSE_BY_ROAST.get(roast_level_ord)
+    fill = _STARTING_FILL_BY_ROAST.get(roast_level_ord)
+    if fill is None:
+        return None
+    basket = basket_size_g or value_of("starting_reference_basket_g")
+    return round(basket * value_of(fill) * 2) / 2
 
 
 def normalize_label(value: str) -> str:

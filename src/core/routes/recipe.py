@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ai.vision import VisionError, analyze_coffee_bag
-from database.models import Bean, BrewSetup
+from database.models import Bean, BrewSetup, as_float
 
 from ..auth import get_owner
 from ..db_session import get_db
@@ -78,6 +78,12 @@ def _bean_for(db: Session, owner: str, coffee_data: dict[str, Any]) -> Bean:
     )
 
 
+def _basket_g(setup: BrewSetup | None) -> float | None:
+    """The active brewer's basket, which the starting dose is a fill of."""
+    machine = setup.machine if setup else None
+    return as_float(machine.basket_size_g) if machine else None
+
+
 def _recommend(
     db: Session,
     owner: str,
@@ -85,6 +91,7 @@ def _recommend(
     coffee_data: dict[str, Any],
     bean: Bean | None = None,
     dose_g: float | None = None,
+    explain: bool = True,
 ) -> dict[str, Any]:
     """Run the engine and shape the response both recipe routes return.
 
@@ -102,7 +109,7 @@ def _recommend(
     if bean is None:
         bean = _bean_for(db, owner, coffee_data)
 
-    roast_dose = starting_dose_for_roast(bean.roast_level_ord)
+    roast_dose = starting_dose_for_roast(bean.roast_level_ord, _basket_g(setup))
     result = recommend(
         db,
         owner,
@@ -110,6 +117,7 @@ def _recommend(
         bean,
         dose_g,
         default_dose_g=roast_dose or get_default_dose_g(db, owner),
+        explain=explain,
     )
     coffee_data["preferred_dose_g"] = result.recipe.dose_g
     coffee_data["dose_from_roast"] = (
@@ -204,7 +212,15 @@ def refresh_recommendation(
         coffee_data = dict(body.coffee_data or {})
 
     try:
-        return _recommend(db, owner, setup, coffee_data, bean=bean, dose_g=body.dose_g)
+        return _recommend(
+            db,
+            owner,
+            setup,
+            coffee_data,
+            bean=bean,
+            dose_g=body.dose_g,
+            explain=body.explain,
+        )
     except Exception as exc:
         raise server_error(exc, "refresh recommendation") from exc
 
@@ -232,7 +248,11 @@ def get_fit(
 
     # The same default dose _recommend passes, so the fit is the pass the
     # recipe on screen came from.
-    roast_dose = starting_dose_for_roast(bean.roast_level_ord) if bean else None
+    roast_dose = (
+        starting_dose_for_roast(bean.roast_level_ord, _basket_g(setup))
+        if bean
+        else None
+    )
     try:
         result = recommend(
             db,

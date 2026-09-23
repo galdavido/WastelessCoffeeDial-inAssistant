@@ -125,15 +125,28 @@ class TestProjectConventions(unittest.TestCase):
         self.assertEqual(unconstrained, [])
 
     def test_requirements_lock_mirrors_pyproject_packages(self) -> None:
+        """Same packages *and* same pins.
+
+        CI installs from pyproject.toml and the Docker image from
+        requirements.txt; comparing names alone let alembic drift to a range
+        in one and a pin in the other, so CI tested a version prod never ran.
+        """
         data = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        pyproject_pkgs = {_package_name(dep) for dep in data["project"]["dependencies"]}
+        pyproject_specs = {
+            _package_name(dep): dep.replace(" ", "").lower()
+            for dep in data["project"]["dependencies"]
+        }
         lock_lines = [
             line.strip()
             for line in (_ROOT / "requirements.txt").read_text().splitlines()
             if line.strip() and not line.startswith("#")
         ]
-        lock_pkgs = {_package_name(line) for line in lock_lines}
-        self.assertEqual(pyproject_pkgs, lock_pkgs)
+        lock_specs = {
+            _package_name(line): line.replace(" ", "").lower() for line in lock_lines
+        }
+        self.assertEqual(pyproject_specs, lock_specs)
+        for spec in lock_specs.values():
+            self.assertIn("==", spec, f"{spec} is not pinned")
 
 
 def _package_name(spec: str) -> str:

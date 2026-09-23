@@ -607,6 +607,28 @@ observed within-setting spread before naming a new number, and otherwise say
 "pull the same shot again" — which is also how you buy the replicate the
 estimate needs.
 
+### 5.9 Starting dose by roast level {#starting-dose}
+
+A coffee with no shots of its own needs a first dose. Roast changes how much
+mass fits in a basket: a dark roast is denser and less expanded than a light
+one, so the same basket holds less of it by weight at the same headspace. The
+engine starts from a **fill of the basket** by roast level:
+
+| Roast | Fill | On an 18 g basket |
+|---|---|---|
+| light, medium-light | 1.03 | 18.5 g |
+| medium | 0.97 | 17.5 g |
+| medium-dark | 0.94 | 17 g |
+| dark | 0.92 | 16.5 g |
+
+The basket is the brewer's recorded `basket_size_g` when there is one, and an
+18 g reference basket otherwise, which reproduces the fixed table this
+replaced. The result is rounded to half a gram. These fills are practitioner
+midpoints (dark ~16–17 g, light ~18–19 g in a standard 18 g basket), not
+measurements, hence `HEURISTIC`. They are only a first guess, shown with a
+hint to adjust it. The basket guardrail (`basket_fill_lo`/`hi`, [limits](#limits))
+still applies, and the user's own dose takes over from the first logged shot.
+
 ---
 
 ## 6. Method levers, and what we cannot see {#method-levers}
