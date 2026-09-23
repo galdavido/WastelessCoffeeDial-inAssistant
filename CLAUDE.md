@@ -31,12 +31,24 @@ none of them hold "where are we in this job."
 
 ## Layout
 
-- `src/core/` — FastAPI app (`web_server.py` entry, `web_routes.py` routes,
-  `web_helpers.py`, `web_schemas.py`), DB bootstrap/session.
-- `src/ai/` — Gemini calls (`vision.py` bag OCR, `rag.py` recommendation).
-- `src/database/` — SQLAlchemy 2.0 models + engine.
+- `src/core/routes/` — the HTTP API, one `APIRouter` per area: `meta` (shell,
+  health, version, whoami), `recipe` (scan, recommendation, feedback, photos),
+  `coffees` (library + shot history), `gear` (equipment, setups, settings).
+  `common.py` holds `STATIC_DIR`, `uploads_dir()` and the request-scoped
+  `active_setup` dependency.
+- `src/core/` — `web_server.py` (entry), `web_helpers.py`, `web_schemas.py`,
+  `auth.py`, DB bootstrap/session, and the engine: `engine.py` orchestrates
+  `retrieval.py` → `calibration.py` → `brewing.py` (pure, no DB) → rationale.
+  `eval_harness.py` + `backtest_cli.py` measure it. `admin_*.py` is the
+  dev-only dashboard.
+- `src/ai/` — the two Gemini calls: `vision.py` (bag OCR), `rationale.py`
+  (prose around numbers the engine already fixed); `model_selection.py` holds
+  the model fallback chain and the shared `json_config()`.
+- `src/database/` — SQLAlchemy 2.0 models + engine (the one place `.env` is
+  loaded).
 - `src/web/static/` — the PWA: `index.html`, `app.js`, `style.css`, `sw.js`.
-- `migrations/` — Alembic. `tests/` — pytest.
+- `migrations/` — Alembic. `tests/` — pytest; `_sim.py` (physics simulator,
+  a test fixture) and `_db.py` (real-Postgres test support) live there.
 - Package layout: code lives under `src/` (`pyproject.toml` `package-dir`).
 
 ## Running it
@@ -96,12 +108,19 @@ The two stacks run side by side on one host, so they must not share a port:
 
 ## Database
 
-- **PostgreSQL with the `vector` extension** — the schema has
-  `scraped_equipment.embedding vector(768)`. The compose DB image is
-  `pgvector/pgvector:pg16`; **plain `postgres:*` will not work.**
-- SQLAlchemy 2.0 + Alembic. `run_migrations()` runs on startup (lifespan):
-  `alembic upgrade head`, or stamps the initial revision if a pre-Alembic
-  schema is detected.
+- **PostgreSQL 16.** No migration uses the `vector` extension (the
+  `scraped_equipment.embedding` table this note used to warn about lived in
+  the pre-Alembic database discarded on 2026-09-08), and CI and the tests run
+  on plain `postgres:16`. The compose stacks still use `pgvector/pgvector:pg16`:
+  leave that alone — swapping the image under a live volume is risk for no
+  gain. To confirm on the host: `\dx` and `\dt scraped_equipment` in `psql`.
+- SQLAlchemy 2.0 + Alembic. `run_migrations()` runs `alembic upgrade head` on
+  startup (lifespan), retrying while the DB comes up. Migrations are
+  hand-written; never autogenerate.
+- **Equipment is shared but owned.** Everyone can pick any entry for a setup;
+  only `equipment.owner` may edit or delete it, and owner-NULL rows (the
+  seeded hardware) are read-only. Migration 0007 backfilled owners — see
+  `docs/tailscale-setup.md` for reassigning a row.
 - Env comes from `.env` (gitignored): `POSTGRES_USER/PASSWORD/DB`,
   `DATABASE_URL`, `GEMINI_API_KEY`. Template: `.env.example`.
 - Daily dumps land in `./backups/db/` (prod) and `./backups/dev-db/` (dev) via
@@ -131,9 +150,12 @@ The two stacks run side by side on one host, so they must not share a port:
 
 ## Tests, lint, types
 
-- `pytest` — config in `pyproject.toml`, `pythonpath = ["src"]`.
-  `tests/test_web_app.py` are DB-free smoke tests (TestClient without the
-  lifespan). The rest need a live Postgres + `DATABASE_URL` (see CI).
+- `pytest` — config in `pyproject.toml`, `pythonpath = ["src"]`. Almost
+  everything is DB-free. `tests/test_api_flows.py` drives the real routes,
+  engine and Postgres with only the Gemini calls stubbed, one fresh
+  Tailscale user per test; it needs `DATABASE_URL` pointing at a disposable
+  database, skips when none is reachable, and **fails** instead when `CI` is
+  set. New API behaviour gets a test there.
 - `ruff check .` and `ruff format --check .`; `mypy src`.
 - Dev install: `pip install -e '.[dev]'` (or run the checks in a throwaway
   `python:3.14-slim` container with the repo mounted).
@@ -161,7 +183,8 @@ The two stacks run side by side on one host, so they must not share a port:
 - **`sw.js` has `const CACHE = 'wcda-vN'` — bump N on every change to a static
   asset** so clients fetch the new bundle, and move the `?v=` on the CSS/JS
   tags in **every** page (`index.html` and `admin.html`) to match;
-  `tests/test_web_app.py` asserts they agree. The service worker is network-first
+  `tests/test_web_app.py` asserts they agree, and that neither page carries
+  an inline style. The service worker is network-first
   for the app shell (HTML/JS/CSS), cache-only as an offline fallback.
 - Over plain HTTP on a bare IP the service worker does not register (not a
   secure context); Add-to-Home-Screen still works.
@@ -170,5 +193,10 @@ The two stacks run side by side on one host, so they must not share a port:
 
 - **FastAPI matches routes in definition order.** Declare literal paths before
   parameterised siblings — e.g. `PUT /api/setups/active` must come before
-  `PUT /api/setups/{setup_id}`, or `"active"` is parsed as a setup id.
+  `PUT /api/setups/{setup_id}` in `routes/gear.py`, or `"active"` is parsed
+  as a setup id.
+- **Every number comes from the engine.** Doses, grinds, yields and
+  temperatures are decided in `core/` and returned as `recipe`; the browser
+  only displays them, and Gemini's prose is checked against them
+  (`ai/rationale.scrub_numerals`). Don't compute a recipe number in `app.js`.
 - `git commit` trailer: `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
