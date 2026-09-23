@@ -9,7 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from database.database import SessionLocal
-from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
+from database.models import (
+    AppSetting,
+    Bean,
+    BrewSetup,
+    DialInLog,
+    Equipment,
+    Recommendation,
+)
 
 from .web_schemas import LogDetailsInput
 
@@ -520,6 +527,22 @@ def save_dial_in_log(
         resolved_image_name = image_name or coffee_data.get("image_name")
         if resolved_image_name:
             resolved_image_name = os.path.basename(str(resolved_image_name))
+
+        # The client echoes the id of the recommendation it was shown. Only
+        # link it if it is this user's: otherwise any id would attach a
+        # stranger's recommendation to this shot, and the shot history would
+        # then show their suggested grind.
+        if recommendation_id is not None:
+            owned = (
+                db.query(Recommendation.id)
+                .filter(
+                    Recommendation.id == recommendation_id,
+                    Recommendation.owner == owner,
+                )
+                .first()
+            )
+            if owned is None:
+                recommendation_id = None
 
         db.add(
             DialInLog(

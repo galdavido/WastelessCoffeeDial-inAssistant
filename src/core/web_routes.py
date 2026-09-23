@@ -589,7 +589,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         wanted = [log.recommendation_id for log in logs if log.recommendation_id]
         if wanted:
             for rec in (
-                db.query(Recommendation).filter(Recommendation.id.in_(wanted)).all()
+                db.query(Recommendation)
+                .filter(Recommendation.id.in_(wanted), Recommendation.owner == owner)
+                .all()
             ):
                 suggested[rec.id] = rec.grind_clicks
 
@@ -1012,6 +1014,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             bean.origin = as_non_empty_text(body.origin)
             bean.process = as_non_empty_text(body.process)
             bean.roast_level = as_non_empty_text(body.roast_level)
+            # The ordinal is what the engine reads (temperature band, coffee
+            # similarity); left alone it kept describing the old roast level.
+            bean.roast_level_ord = roast_level_ordinal(bean.roast_level)
 
             latest_log = None
             if bean.logs:

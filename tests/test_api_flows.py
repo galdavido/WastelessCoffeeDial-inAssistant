@@ -479,3 +479,67 @@ class TestEquipmentOwnerBackfill(DatabaseTestCase):
         self.assertEqual(owners[other_g], "bob")
         self.assertIsNone(owners[both_m], "used by two people: shared")
         self.assertIsNone(owners[unused], "used by nobody: shared")
+
+
+class TestOwnershipOfDerivedRows(FlowTestCase):
+    def test_a_shot_cannot_borrow_another_users_recommendation(self) -> None:
+        """Regression: the id was trusted, and the history then showed a
+        stranger's suggested grind next to your shot."""
+        self.make_setup()
+        self.log_shot(self.scan()["coffee_data"])
+        bean_id = self.only_coffee()["bean_id"]
+        theirs = self.ok(
+            self.api.post("/api/recommendation", json={"bean_id": bean_id})
+        )
+        foreign_id = theirs["recommendation_id"]
+        self.assertIsNotNone(foreign_id)
+
+        me = self.another_user()
+        self.make_setup(api=me)
+        scan = self.ok(
+            me.post("/api/analyze", files={"file": ("bag.png", _png(), "image/png")})
+        )
+        self.ok(
+            me.post(
+                "/api/feedback",
+                json={
+                    "coffee_data": scan["coffee_data"],
+                    "recommendation": "",
+                    "actual_grind": "21",
+                    "recommendation_id": foreign_id,
+                },
+            )
+        )
+        my_bean = self.only_coffee(api=me)["bean_id"]
+        shot = self.ok(me.get(f"/api/beans/{my_bean}/shots"))["shots"][0]
+        self.assertIsNone(shot["suggested_grind_clicks"])
+
+        from database.database import SessionLocal
+        from database.models import DialInLog
+
+        with SessionLocal() as db:
+            row = db.query(DialInLog).filter(DialInLog.owner == me.owner).one()
+            self.assertIsNone(row.recommendation_id)
+
+    def test_editing_the_roast_level_updates_what_the_engine_reads(self) -> None:
+        self.make_setup()
+        fields = {
+            "roaster": "Hand",
+            "name": "Relabelled",
+            "origin": "Kenya",
+            "process": "Washed",
+        }
+        bean_id = self.ok(
+            self.api.post("/api/logs/manual", json={**fields, "roast_level": "Light"})
+        )["bean_id"]
+        self.ok(
+            self.api.put(f"/api/logs/{bean_id}", json={**fields, "roast_level": "Dark"})
+        )
+
+        from database.database import SessionLocal
+        from database.models import Bean
+
+        with SessionLocal() as db:
+            bean = db.get(Bean, bean_id)
+            assert bean is not None
+            self.assertEqual(bean.roast_level_ord, 5)
