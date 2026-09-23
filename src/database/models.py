@@ -174,9 +174,10 @@ class DialInLog(Base):
     # Optional forever: no code path may require a refractometer.
     tds_pct: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
     # 'measured' | 'partial' | 'synthetic' | 'imported'.
-    # Only 'measured' rows may feed calibration.
+    # Only 'measured' rows may feed calibration, so a row that nobody
+    # classified defaults to 'partial' (migration 0008), never to 'measured'.
     data_quality: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="measured", default="measured"
+        String, nullable=False, server_default="partial", default="partial"
     )
     # LLM prose lives here; tasting_notes is reserved for the human.
     llm_note: Mapped[str | None] = mapped_column(Text, nullable=True)

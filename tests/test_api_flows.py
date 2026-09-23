@@ -650,3 +650,23 @@ class TestFirstShotWithoutADial(FlowTestCase):
         self.assertIsNone(body["recipe"]["grind_clicks"])
         self.assertIn("stove", body["protocol"])
         self.assertNotIn("pull", body["protocol"])
+
+
+class TestUnclassifiedShots(DatabaseTestCase):
+    def test_a_shot_nobody_classified_is_kept_out_of_calibration(self) -> None:
+        from sqlalchemy import text
+
+        from database.database import engine
+
+        with engine.connect() as conn:
+            default = conn.execute(
+                text(
+                    "SELECT column_default FROM information_schema.columns "
+                    "WHERE table_name = 'dial_in_logs' AND column_name = 'data_quality'"
+                )
+            ).scalar_one()
+        self.assertIn("partial", default)
+
+        from database.models import DialInLog
+
+        self.assertEqual(DialInLog.__table__.c.data_quality.default.arg, "partial")
