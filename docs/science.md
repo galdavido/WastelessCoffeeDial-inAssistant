@@ -351,6 +351,11 @@ Lower bed depth `L` reduces the pressure drop (2.1), which reduces the
 channeling that (3.9) describes. For an app named "Wasteless", using a quarter
 less coffee for a better shot is the headline move.
 
+**Not yet acted on.** No code path proposes this today: a `propose_dose_reduction`
+helper existed, but nothing called it and it was removed (2026-09-23). Wiring it
+in needs a trigger — "channeling keeps recurring at this dose" — which is the
+dose term the grind law still lacks ([#beta-law](#beta-law)).
+
 ### 3.11 Temperature by roast level {#temp-by-roast}
 
 Within the SCA band, lighter roasts are conventionally brewed hotter (more

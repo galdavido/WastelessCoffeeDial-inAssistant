@@ -1,9 +1,8 @@
 """The language model's remaining job: explain numbers it did not choose.
 
-The engine decides the recipe. Gemini writes the prose around it and reads
-free-text tasting notes into a structured axis -- both jobs where a language
-model is genuinely better than arithmetic, neither of which involves inventing
-a measurement.
+The engine decides the recipe. Gemini writes the prose around it -- a job
+where a language model is genuinely better than arithmetic, and one that
+involves no measurement.
 
 Three independent layers stop a number leaking back in, because a prompt
 instruction alone is the weakest possible guarantee:
@@ -26,7 +25,7 @@ removed.
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -53,20 +52,6 @@ class Rationale(BaseModel):
     headline: str
     why: str
     what_to_watch: str
-
-
-class TasteReading(BaseModel):
-    """Free-text tasting notes read into the structured axis.
-
-    Offered to the user as a suggestion to confirm, never committed silently:
-    the taste axis drives corrections, so a misreading would propagate.
-    """
-
-    taste_axis: (
-        Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"] | None
-    ) = None
-    astringent: bool | None = None
-    confidence: Literal["low", "medium", "high"] = "low"
 
 
 def scrub_numerals(text: str, allowed: frozenset[str]) -> str | None:

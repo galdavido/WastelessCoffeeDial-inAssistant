@@ -91,24 +91,12 @@ CONSTANTS: dict[str, Constant] = {
     ),
     # --- literature: other ------------------------------------------------
     "degas_rest_days": Constant(7.0, "days", "LITERATURE", "#degassing"),
-    "cameron_dose_reduction": Constant(
-        0.20,
-        "fraction",
-        "LITERATURE",
-        "#cameron-reproducibility",
-        "20 g -> 15 g in the paper's protocol",
-    ),
-    "cameron_dose_reduction_max": Constant(
-        0.25, "fraction", "LITERATURE", "#cameron-reproducibility"
-    ),
     "temp_light_lo": Constant(94.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_light_hi": Constant(96.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_medium_lo": Constant(92.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_medium_hi": Constant(94.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_dark_lo": Constant(90.5, "C", "LITERATURE", "#temp-by-roast"),
     "temp_dark_hi": Constant(92.5, "C", "LITERATURE", "#temp-by-roast"),
-    "tds_plausible_lo": Constant(6.0, "percent", "LITERATURE", "#sca-bands"),
-    "tds_plausible_hi": Constant(14.0, "percent", "LITERATURE", "#sca-bands"),
     # --- calibrated -------------------------------------------------------
     "d_ref_espresso_um": Constant(300.0, "um", "CALIBRATED", "#beta-prior"),
     "d_ref_pourover_um": Constant(700.0, "um", "CALIBRATED", "#beta-prior"),
@@ -363,18 +351,6 @@ def brew_ratio(shot: ShotRecord) -> float | None:
     return numerator / shot.dose_g
 
 
-def flow_rate_gps(shot: ShotRecord) -> float | None:
-    """Average mass flow in g/s."""
-    if not shot.time_s or shot.time_s <= 0:
-        return None
-    mass = shot.yield_g if shot.method == "espresso" else shot.water_g
-    if mass is None:
-        mass = shot.water_g if shot.method == "espresso" else shot.yield_g
-    if mass is None or mass <= 0:
-        return None
-    return mass / shot.time_s
-
-
 def normalised_time(shot: ShotRecord) -> float | None:
     """T_r = time / brew_ratio -- see docs/science.md#normalised-time.
 
@@ -389,21 +365,6 @@ def normalised_time(shot: ShotRecord) -> float | None:
 def taste_offset(taste: TasteAxis | None) -> int | None:
     """Signed distance from balanced: negative sour, positive bitter."""
     return None if taste is None else TASTE_SCALE[taste]
-
-
-def extraction_yield_pct(shot: ShotRecord, tds_pct: float | None) -> float | None:
-    """EY% = beverage x TDS / dose -- only when a TDS measurement exists.
-
-    Returns None without a refractometer reading, and callers must render that
-    as "not measured" rather than substituting a guess. See
-    docs/science.md#limits.
-    """
-    if tds_pct is None or shot.dose_g <= 0:
-        return None
-    beverage = shot.yield_g if shot.yield_g is not None else shot.water_g
-    if beverage is None or beverage <= 0:
-        return None
-    return beverage * tds_pct / shot.dose_g
 
 
 # --------------------------------------------------------------------------
@@ -935,23 +896,6 @@ def correct(
 
     notes.append("this one looks on target -- keep it the same and repeat it")
     return build()
-
-
-def propose_dose_reduction(dose_g: float) -> tuple[float, str]:
-    """The Cameron reproducibility move. docs/science.md#cameron-reproducibility.
-
-    When channeling keeps recurring, stop chasing the grind: use less coffee
-    and grind coarser. A shallower bed drops less pressure and channels less,
-    and it uses a fifth less coffee for a better, more repeatable shot.
-    """
-    reduced = round(dose_g * (1.0 - value_of("cameron_dose_reduction")), 1)
-    return (
-        reduced,
-        f"channeling keeps recurring at this dose. Rather than chasing it with "
-        f"the grinder, try {reduced:g} g instead of {dose_g:g} g and grind a "
-        f"little coarser -- a shallower puck channels less, and you use less "
-        f"coffee for a better shot",
-    )
 
 
 def resistance_disagreement(

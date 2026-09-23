@@ -81,6 +81,9 @@ class TestScienceDoc(unittest.TestCase):
             "ey-formula",
             "sca-bands",
             "cameron",
+            # Literature the engine does not act on yet: the dose-reduction
+            # move is documented, but no code proposes it.
+            "cameron-reproducibility",
             "taste-mapping",
             # Recorded decisions, not yet a constant: each explains a policy
             # conclusion and the shape a future threshold would take, without

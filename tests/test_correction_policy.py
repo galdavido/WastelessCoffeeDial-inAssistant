@@ -27,7 +27,6 @@ from core.brewing import (
     finest_useful_clicks,
     is_finer,
     normalised_time,
-    propose_dose_reduction,
     target_for,
 )
 from core.calibration import fit_setup, theil_sen_comparable
@@ -189,11 +188,6 @@ class TestCameronGuardrail(unittest.TestCase):
         guarded = apply_guardrails(recipe, tight, FIXED_TEMP_MACHINE, [], TARGET)
         self.assertEqual(guarded.grind_clicks, 30.0)
         self.assertIn("grind_hardware_min", guarded.guardrails_hit)
-
-    def test_dose_reduction_is_the_cameron_move(self) -> None:
-        reduced, message = propose_dose_reduction(20.0)
-        self.assertEqual(reduced, 16.0)  # 20% less, as in the paper
-        self.assertIn("coarser", message)
 
 
 class TestTastePolicy(unittest.TestCase):
