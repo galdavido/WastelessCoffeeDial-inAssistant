@@ -48,25 +48,12 @@ function on(id, event, handler) {
   return el;
 }
 
-/* Basket capacity shifts with roast: a dense dark roast packs less mass into the
-   same basket than a fluffy light roast. These are the midpoints of the ranges
-   that fit the user's basket (dark ~16-17 g, light ~18-19 g). Order matters —
-   the more specific "medium-dark" test must come before the bare "dark" test. */
-const DOSE_BY_ROAST = [
-  { test: /medium[-\s]?dark/i, dose: 17 },
-  { test: /dark|french|italian|vienna/i, dose: 16.5 },
-  { test: /light|blonde|blond|cinnamon|nordic|scandinav/i, dose: 18.5 },
-  { test: /medium/i, dose: 17.5 },
-];
-
-function suggestedDoseForRoast(roastLevel, fallback) {
-  const text = String(roastLevel || '').trim();
-  if (text) {
-    for (const rule of DOSE_BY_ROAST) {
-      if (rule.test.test(text)) return rule.dose;
-    }
-  }
-  return fallback;
+/* The dose field always shows the dose the recipe on screen was computed for:
+   the server returns it as coffee_data.preferred_dose_g, including the
+   roast-aware first guess for a coffee with no shots (dose_from_roast). */
+function showRecipeDose(coffee) {
+  const dose = Number(coffee?.preferred_dose_g) || 16;
+  setScanDose(dose, { fromRoast: Boolean(coffee?.dose_from_roast), roastLevel: coffee?.roast_level });
 }
 
 function setScanDose(value, { fromRoast = false, roastLevel = '' } = {}) {
@@ -384,7 +371,7 @@ async function openBean(entry) {
     return;
   }
   renderCoffeeCard(currentCoffeeData);
-  setScanDose(Number(currentCoffeeData?.preferred_dose_g) || 16);
+  showRecipeDose(currentCoffeeData);
   loadHistory(currentBeanId);
   showPanel('recipe-view');
 }
@@ -408,15 +395,7 @@ async function analyzeFile(file) {
     currentBeanId = data.coffee_data?.bean_id ?? null;
     renderCoffeeCard(currentCoffeeData);
     renderRecipe(data);
-
-    // Pre-fill the per-shot dose with a roast-aware guess; the user can override
-    // it and hit "Update recipe" to regenerate the recommendation.
-    const baseDose = Number(currentCoffeeData.preferred_dose_g) || 16;
-    const guessDose = suggestedDoseForRoast(currentCoffeeData.roast_level, baseDose);
-    setScanDose(guessDose, {
-      fromRoast: guessDose !== baseDose,
-      roastLevel: currentCoffeeData.roast_level,
-    });
+    showRecipeDose(currentCoffeeData);
 
     loadHistory(currentBeanId);
     showPanel('recipe-view');
@@ -440,9 +419,13 @@ async function recalcForDose() {
   try {
     const ok = await refreshRecommendation({ dose });
     if (ok) {
-      if (currentCoffeeData) currentCoffeeData.preferred_dose_g = dose;
-      $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
-      showToast(`Recipe updated for ${dose} g`);
+      // The basket guardrail can move the dose; show what the recipe is for.
+      const used = Number(currentCoffeeData?.preferred_dose_g) || dose;
+      $('scan-dose-input').value = String(used);
+      $('dose-adjust-hint').textContent = used === dose
+        ? `Recipe updated for ${used} g.`
+        : `Recipe updated for ${used} g — ${dose} g doesn't fit your basket.`;
+      showToast(`Recipe updated for ${used} g`);
     }
   } finally {
     btn.disabled = false;

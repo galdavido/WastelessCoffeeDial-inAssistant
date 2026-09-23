@@ -75,15 +75,38 @@ def as_non_empty_text(value: Any, default: str = "Unknown") -> str:
 _LEADING_NUMBER = re.compile(r"\s*(-?\d+(?:[.,]\d+)?)")
 
 # 1 light .. 5 dark. Prod contains "Medium-light", "Medium Light" and
-# "Medium-Light" for the same roast, so match on normalised labels.
+# "Medium-Light" for the same roast, so match on normalised labels. The trade
+# names are the ones roasters print instead of a plain level.
 _ROAST_ORDINALS: dict[str, int] = {
     "light": 1,
+    "blonde": 1,
+    "blond": 1,
+    "cinnamon": 1,
+    "nordic": 1,
+    "scandinavian": 1,
     "medium light": 2,
     "light medium": 2,
     "medium": 3,
     "medium dark": 4,
     "dark medium": 4,
     "dark": 5,
+    "french": 5,
+    "italian": 5,
+    "vienna": 5,
+}
+
+# The starting dose for a coffee with no shots of its own, by roast ordinal. A
+# dense dark roast packs less mass into the same basket than a fluffy light
+# one; these are the midpoints of what fits a standard 18 g basket (dark
+# ~16-17 g, light ~18-19 g). It is only a first guess shown with a hint to
+# adjust it, the basket guardrail still applies, and the user's own dose takes
+# over from the first logged shot.
+_STARTING_DOSE_BY_ROAST: dict[int, float] = {
+    1: 18.5,
+    2: 18.5,
+    3: 17.5,
+    4: 17.0,
+    5: 16.5,
 }
 
 
@@ -132,7 +155,15 @@ def roast_level_ordinal(label: str | None) -> int | None:
     """Map a roast-level label onto the 1 (light) .. 5 (dark) ordinal scale."""
     if not label:
         return None
-    return _ROAST_ORDINALS.get(normalize_label(label))
+    key = normalize_label(label).removesuffix(" roast")
+    return _ROAST_ORDINALS.get(key)
+
+
+def starting_dose_for_roast(roast_level_ord: int | None) -> float | None:
+    """A first-shot dose for this roast level, or None when it is unknown."""
+    if roast_level_ord is None:
+        return None
+    return _STARTING_DOSE_BY_ROAST.get(roast_level_ord)
 
 
 def normalize_label(value: str) -> str:

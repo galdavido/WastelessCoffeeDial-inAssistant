@@ -141,6 +141,17 @@ class TestScanAndPull(FlowTestCase):
         self.assertIsNotNone(recipe["grind_clicks"])
         self.assertEqual(body["rationale"]["headline"][:5], "grind")
 
+    def test_a_new_bag_starts_at_a_roast_aware_dose_and_the_recipe_agrees(
+        self,
+    ) -> None:
+        """Regression: the field said 18.5 g above a recipe worked out for 16 g."""
+        self.make_setup()
+        body = self.scan()
+        self.assertEqual(body["coffee_data"]["preferred_dose_g"], 18.5)
+        self.assertTrue(body["coffee_data"]["dose_from_roast"])
+        self.assertEqual(body["recipe"]["dose_g"], 18.5)
+        self.assertEqual(body["recipe"]["yield_g"], 37.0)
+
     def test_a_shot_logged_after_a_scan_lands_in_the_library(self) -> None:
         self.make_setup()
         scan = self.scan()

@@ -68,6 +68,21 @@ class TestRoastLevelOrdinal(unittest.TestCase):
         self.assertIsNone(roast_level_ordinal("Rocket Fuel"))
         self.assertIsNone(roast_level_ordinal(None))
 
+    def test_trade_names_and_a_trailing_roast_are_understood(self) -> None:
+        self.assertEqual(roast_level_ordinal("Light Roast"), 1)
+        self.assertEqual(roast_level_ordinal("Nordic"), 1)
+        self.assertEqual(roast_level_ordinal("Medium Dark Roast"), 4)
+        self.assertEqual(roast_level_ordinal("French roast"), 5)
+
+
+class TestStartingDose(unittest.TestCase):
+    def test_lighter_roasts_start_with_more_coffee(self) -> None:
+        from core.web_helpers import starting_dose_for_roast
+
+        doses = [starting_dose_for_roast(o) for o in (1, 2, 3, 4, 5)]
+        self.assertEqual(doses, sorted(doses, reverse=True))
+        self.assertIsNone(starting_dose_for_roast(None))
+
 
 class TestClassifyDataQuality(unittest.TestCase):
     def test_complete_shot_is_measured(self) -> None:

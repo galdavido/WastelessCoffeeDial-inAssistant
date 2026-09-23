@@ -44,6 +44,7 @@ from .web_helpers import (
     set_default_dose_g,
     set_grind_offset_clicks,
     set_setting,
+    starting_dose_for_roast,
 )
 from .web_schemas import (
     BeanRecordInput,
@@ -211,10 +212,24 @@ def _engine_recommendation(
     if bean is None:
         bean = _bean_for(db, owner, coffee_data)
 
+    # A coffee with no shots of its own starts from a roast-aware dose. This
+    # used to be guessed in the browser *after* the recipe came back, so the
+    # dose field showed 18.5 g above a recipe worked out for 16 g.
+    roast_dose = starting_dose_for_roast(bean.roast_level_ord if bean else None)
     result = recommend(
-        db, owner, setup, bean, dose_g, default_dose_g=get_default_dose_g(db, owner)
+        db,
+        owner,
+        setup,
+        bean,
+        dose_g,
+        default_dose_g=roast_dose or get_default_dose_g(db, owner),
     )
     coffee_data["preferred_dose_g"] = result.recipe.dose_g
+    coffee_data["dose_from_roast"] = (
+        dose_g is None
+        and roast_dose is not None
+        and result.recipe.basis in ("prior", "setup_law")
+    )
 
     recommendation_id: int | None = None
     if bean is not None and bean.id is not None:
