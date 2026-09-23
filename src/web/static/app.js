@@ -932,6 +932,18 @@ function renderRecipe(data) {
     flags.appendChild(chip);
   });
 
+  // Only ever the engine's words and numbers; textContent, so nothing in
+  // them is parsed as markup.
+  const suggestion = $('recipe-suggestion');
+  if (suggestion) {
+    const s = data.suggestion;
+    suggestion.hidden = !s;
+    if (s) {
+      const text = s.note.charAt(0).toUpperCase() + s.note.slice(1).replaceAll('; ', '. ');
+      $('recipe-suggestion-text').textContent = text.endsWith('.') ? text : `${text}.`;
+    }
+  }
+
   const prose = data.rationale
     ? [data.rationale.headline, data.rationale.why, data.rationale.what_to_watch]
         .filter(Boolean).join('\n\n')

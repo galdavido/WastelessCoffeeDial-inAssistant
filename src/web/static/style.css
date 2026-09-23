@@ -1299,6 +1299,20 @@ select.input { background-image: none; }
 
 /* The prose that reads the chart out loud. Keyed to the warn hue because it
    is nearly always reporting a guardrail. */
+/* The use-less-coffee suggestion: a printed aside, keyed in the accent
+   rather than --bad, because it is an opportunity, not a fault. */
+.rec-suggestion {
+  border-left: 2px solid var(--accent);
+  background: var(--bg-input);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 12px 14px; margin: 12px 0 4px;
+}
+.rec-suggestion h5 {
+  font-size: 11px; letter-spacing: .11em; text-transform: uppercase;
+  color: var(--accent); font-weight: 600; margin-bottom: 6px;
+}
+.rec-suggestion p { font-size: 13.5px; line-height: 1.55; color: var(--text-2); }
+
 .fit-callout {
   border-left: 2px solid var(--bad);
   background: var(--bg-card);

@@ -247,6 +247,30 @@ class TestScanAndPull(FlowTestCase):
         other = self.another_user()
         self.assertEqual(other.get(f"/api/fit?bean_id={bean_id}").status_code, 404)
 
+    def test_channeling_that_keeps_coming_back_suggests_less_coffee(self) -> None:
+        self.make_setup()
+        scan = self.scan()
+        # Each finer setting ran *faster*: the water is finding a channel.
+        for grind, time_s in (("30", 26.0), ("28", 24.0), ("26", 23.0)):
+            self.log_shot(scan["coffee_data"], actual_grind=grind, time_s=time_s)
+        bean_id = self.only_coffee()["bean_id"]
+
+        body = self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+        self.assertIn("grind_channeling_floor", body["recipe"]["guardrails_hit"])
+        suggestion = body["suggestion"]
+        self.assertEqual(suggestion["kind"], "use_less_coffee")
+        self.assertEqual(suggestion["dose_g"], 14.5)
+        self.assertEqual(suggestion["yield_g"], body["recipe"]["yield_g"])
+        # The recipe itself is untouched by it.
+        self.assertEqual(body["recipe"]["dose_g"], 18.0)
+
+    def test_a_coffee_that_is_dialling_in_normally_gets_no_suggestion(self) -> None:
+        self.make_setup()
+        self.log_shot(self.scan()["coffee_data"])
+        bean_id = self.only_coffee()["bean_id"]
+        body = self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+        self.assertIsNone(body["suggestion"])
+
     def test_the_dose_on_screen_is_the_dose_the_recipe_is_for(self) -> None:
         """Regression: a coffee with a shot ignored the dose field entirely."""
         self.make_setup()

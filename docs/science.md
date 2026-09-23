@@ -404,10 +404,8 @@ Lower bed depth `L` reduces the pressure drop (2.1), which reduces the
 channeling that (3.9) describes. For an app named "Wasteless", using a quarter
 less coffee for a better shot is the headline move.
 
-**Not yet acted on.** No code path proposes this today: a `propose_dose_reduction`
-helper existed, but nothing called it and it was removed (2026-09-23). Wiring it
-in needs a trigger — "channeling keeps recurring at this dose" — which is the
-dose term the grind law still lacks ([#beta-law](#beta-law)).
+**Acted on since 2026-09-23** as a suggestion beside the recipe, not a change
+to it; see [#dose-reduction](#dose-reduction).
 
 ### 3.11 Temperature by roast level {#temp-by-roast}
 
@@ -694,6 +692,40 @@ Three choices in [#dose-term](#dose-term) are ours rather than physics:
 - `dose_reference_g = 18` g: where `α` is quoted. This is a centring choice
   that changes no prediction. It keeps `α` at an ordinary dose, so a reader
   of `α` who ignores the dose gets something close to the pre-dose-term law.
+
+### 5.11 When to suggest less coffee {#dose-reduction}
+
+The engine offers [#cameron-reproducibility](#cameron-reproducibility)'s move
+(less coffee, a coarser grind, the same drink) as a **suggestion shown beside
+the recipe**, never folded into it. The shot it describes deliberately runs
+faster and at a longer ratio than the recipe's bands. The point is better
+extraction and repeatability, not the clock, and the guardrails would undo
+the move if it went through them. Every number in it is still the engine's.
+
+It is offered only when all of these hold:
+
+- **Espresso**, and the **channeling floor has taken the grind lever away**
+  (`grind_channeling_floor`). Before that, grinding is the simpler fix.
+- **This coffee has channeled repeatedly at this dose**: at least
+  `cameron_min_channeled_shots = 2` of its shots within `dose_pair_min_diff_g`
+  of the recipe's dose show a channeling sign by the floor's own triggers. That
+  means a finer shot that ran no slower than a coarser one prepared the same
+  way, or a long shot that still tasted sour. Two, because a single bad puck is
+  not a pattern. Restricting to one dose is what makes the "ran no slower"
+  comparison safe without a dose correction.
+- **No markedly lighter dose has been tried** on this coffee yet (half the
+  reduction or more). After that, its own shots are the evidence, and the dose
+  term ([#dose-term](#dose-term)) lets the grind law learn from them across
+  doses rather than reading them as a different coffee.
+- **The pre-infusion experiment is not running.** One lever at a time.
+
+The suggestion is `cameron_dose_reduction = 20%` less coffee, rounded to half
+a gram and never below the basket's fill floor (`basket_fill_lo`). The drink
+stays the same size, and the grind goes one step coarser than the floor.
+Cameron et al. went 25% (20 g → 15 g) on commercial baskets; home baskets are
+sized closer to their nominal dose, so this starts at the conservative end.
+One step coarser is a direction, not a solved number: the law predicts time,
+and this move deliberately gives up on the time target.
 
 ---
 
