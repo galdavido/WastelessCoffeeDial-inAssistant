@@ -108,7 +108,8 @@ src/
   web/static/  index.html, app.js, style.css, sw.js, admin.*
 migrations/    Alembic
 tests/         pytest; _sim.py is the physics simulator the engine tests use
-docs/          science.md (every constant's source), tailscale-setup.md
+docs/          science.md (every constant's source), tailscale-setup.md,
+               open-decisions.md (what is waiting on the owner)
 ```
 
 ## Security model
