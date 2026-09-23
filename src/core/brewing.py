@@ -241,8 +241,10 @@ CONSTANTS: dict[str, Constant] = {
     ),
     "dose_min_g": Constant(12.0, "g", "HEURISTIC", "#limits"),
     "dose_max_g": Constant(22.0, "g", "HEURISTIC", "#limits"),
-    # First-shot dose for a coffee with no shots, as a fill of the basket by
-    # roast: a dense dark roast packs more mass per ml than a fluffy light one.
+    # How many grams of each roast fill a basket to the same depth, as a
+    # fraction of its nominal size. A darker roast has expanded more and is
+    # less dense, so the same depth weighs less. Used for the starting dose
+    # and to turn grams into bed depth in the dose term.
     "starting_fill_light": Constant(1.03, "fraction", "HEURISTIC", "#starting-dose"),
     "starting_fill_medium": Constant(0.97, "fraction", "HEURISTIC", "#starting-dose"),
     "starting_fill_medium_dark": Constant(
@@ -328,6 +330,10 @@ class ShotRecord:
     # two shots are only comparable as grind evidence if these match.
     preinfusion_s: float | None = None
     pause_s: float | None = None
+    # The coffee's roast, 1 (light) .. 5 (dark). The dose term reads it: a
+    # darker, less dense roast fills the basket at fewer grams, so grams alone
+    # misstate the bed depth (docs/science.md#dose-term).
+    roast_level_ord: int | None = None
 
 
 @dataclass(frozen=True)
@@ -524,16 +530,57 @@ def solve_grind(
     return current_clicks + (math.log(tr_target) - math.log(tr_observed)) / beta
 
 
-def dose_log(dose_g: float | None) -> float:
-    """ln(dose / reference dose): the dose term's variable, docs/science.md#dose-term.
+# Roast ordinal -> the CONSTANTS entry for how full a basket that roast fills
+# at a given weight. docs/science.md#starting-dose.
+ROAST_FILL: dict[int, str] = {
+    1: "starting_fill_light",
+    2: "starting_fill_light",
+    3: "starting_fill_medium",
+    4: "starting_fill_medium_dark",
+    5: "starting_fill_dark",
+}
 
-    Centred on the reference dose so alpha stays the intercept at an ordinary
-    dose rather than at 1 g, and 0 for a missing dose -- i.e. "assume the
-    reference", which is what the law meant before it had a dose term.
+
+def roast_fill(roast_level_ord: int | None) -> float:
+    """Grams of this roast that fill a basket, per gram of nominal size.
+
+    1.0 for an unknown roast: no correction, which is what the law did before
+    it knew about roast density.
+    """
+    name = ROAST_FILL.get(roast_level_ord) if roast_level_ord is not None else None
+    return value_of(name) if name else 1.0
+
+
+def dose_log(dose_g: float | None, roast_level_ord: int | None = None) -> float:
+    """ln(bed depth), relative to a full reference basket. docs/science.md#dose-term.
+
+    Darcy's term is the bed *depth*, and grams are only a proxy for it. A
+    dark roast is less dense, so it fills the basket at fewer grams:
+    dividing by the roast's fill turns grams into depth. Centred on the
+    reference dose so alpha stays the intercept at an ordinary bed rather
+    than at 1 g, and 0 for a missing dose -- "assume the reference", which is
+    what the law meant before it had a dose term.
     """
     if not dose_g or dose_g <= 0:
         return 0.0
-    return math.log(dose_g / value_of("dose_reference_g"))
+    full = value_of("dose_reference_g") * roast_fill(roast_level_ord)
+    return math.log(dose_g / full)
+
+
+def dose_term(dose_g: float | None, roast_level_ord: int | None, gamma: float) -> float:
+    """The law's whole dose contribution to ln T_r. docs/science.md#dose-term.
+
+    ``gamma * ln D`` for depth plus ``ln fill(roast)``: T_r = dose / flow, so
+    a lighter dose at the *same* depth still makes a smaller drink at the same
+    ratio, and a shorter shot. Within one coffee the second term is a constant
+    and cancels; across roasts it is the part of the dose that is not depth.
+    Zero when the method has no dose term.
+    """
+    if not gamma or not dose_g or dose_g <= 0:
+        return 0.0
+    return gamma * dose_log(dose_g, roast_level_ord) + math.log(
+        roast_fill(roast_level_ord)
+    )
 
 
 def clicks_for_target(
@@ -543,13 +590,14 @@ def clicks_for_target(
     delta_bean: float = 0.0,
     gamma: float = 0.0,
     dose_g: float | None = None,
+    roast_level_ord: int | None = None,
 ) -> float | None:
     """Where to set the dial for a coffee with no shots of its own.
 
     Solves docs/science.md#beta-law for c rather than correcting from a
     measured shot:
 
-        c = (ln T_r_target - alpha - delta_bean - gamma * ln(dose / 18 g)) / beta
+        c = (ln T_r_target - alpha - delta_bean - dose_term) / beta
 
     This is the honest answer for a new bag on a calibrated setup. Correcting
     from the last shot would be correcting from a *different* coffee, which is
@@ -561,8 +609,8 @@ def clicks_for_target(
     """
     if alpha is None or not beta or tr_target <= 0:
         return None
-    dose_term = gamma * dose_log(dose_g)
-    return (math.log(tr_target) - alpha - delta_bean - dose_term) / beta
+    offset = dose_term(dose_g, roast_level_ord, gamma)
+    return (math.log(tr_target) - alpha - delta_bean - offset) / beta
 
 
 def snap_to_step(clicks: float, caps: GrinderCaps) -> float:

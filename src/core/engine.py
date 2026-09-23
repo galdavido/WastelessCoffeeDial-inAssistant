@@ -38,8 +38,8 @@ from .brewing import (
     clicks_for_target,
     cold_start_clicks,
     correct,
-    dose_log,
     dose_reduction,
+    dose_term,
     finest_useful_clicks,
     normalised_time,
     preinfusion_experiment,
@@ -87,6 +87,9 @@ class EngineResult:
     # Cameron's use-less-coffee move, when channeling keeps coming back. Kept
     # beside the recipe, never in it -- see brewing.DoseReduction.
     suggestion: DoseReduction | None = None
+    # The coffee in the basket's roast, so a view can put the recipe's dose
+    # on the same bed-depth scale as the shots.
+    roast_level_ord: int | None = None
 
 
 def grinder_caps(grinder: Equipment | None) -> GrinderCaps:
@@ -217,6 +220,7 @@ def recommend(
                 delta,
                 gamma=calibration.gamma,
                 dose_g=dose_g,
+                roast_level_ord=roast_ord,
             )
             if tr_aim is not None
             else None
@@ -363,6 +367,7 @@ def recommend(
         target=target,
         caps=caps,
         suggestion=suggestion,
+        roast_level_ord=roast_ord,
     )
 
 
@@ -522,17 +527,19 @@ def serialize_fit(
     # measured value rides along for the tooltip.
     ref_dose = result.recipe.dose_g
     gamma = calibration.gamma
-    ln_ref = dose_log(ref_dose) if gamma else 0.0
+    ln_ref = dose_term(ref_dose, result.roast_level_ord, gamma)
 
-    def at_ref_dose(tr: float | None, dose: float | None) -> float | None:
-        if not tr or not gamma or not dose or dose <= 0:
+    def at_ref_dose(tr: float | None, shot: ShotRecord) -> float | None:
+        if not tr or not gamma or not shot.dose_g or shot.dose_g <= 0:
             return tr
-        return tr * math.exp(gamma * (ln_ref - dose_log(dose)))
+        return tr * math.exp(
+            ln_ref - dose_term(shot.dose_g, shot.roast_level_ord, gamma)
+        )
 
     shots = []
     for index, shot in enumerate(history):
         measured = normalised_time(shot)
-        tr = at_ref_dose(measured, shot.dose_g)
+        tr = at_ref_dose(measured, shot)
         shots.append(
             {
                 "index": index,
@@ -562,7 +569,7 @@ def serialize_fit(
             # The intercept at the recipe's dose, so the chart's lines and
             # points share one dose. alpha_reference_dose is the fitted term
             # itself, quoted at dose_reference_g.
-            "alpha": (calibration.alpha + gamma * ln_ref)
+            "alpha": (calibration.alpha + ln_ref)
             if calibration.alpha is not None
             else None,
             "alpha_reference_dose": calibration.alpha,

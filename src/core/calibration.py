@@ -34,6 +34,7 @@ from .brewing import (
     Method,
     ShotRecord,
     dose_log,
+    dose_term,
     normalised_time,
     prep_incomparable_reason,
     value_of,
@@ -102,7 +103,7 @@ class SlopePair:
 
 
 def _dose_log(shot: ShotRecord) -> float:
-    return dose_log(shot.dose_g)
+    return dose_log(shot.dose_g, shot.roast_level_ord)
 
 
 def theil_sen_pairs(shots: Sequence[ShotRecord], gamma: float = 0.0) -> list[SlopePair]:
@@ -257,7 +258,12 @@ def _usable(
         tr = normalised_time(shot)
         if shot.grind_clicks is None or tr is None or tr <= 0:
             continue
-        out.append((shot.grind_clicks, math.log(tr) - gamma * _dose_log(shot)))
+        out.append(
+            (
+                shot.grind_clicks,
+                math.log(tr) - dose_term(shot.dose_g, shot.roast_level_ord, gamma),
+            )
+        )
     return out
 
 
@@ -286,7 +292,10 @@ def bean_offsets(
         if shot.bean_id is None or shot.grind_clicks is None or tr is None or tr <= 0:
             continue
         residuals.setdefault(shot.bean_id, []).append(
-            math.log(tr) - (alpha + beta * shot.grind_clicks + gamma * _dose_log(shot))
+            math.log(tr)
+            - alpha
+            - beta * shot.grind_clicks
+            - dose_term(shot.dose_g, shot.roast_level_ord, gamma)
         )
 
     kappa_bean = value_of("kappa_bean")
