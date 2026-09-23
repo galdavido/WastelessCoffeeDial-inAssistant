@@ -42,7 +42,7 @@ from .brewing import (
     beta_prior,
     cold_start_clicks,
     correct,
-    dose_log,
+    dose_term,
     normalised_time,
 )
 from .calibration import fit_setup
@@ -224,7 +224,7 @@ def held_out_time_error(
             fitted.alpha
             + fitted.delta_bean
             + fitted.beta * held.grind_clicks
-            + fitted.gamma * dose_log(held.dose_g)
+            + dose_term(held.dose_g, held.roast_level_ord, fitted.gamma)
         )
         errors.append(abs(predicted - math.log(tr)))
 
@@ -236,7 +236,7 @@ def held_out_time_error(
                     prior_fit.alpha
                     + prior_fit.delta_bean
                     + prior_fit.beta * held.grind_clicks
-                    + prior_fit.gamma * dose_log(held.dose_g)
+                    + dose_term(held.dose_g, held.roast_level_ord, prior_fit.gamma)
                 )
                 prior_errors.append(abs(prior_pred - math.log(tr)))
 

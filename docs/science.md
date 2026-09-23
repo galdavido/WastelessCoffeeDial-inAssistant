@@ -193,11 +193,15 @@ other almost always 16 g. The law now carries `+ γ·ln(dose / 18 g)` for
 espresso; see [#dose-term](#dose-term).
 
 An earlier version of this note guessed that the gap between the two offsets
-was mostly dose. **The data says the opposite.** The 16 g coffee is the one
-that runs *slower* at a given setting, and a lighter dose runs faster, so
-dose cannot explain the gap. Taking dose out widens it (from about 0.19 to
-about 0.42 in `ln T_r`). The coffees genuinely grind differently, and the
-lighter dose was hiding part of how much.
+was mostly dose. **It isn't, and the owner explained why (2026-09-23).** The
+darker coffee is dosed lighter *because* a dark roast is less dense and takes
+more room in the basket. The two coffees fill the basket to about the same
+height, so their beds are equally deep and dose explains none of the gap. The
+darker coffee also runs slower at a given setting because a dark roast is
+easier to extract and brews differently. That is a real property of the coffee,
+which is what `δ_bean` is for. This is why the dose term measures **bed
+depth**, not grams (§2.6). A draft that used grams read the dark coffee's
+lighter dose as a shallower bed, and credited that to the coffee instead.
 
 ### 2.5 Extraction yield {#ey-formula}
 
@@ -213,8 +217,29 @@ computable here** — see [#limits](#limits).
 For espresso the law is
 
 ```
-ln T_r = α_setup + δ_bean + β_setup · c + γ · ln(dose / 18 g)
+ln T_r = α_setup + δ_bean + β_setup · c + γ · ln D + ln fill(roast)
+D = dose / (18 g × fill(roast))
 ```
+
+`D` is the **bed depth** relative to a full reference basket. Darcy's `L` is a
+depth, and grams are only a proxy for it: a darker roast has expanded more in
+the roaster and is less dense, so the same depth weighs less. `fill(roast)`
+is the same table the starting dose uses ([#starting-dose](#starting-dose)):
+1.03 for light, 0.97 medium, 0.94 medium-dark, 0.92 dark, and 1 when the roast
+is unknown. A light coffee at 18.5 g and a dark one at 16.5 g are therefore
+the same bed. Within one coffee the roast is constant and `D` is simply
+proportional to grams, so the fit of `γ` (below) is unaffected. The roast
+correction matters wherever coffees are compared: the bean offsets, the solve
+for a new coffee, and the fit chart.
+
+**Why `ln fill(roast)` too.** Dose enters `T_r` twice. `T_r = t / R`, and
+`t = beverage / Q`, so `T_r = dose / Q`. At a fixed ratio a smaller dose makes
+a smaller drink, which takes less time *even at the same depth*. That factor
+is kinematics, exact, with exponent 1. The depth enters through Darcy's `Q`.
+Within one coffee both scale with grams, which is the total `γ = 2`. Across
+roasts only the depth part is corrected for density, and the drink-size part
+leaves `ln fill(roast)`. It is a constant for any one coffee, so it cancels
+wherever two shots of the same coffee are compared.
 
 **Why a power of dose, and why γ = 2.** Cameron et al. state that when the
 coffee mass changes *"the only parameter that needs to be altered is the bed
@@ -252,19 +277,22 @@ together, and in that case no amount of iterating could separate them.
 the new dose before comparing it with the target:
 `T_r' = T_r · (dose_new / dose_anchor)^γ`. A heavier dose then moves the
 grind coarser by exactly what it is expected to do to the time, rather than
-by nothing. The absolute solve for a new coffee subtracts `γ·ln(dose / 18 g)`.
-`α` is quoted at 18 g, so everything that reads `α` without a dose sees an
-ordinary dose rather than 1 g.
+by nothing. The absolute solve for a new coffee subtracts `γ·ln D`. `α` is
+quoted at a full reference basket, so anything that reads `α` without a dose
+sees an ordinary bed rather than a 1 g one.
 
 **Measured on the reference history, 2026-09-23.** There are 15 measured
-shots and **no dose pair yet**: the one 18 g shot of the 16 g coffee was
+shots and **no dose pair yet**: the one 18 g shot of the darker coffee was
 paused before the pull for 2.1 s longer than the others, beyond
-`prep_tolerance_s`. So `γ` is still the prior. Leave-one-out prediction of
-`ln T_r` with the coffee's own offset included, which is how the engine
-predicts, gives a mean absolute error of **0.260 with no dose term and 0.245
-with γ = 2** (0.251 at γ = 1). The term helps a little, and in the direction
-the physics says. The backtest's M3 used to leave `δ_bean` out, which
-reversed that comparison (0.319 against 0.429). It now includes the offset.
+`prep_tolerance_s`. So `γ` is still the prior. The two coffees' usual doses
+come out at nearly the same depth (`ln D` −0.03 and −0.06), as the owner
+intended. Leave-one-out prediction of `ln T_r`, with the coffee's own offset
+included as the engine predicts, gives a mean absolute error of **0.260 with
+no dose term and 0.244 with γ = 2**. With the term, the darker coffee's offset
+sits 0.35 above the lighter one's in `ln T_r`: about 1.4× slower at the same
+setting and bed depth, even though its smaller drink should have made it
+quicker. That is the roast. The backtest's M3 used to leave `δ_bean` out, which
+reversed that comparison. It now includes the offset.
 
 **What it does not fix.** The channeling floor ([#cameron](#cameron))
 compares raw normalised times between shots and does not yet adjust them for
@@ -663,8 +691,9 @@ estimate needs.
 ### 5.9 Starting dose by roast level {#starting-dose}
 
 A coffee with no shots of its own needs a first dose. Roast changes how much
-mass fits in a basket: a dark roast is denser and less expanded than a light
-one, so the same basket holds less of it by weight at the same headspace. The
+mass fits in a basket: a dark roast has expanded more in the roaster and is
+less dense than a light one, so a basket filled to the same headspace holds
+less of it by weight. The
 engine starts from a **fill of the basket** by roast level:
 
 | Roast | Fill | On an 18 g basket |
@@ -691,9 +720,10 @@ Three choices in [#dose-term](#dose-term) are ours rather than physics:
   it.
 - `dose_pair_min_diff_g = 0.5` g: below this, two shots' doses differ by less
   than an ordinary scale and basket repeat, so the pair measures noise.
-- `dose_reference_g = 18` g: where `α` is quoted. This is a centring choice
-  that changes no prediction. It keeps `α` at an ordinary dose, so a reader
-  of `α` who ignores the dose gets something close to the pre-dose-term law.
+- `dose_reference_g = 18` g: the basket `α` is quoted at, scaled by the
+  roast's fill. This is a centring choice that changes no prediction. It keeps
+  `α` at an ordinary bed, so a reader of `α` who ignores the dose gets
+  something close to the pre-dose-term law.
 
 ---
 

@@ -19,6 +19,7 @@ from core.brewing import (
     beta_prior,
     clicks_for_target,
     correct,
+    dose_log,
     is_finer,
     normalised_time,
     target_for,
@@ -116,6 +117,60 @@ class TestTheDoseNoLongerHidesInTheBeanOffset(unittest.TestCase):
         # Without the term the same shots read the dose gap as a coffee gap.
         without = bean_offsets(shots, calibration.alpha, calibration.beta, 0.0)
         self.assertGreater(abs(without[1] - without[2]), 0.1)
+
+
+class TestBedDepthNotGrams(unittest.TestCase):
+    """A darker roast fills the basket at fewer grams: the owner's two coffees."""
+
+    def test_a_basket_of_light_and_a_basket_of_dark_are_the_same_bed(self) -> None:
+        light = dose_log(18.5, roast_level_ord=2)
+        dark = dose_log(16.5, roast_level_ord=5)
+        self.assertAlmostEqual(light, dark, delta=0.01)
+        self.assertAlmostEqual(dose_log(18.0), 0.0)  # unknown roast: grams only
+
+    def test_a_lighter_dark_roast_dose_is_not_read_as_a_coffee_difference(
+        self,
+    ) -> None:
+        """Same coffee behaviour; the dark one is less dense and dosed to fill."""
+        light_bed = BedParams(dose_g=18.5)
+        dark_bed = BedParams(
+            dose_g=16.5, bulk_density_kg_m3=light_bed.bulk_density_kg_m3 * 16.5 / 18.5
+        )
+        shots = []
+        for bean_id, roast, bed in ((1, 2, light_bed), (2, 5, dark_bed)):
+            for clicks in (36.0, 39.0, 42.0):
+                sim = simulate_shot(clicks, K6, bed, bed.dose_g * 2.0)
+                shots.append(
+                    ShotRecord(
+                        method="espresso",
+                        dose_g=bed.dose_g,
+                        bean_id=bean_id,
+                        grind_clicks=clicks,
+                        yield_g=bed.dose_g * 2.0,
+                        time_s=sim.time_s,
+                        roast_level_ord=roast,
+                    )
+                )
+        offsets = fit_setup(shots, "espresso", K6, BETA, bean_id=1).bean_offsets
+        self.assertLess(abs(offsets[1] - offsets[2]), 0.03)
+
+        # Reading grams as depth would call the dark coffee a faster one.
+        grams_only = [replace(s, roast_level_ord=None) for s in shots]
+        wrong = fit_setup(grams_only, "espresso", K6, BETA, bean_id=1).bean_offsets
+        self.assertGreater(abs(wrong[1] - wrong[2]), 0.05)
+
+    def test_a_new_dark_coffee_differs_only_by_its_smaller_drink(self) -> None:
+        """Same depth, so no Darcy difference -- but 16.5 g at 1:2 is a smaller
+        drink than 18.5 g, which takes less time. Only that is left."""
+        light = clicks_for_target(
+            1.0, -0.1, 14.0, gamma=2.0, dose_g=18.5, roast_level_ord=2
+        )
+        dark = clicks_for_target(
+            1.0, -0.1, 14.0, gamma=2.0, dose_g=16.5, roast_level_ord=5
+        )
+        assert light is not None and dark is not None
+        drink_only = math.log(16.5 / 18.5) / 0.1  # clicks, beta = -0.1
+        self.assertAlmostEqual(dark - light, drink_only, delta=0.05)
 
 
 class TestCorrectingForADoseChange(unittest.TestCase):
