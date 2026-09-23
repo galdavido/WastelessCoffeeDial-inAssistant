@@ -189,12 +189,8 @@ def ensure_default_equipment(db: Any) -> tuple[Any, Any]:
     # Shared entries only: a new user's default setup points at the seeded
     # baseline hardware, never at something another friend added.
     shared = db.query(Equipment).filter(Equipment.owner.is_(None))
-    grinder = (
-        shared.filter(Equipment.type == "grinder").order_by(Equipment.id).first()
-    )
-    machine = (
-        shared.filter(Equipment.type != "grinder").order_by(Equipment.id).first()
-    )
+    grinder = shared.filter(Equipment.type == "grinder").order_by(Equipment.id).first()
+    machine = shared.filter(Equipment.type != "grinder").order_by(Equipment.id).first()
     if not grinder:
         grinder = Equipment(type="grinder", brand="Unknown", model="Unknown")
         db.add(grinder)

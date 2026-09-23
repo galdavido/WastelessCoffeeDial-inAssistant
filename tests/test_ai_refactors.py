@@ -73,6 +73,15 @@ class TestAiRefactors(unittest.TestCase):
         self.assertEqual(parsed_valid["origin"], "Ethiopia")
         self.assertIsNone(parsed_invalid)
 
+    def test_an_unreadable_image_raises_rather_than_setting_shared_state(self) -> None:
+        """The failure travels with the call, so concurrent scans cannot swap it."""
+        import ai.vision as vision
+
+        with self.assertRaises(vision.VisionError) as ctx:
+            vision.analyze_coffee_bag(b"not an image")
+        self.assertIn("Failed to read image", str(ctx.exception))
+        self.assertFalse(hasattr(vision, "get_last_vision_error"))
+
 
 class TestThinkingLevel(unittest.TestCase):
     """Only Gemini 3.x takes thinking_level, and sending it elsewhere aborts.

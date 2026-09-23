@@ -6,7 +6,7 @@ import argparse
 import os
 
 from ai.rag import get_best_grind_setting
-from ai.vision import analyze_coffee_bag
+from ai.vision import VisionError, analyze_coffee_bag
 
 _DEFAULT_IMAGE = os.path.join("data", "test_bag.jpg")
 
@@ -21,9 +21,11 @@ def run(image_path: str) -> int:
         return 1
 
     print(f"Step 1: analysing image ({image_path})...")
-    coffee_data = analyze_coffee_bag(image_path)
-    if not coffee_data:
-        print("Error: failed to extract data from the image.")
+    try:
+        with open(image_path, "rb") as image:
+            coffee_data = analyze_coffee_bag(image.read())
+    except VisionError as exc:
+        print(f"Error: failed to extract data from the image: {exc}")
         return 1
 
     print("\nExtracted coffee data:")

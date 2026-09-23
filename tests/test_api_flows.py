@@ -221,6 +221,30 @@ class TestScanAndPull(FlowTestCase):
         self.assertEqual(body["recipe"]["basis"], "prior")
 
 
+class TestScanFailures(FlowTestCase):
+    def test_an_unreadable_bag_reports_why(self) -> None:
+        from ai.vision import VisionError
+
+        def fail(_image: bytes) -> dict[str, Any]:
+            raise VisionError("gemini-3.8-flash: invalid JSON schema in response")
+
+        with patch("core.web_routes.analyze_coffee_bag", fail):
+            response = self.api.post(
+                "/api/analyze", files={"file": ("bag.png", _png(), "image/png")}
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("invalid JSON schema", response.json()["detail"])
+
+    def test_an_oversized_upload_is_refused(self) -> None:
+        from core.web_routes import MAX_UPLOAD_BYTES
+
+        big = b"\xff" * (MAX_UPLOAD_BYTES + 10)
+        response = self.api.post(
+            "/api/analyze", files={"file": ("bag.jpg", big, "image/jpeg")}
+        )
+        self.assertEqual(response.status_code, 413)
+
+
 class TestLibrary(FlowTestCase):
     def test_a_coffee_can_be_added_edited_and_deleted_by_hand(self) -> None:
         self.make_setup()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 from typing import Any
 
@@ -19,38 +20,19 @@ from core.optional_deps import (
 load_dotenv_if_available()
 
 
-_last_vision_error: str | None = None
+class VisionError(Exception):
+    """The bag could not be read. The message is safe to show the user."""
 
 
-# 1. Define the Pydantic model (The data structure we expect from the AI)
 class CoffeeData(BaseModel):
+    """What the model must return for a bag photo."""
+
     roaster: str | None
     name: str | None
     origin: str | None
     process: str | None
     roast_level: str | None
     roast_date: str | None
-
-
-def get_last_vision_error() -> str | None:
-    return _last_vision_error
-
-
-def _set_last_vision_error(message: str | None) -> None:
-    global _last_vision_error
-    _last_vision_error = message
-
-
-def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
-    """Return PIL image module plus initialized GenAI client/types."""
-    try:
-        image_module = require_pillow_image()
-        genai, types = require_genai()
-    except RuntimeError as exc:
-        _set_last_vision_error(str(exc))
-        return None
-
-    return image_module, genai.Client(), types
 
 
 def _build_prompt() -> str:
@@ -75,24 +57,22 @@ def _parse_coffee_data_response(text: str) -> dict[str, Any] | None:
         return None
 
 
-def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
-    """Analyze a coffee bag image and return normalized coffee metadata."""
-    _set_last_vision_error(None)
+def analyze_coffee_bag(image: bytes) -> dict[str, Any]:
+    """Read a coffee bag photo into normalised coffee metadata.
 
-    setup = _get_image_module_and_client()
-    if setup is None:
-        return None
-    image_module, client, types = setup
+    Raises VisionError on failure. The error travels with the call rather
+    than through module state: routes run on a thread pool, so a shared
+    "last error" could hand one user's failure to another's scan.
+    """
+    image_module = require_pillow_image()
+    genai, types = require_genai()
 
     try:
-        img = image_module.open(image_path).convert("RGB")
-    except FileNotFoundError:
-        message = f"The '{image_path}' file is not found in the folder."
-        _set_last_vision_error(message)
-        return None
+        img = image_module.open(io.BytesIO(image)).convert("RGB")
     except Exception as exc:
-        _set_last_vision_error(f"Failed to read image: {exc}")
-        return None
+        raise VisionError(f"Failed to read image: {exc}") from exc
+
+    client = genai.Client()
 
     prompt = _build_prompt()
 
@@ -134,11 +114,8 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
             evaluate_result=evaluate_response,
         )
 
-        if parsed_payload is not None:
-            _set_last_vision_error(None)
-            return parsed_payload
-
-        _set_last_vision_error(last_error or "Unknown extraction error")
-        return None
+        if parsed_payload is None:
+            raise VisionError(last_error or "Unknown extraction error")
+        return parsed_payload
     finally:
         client.close()

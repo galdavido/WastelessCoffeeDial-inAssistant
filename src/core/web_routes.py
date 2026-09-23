@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from ai.vision import analyze_coffee_bag, get_last_vision_error
+from ai.vision import VisionError, analyze_coffee_bag
 from database.models import Bean, BrewSetup, DialInLog, Equipment, Recommendation
 
 from .auth import auth_mode, get_owner
@@ -324,7 +324,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             if candidate in _ALLOWED_IMAGE_EXTS:
                 suffix = candidate
 
-        content = file.file.read()
+        # One byte past the limit is enough to know it is too big, without
+        # reading an arbitrarily large upload into memory first.
+        content = file.file.read(MAX_UPLOAD_BYTES + 1)
         if not content:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
         if len(content) > MAX_UPLOAD_BYTES:
@@ -333,18 +335,13 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 detail=f"Image exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
             )
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-
         try:
-            coffee_data = analyze_coffee_bag(tmp_path)
-        finally:
-            os.unlink(tmp_path)
-
-        if not coffee_data:
-            detail = get_last_vision_error() or "Failed to extract data from image."
-            raise HTTPException(status_code=422, detail=detail)
+            coffee_data = analyze_coffee_bag(content)
+        except VisionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            # A missing AI dependency: not the user's fault, and not their photo.
+            raise _server_error(exc, "read the bag") from exc
 
         image_name: str | None = None
         if uploads_dir:
