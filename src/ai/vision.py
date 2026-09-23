@@ -1,56 +1,34 @@
 from __future__ import annotations
 
+import io
 import json
 from typing import Any
 
+from google import genai
+from google.genai import types
+from PIL import Image
 from pydantic import BaseModel
 
 from ai.model_selection import (
     GEMINI_MODEL_CANDIDATES,
-    thinking_level_for,
+    json_config,
     try_model_candidates,
 )
-from core.optional_deps import (
-    load_dotenv_if_available,
-    require_genai,
-    require_pillow_image,
-)
-
-load_dotenv_if_available()
 
 
-_last_vision_error: str | None = None
+class VisionError(Exception):
+    """The bag could not be read. The message is safe to show the user."""
 
 
-# 1. Define the Pydantic model (The data structure we expect from the AI)
 class CoffeeData(BaseModel):
+    """What the model must return for a bag photo."""
+
     roaster: str | None
     name: str | None
     origin: str | None
     process: str | None
     roast_level: str | None
     roast_date: str | None
-
-
-def get_last_vision_error() -> str | None:
-    return _last_vision_error
-
-
-def _set_last_vision_error(message: str | None) -> None:
-    global _last_vision_error
-    _last_vision_error = message
-
-
-def _get_image_module_and_client() -> tuple[Any, Any, Any] | None:
-    """Return PIL image module plus initialized GenAI client/types."""
-    try:
-        image_module = require_pillow_image()
-        genai, types = require_genai()
-    except RuntimeError as exc:
-        _set_last_vision_error(str(exc))
-        return None
-
-    return image_module, genai.Client(), types
 
 
 def _build_prompt() -> str:
@@ -75,43 +53,37 @@ def _parse_coffee_data_response(text: str) -> dict[str, Any] | None:
         return None
 
 
-def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
-    """Analyze a coffee bag image and return normalized coffee metadata."""
-    _set_last_vision_error(None)
+def analyze_coffee_bag(image: bytes) -> dict[str, Any]:
+    """Read a coffee bag photo into normalised coffee metadata.
 
-    setup = _get_image_module_and_client()
-    if setup is None:
-        return None
-    image_module, client, types = setup
+    Raises VisionError on failure. The error travels with the call rather
+    than through module state: routes run on a thread pool, so a shared
+    "last error" could hand one user's failure to another's scan.
+    """
+    # Decoding locally is the validation: a file Pillow cannot open never
+    # costs a Gemini call.
+    try:
+        photo = Image.open(io.BytesIO(image)).convert("RGB")
+    except Exception as exc:
+        raise VisionError(f"Failed to read image: {exc}") from exc
 
     try:
-        img = image_module.open(image_path).convert("RGB")
-    except FileNotFoundError:
-        message = f"The '{image_path}' file is not found in the folder."
-        _set_last_vision_error(message)
-        return None
-    except Exception as exc:
-        _set_last_vision_error(f"Failed to read image: {exc}")
-        return None
+        client = genai.Client()
+    except Exception as exc:  # no API key, most likely
+        raise VisionError(f"The bag reader is not available: {exc}") from exc
 
     prompt = _build_prompt()
 
     try:
         parsed_payload: dict[str, Any] | None = None
 
+        contents: list[types.PartUnionDict] = [prompt, photo]
+
         def call_model(model_name: str) -> Any:
-            config: dict[str, Any] = {
-                "response_mime_type": "application/json",
-                "response_schema": CoffeeData,
-                "temperature": 0.1,
-            }
-            level = thinking_level_for(model_name)
-            if level:
-                config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
             return client.models.generate_content(
                 model=model_name,
-                contents=[prompt, img],
-                config=types.GenerateContentConfig(**config),
+                contents=contents,
+                config=json_config(model_name, CoffeeData, temperature=0.1),
             )
 
         def evaluate_response(response: Any) -> tuple[bool, str | None]:
@@ -134,11 +106,8 @@ def analyze_coffee_bag(image_path: str) -> dict[str, Any] | None:
             evaluate_result=evaluate_response,
         )
 
-        if parsed_payload is not None:
-            _set_last_vision_error(None)
-            return parsed_payload
-
-        _set_last_vision_error(last_error or "Unknown extraction error")
-        return None
+        if parsed_payload is None:
+            raise VisionError(last_error or "Unknown extraction error")
+        return parsed_payload
     finally:
         client.close()

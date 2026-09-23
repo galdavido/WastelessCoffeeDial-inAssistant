@@ -18,15 +18,27 @@ the smoke check below sends a throwaway value directly to loopback.
 ## Steps
 
 1. **If any file under `src/web/static/` changed**, bump the service-worker
-   cache in `src/web/static/sw.js`: `const CACHE = 'wcda-vN'` → next `N`.
-   Skipping this leaves clients on the old bundle.
+   cache in `src/web/static/sw.js`: `const CACHE = 'wcda-vN'` → next `N`, and
+   the `?v=N` on the CSS/JS tags in `index.html` and `admin.html` to match
+   (`tests/test_web_app.py` fails if they disagree). Skipping this leaves
+   clients on the old bundle.
 
 2. **If backend/test files changed**, run checks first (in a throwaway
    container so no host env is needed):
    ```
    docker run --rm -v "$PWD":/w -w /w -e DATABASE_URL=postgresql+psycopg2://t:t@localhost/t \
      -e GEMINI_API_KEY=x python:3.14-slim bash -c \
-     'pip install -q -e ".[dev]" && ruff check src tests && ruff format --check src tests && pytest -q tests/test_web_app.py'
+     'pip install -q -e ".[dev]" && ruff check src tests && ruff format --check src tests && mypy src && pytest -q'
+   ```
+   Without a reachable database the API-flow tests skip; CI runs them against
+   Postgres, so a green CI run on the branch is the real gate.
+
+   **New migrations run on startup.** If `migrations/versions/` changed, the
+   restart in step 3 applies them to the friends database — take a fresh dump
+   first so the change can be rolled back:
+   ```
+   docker compose -f compose.prod.yaml exec db-backup /backup.sh
+   ls -t backups/db/last/ | head -1        # the dump just written
    ```
 
 3. **Rebuild + restart the web container:**

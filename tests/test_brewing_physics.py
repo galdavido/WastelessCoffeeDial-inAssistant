@@ -11,19 +11,17 @@ from __future__ import annotations
 
 import unittest
 
+from _sim import BedParams, simulate_shot
 from core.brewing import (
     GrinderCaps,
     ShotRecord,
     beta_prior,
     brew_ratio,
-    extraction_yield_pct,
-    flow_rate_gps,
     normalised_time,
     snap_to_step,
     solve_grind,
     target_for,
 )
-from core.sim import BedParams, simulate_shot
 
 K6 = GrinderCaps(
     min_clicks=0.0,
@@ -54,21 +52,10 @@ class TestDerivedMetrics(unittest.TestCase):
         long = ShotRecord(method="espresso", dose_g=18.0, yield_g=45.0, time_s=35)
         self.assertAlmostEqual(normalised_time(short), normalised_time(long))
 
-    def test_flow_rate(self) -> None:
-        shot = ShotRecord(method="espresso", dose_g=18.0, yield_g=36.0, time_s=30)
-        self.assertAlmostEqual(flow_rate_gps(shot), 1.2)
-
     def test_metrics_are_none_when_unmeasured(self) -> None:
         shot = ShotRecord(method="espresso", dose_g=18.0)
         self.assertIsNone(normalised_time(shot))
-        self.assertIsNone(flow_rate_gps(shot))
-
-    def test_extraction_yield_requires_tds(self) -> None:
-        shot = ShotRecord(method="espresso", dose_g=18.0, yield_g=36.0, time_s=28)
-        # No refractometer, no number. See docs/science.md#limits.
-        self.assertIsNone(extraction_yield_pct(shot, None))
-        # With one, the SCA formula.
-        self.assertAlmostEqual(extraction_yield_pct(shot, 10.0), 20.0)
+        self.assertIsNone(brew_ratio(shot))
 
 
 class TestGrindLaw(unittest.TestCase):

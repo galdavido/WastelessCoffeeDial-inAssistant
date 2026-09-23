@@ -15,6 +15,7 @@ from __future__ import annotations
 import random
 import unittest
 
+from _sim import BedParams, simulate_shot
 from core.brewing import (
     GrinderCaps,
     MachineCaps,
@@ -27,11 +28,9 @@ from core.brewing import (
     finest_useful_clicks,
     is_finer,
     normalised_time,
-    propose_dose_reduction,
     target_for,
 )
-from core.calibration import fit_setup, theil_sen_slope
-from core.sim import BedParams, simulate_shot
+from core.calibration import fit_setup, theil_sen_comparable
 
 K6 = GrinderCaps(
     min_clicks=0.0,
@@ -190,11 +189,6 @@ class TestCameronGuardrail(unittest.TestCase):
         self.assertEqual(guarded.grind_clicks, 30.0)
         self.assertIn("grind_hardware_min", guarded.guardrails_hit)
 
-    def test_dose_reduction_is_the_cameron_move(self) -> None:
-        reduced, message = propose_dose_reduction(20.0)
-        self.assertEqual(reduced, 16.0)  # 20% less, as in the paper
-        self.assertIn("coarser", message)
-
 
 class TestTastePolicy(unittest.TestCase):
     def _on_target_shot(self, **overrides: object) -> ShotRecord:
@@ -311,10 +305,26 @@ class TestCalibration(unittest.TestCase):
         self.assertLess(abs(fit.beta), 0.5)
 
     def test_theil_sen_tolerates_one_bad_measurement(self) -> None:
-        clean = [(float(c), -0.1 * c) for c in range(30, 40)]
-        slope_clean = theil_sen_slope(clean)
-        corrupted = [*clean, (35.0, 99.0)]  # a mis-logged shot
-        slope_corrupted = theil_sen_slope(corrupted)
+        clean = [
+            ShotRecord(
+                method="espresso",
+                dose_g=18.0,
+                grind_clicks=float(c),
+                yield_g=36.0,
+                time_s=60.0 * 2.718281828 ** (-0.1 * c),
+            )
+            for c in range(30, 40)
+        ]
+        slope_clean = theil_sen_comparable(clean)
+        # A mis-logged shot: the timer left running.
+        bad = ShotRecord(
+            method="espresso",
+            dose_g=18.0,
+            grind_clicks=35.0,
+            yield_g=36.0,
+            time_s=900.0,
+        )
+        slope_corrupted = theil_sen_comparable([*clean, bad])
         assert slope_clean is not None and slope_corrupted is not None
         self.assertAlmostEqual(slope_clean, slope_corrupted, places=2)
 
@@ -350,6 +360,75 @@ class TestMethodAwareness(unittest.TestCase):
         )
         self.assertIsNotNone(recipe.water_g)
         self.assertIsNone(recipe.yield_g)
+
+
+class TestDose(unittest.TestCase):
+    """The dose the user asks for is the dose the recipe is for."""
+
+    SHOT = ShotRecord(
+        method="espresso",
+        dose_g=18.0,
+        grind_clicks=30.0,
+        yield_g=36.0,
+        time_s=27.0,
+        taste_axis="balanced",
+    )
+    NO_BASKET = MachineCaps(basket_size_g=None, temp_controllable=False)
+
+    def test_without_a_request_the_coffee_keeps_its_own_dose(self) -> None:
+        recipe = correct(self.SHOT, TARGET, beta_prior("espresso", K6), K6, PID_MACHINE)
+        self.assertEqual(recipe.dose_g, 18.0)
+        self.assertEqual(recipe.yield_g, 36.0)
+
+    def test_a_requested_dose_is_honoured_and_the_ratio_kept(self) -> None:
+        """Regression: the dose field was ignored once a coffee had a shot."""
+        recipe = correct(
+            self.SHOT,
+            TARGET,
+            beta_prior("espresso", K6),
+            K6,
+            self.NO_BASKET,
+            dose_g=20.0,
+        )
+        self.assertEqual(recipe.dose_g, 20.0)
+        self.assertEqual(recipe.yield_g, 40.0)
+        self.assertTrue(
+            any("changed the dose" in note for note in recipe.notes),
+            "the grind is still solved at the old dose, and the user must be told",
+        )
+
+    def test_espresso_without_a_basket_is_held_to_a_plausible_dose(self) -> None:
+        recipe = Recipe(method="espresso", dose_g=30.0, yield_g=60.0)
+        guarded = apply_guardrails(recipe, K6, self.NO_BASKET, [], TARGET)
+        self.assertEqual(guarded.dose_g, 22.0)
+        self.assertIn("dose_plausible_range", guarded.guardrails_hit)
+        assert guarded.yield_g is not None
+        self.assertAlmostEqual(guarded.yield_g / guarded.dose_g, 2.0, places=2)
+
+    def test_pourover_and_moka_doses_are_not_clamped_to_an_espresso_basket(
+        self,
+    ) -> None:
+        """Regression: a 30 g pour-over came back as 22 g at about 1:22."""
+        for method, dose, water in (("pourover", 30.0, 480.0), ("moka", 28.0, 224.0)):
+            recipe = Recipe(method=method, dose_g=dose, water_g=water)  # type: ignore[arg-type]
+            guarded = apply_guardrails(
+                recipe,
+                K6,
+                self.NO_BASKET,
+                [],
+                target_for(method),  # type: ignore[arg-type]
+            )
+            self.assertEqual(guarded.dose_g, dose, method)
+            self.assertEqual(guarded.water_g, water, method)
+            self.assertEqual(guarded.guardrails_hit, (), method)
+
+    def test_a_basket_clamp_scales_the_water_too(self) -> None:
+        moka_funnel = MachineCaps(basket_size_g=15.0)
+        recipe = Recipe(method="moka", dose_g=20.0, water_g=160.0)
+        guarded = apply_guardrails(recipe, K6, moka_funnel, [], target_for("moka"))
+        self.assertIn("dose_basket_capacity", guarded.guardrails_hit)
+        assert guarded.water_g is not None
+        self.assertAlmostEqual(guarded.water_g / guarded.dose_g, 8.0, places=1)
 
 
 if __name__ == "__main__":

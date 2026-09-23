@@ -1,3 +1,5 @@
+"""Helpers behind the routes: settings, parsing, coffee matching, shot rows."""
+
 from __future__ import annotations
 
 import os
@@ -8,52 +10,32 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from database.database import SessionLocal
-from database.models import AppSetting, Bean, BrewSetup, DialInLog, Equipment
+from database.models import (
+    AppSetting,
+    Bean,
+    BrewSetup,
+    DialInLog,
+    Equipment,
+    Recommendation,
+    as_float,
+)
 
-from .web_schemas import LogDetailsInput
+from .web_schemas import FeedbackRequest, LogDetailsInput
+
+DEFAULT_DOSE_G = 16.0
 
 
 def get_default_dose_g(db: Any, owner: str) -> float:
-    setting = (
-        db.query(AppSetting)
-        .filter(AppSetting.owner == owner, AppSetting.key == "default_dose_g")
-        .first()
-    )
-    if not setting:
-        return 16.0
+    """The user's stored default dose, or 16 g."""
     try:
-        dose = float(setting.value)
-        if dose > 0:
-            return dose
-    except (TypeError, ValueError):
-        pass
-    return 16.0
+        dose = float(get_setting(db, owner, "default_dose_g") or DEFAULT_DOSE_G)
+    except ValueError:
+        return DEFAULT_DOSE_G
+    return dose if dose > 0 else DEFAULT_DOSE_G
 
 
 def set_default_dose_g(db: Any, owner: str, dose: float) -> None:
     set_setting(db, owner, "default_dose_g", str(dose))
-
-
-def get_grind_offset_clicks(db: Any, owner: str) -> float:
-    setting = (
-        db.query(AppSetting)
-        .filter(
-            AppSetting.owner == owner,
-            AppSetting.key == "default_grind_offset_clicks",
-        )
-        .first()
-    )
-    if not setting:
-        return 0.0
-    try:
-        return float(setting.value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def set_grind_offset_clicks(db: Any, owner: str, offset: float) -> None:
-    set_setting(db, owner, "default_grind_offset_clicks", str(offset))
 
 
 def as_non_empty_text(value: Any, default: str = "Unknown") -> str:
@@ -68,15 +50,38 @@ def as_non_empty_text(value: Any, default: str = "Unknown") -> str:
 _LEADING_NUMBER = re.compile(r"\s*(-?\d+(?:[.,]\d+)?)")
 
 # 1 light .. 5 dark. Prod contains "Medium-light", "Medium Light" and
-# "Medium-Light" for the same roast, so match on normalised labels.
+# "Medium-Light" for the same roast, so match on normalised labels. The trade
+# names are the ones roasters print instead of a plain level.
 _ROAST_ORDINALS: dict[str, int] = {
     "light": 1,
+    "blonde": 1,
+    "blond": 1,
+    "cinnamon": 1,
+    "nordic": 1,
+    "scandinavian": 1,
     "medium light": 2,
     "light medium": 2,
     "medium": 3,
     "medium dark": 4,
     "dark medium": 4,
     "dark": 5,
+    "french": 5,
+    "italian": 5,
+    "vienna": 5,
+}
+
+# The starting dose for a coffee with no shots of its own, by roast ordinal. A
+# dense dark roast packs less mass into the same basket than a fluffy light
+# one; these are the midpoints of what fits a standard 18 g basket (dark
+# ~16-17 g, light ~18-19 g). It is only a first guess shown with a hint to
+# adjust it, the basket guardrail still applies, and the user's own dose takes
+# over from the first logged shot.
+_STARTING_DOSE_BY_ROAST: dict[int, float] = {
+    1: 18.5,
+    2: 18.5,
+    3: 17.5,
+    4: 17.0,
+    5: 16.5,
 }
 
 
@@ -125,7 +130,15 @@ def roast_level_ordinal(label: str | None) -> int | None:
     """Map a roast-level label onto the 1 (light) .. 5 (dark) ordinal scale."""
     if not label:
         return None
-    return _ROAST_ORDINALS.get(normalize_label(label))
+    key = normalize_label(label).removesuffix(" roast")
+    return _ROAST_ORDINALS.get(key)
+
+
+def starting_dose_for_roast(roast_level_ord: int | None) -> float | None:
+    """A first-shot dose for this roast level, or None when it is unknown."""
+    if roast_level_ord is None:
+        return None
+    return _STARTING_DOSE_BY_ROAST.get(roast_level_ord)
 
 
 def normalize_label(value: str) -> str:
@@ -136,7 +149,7 @@ def normalize_label(value: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", deaccented).split())
 
 
-def similarity(a: str, b: str) -> float:
+def _name_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, normalize_label(a), normalize_label(b)).ratio()
 
 
@@ -163,7 +176,7 @@ def find_existing_bean(
             and normalize_label(str(candidate.roaster)) != roaster_norm
         ):
             continue
-        score = similarity(name, str(candidate.name))
+        score = _name_similarity(name, str(candidate.name))
         if normalize_label(str(candidate.name)) == name_norm:
             score = 1.0
         if (
@@ -186,8 +199,11 @@ def find_existing_bean(
 
 
 def ensure_default_equipment(db: Any) -> tuple[Any, Any]:
-    grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
-    machine = db.query(Equipment).filter(Equipment.type != "grinder").first()
+    # Shared entries only: a new user's default setup points at the seeded
+    # baseline hardware, never at something another friend added.
+    shared = db.query(Equipment).filter(Equipment.owner.is_(None))
+    grinder = shared.filter(Equipment.type == "grinder").order_by(Equipment.id).first()
+    machine = shared.filter(Equipment.type != "grinder").order_by(Equipment.id).first()
     if not grinder:
         grinder = Equipment(type="grinder", brand="Unknown", model="Unknown")
         db.add(grinder)
@@ -251,28 +267,27 @@ def read_asset_version(static_dir: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _as_float(value: Any) -> float | None:
-    return None if value is None else float(value)
-
-
-def serialize_equipment(item: Equipment) -> dict[str, Any]:
+def serialize_equipment(item: Equipment, owner: str | None = None) -> dict[str, Any]:
     return {
         "id": item.id,
         "type": item.type,
         "brand": item.brand,
         "model": item.model,
+        # Only whoever added an entry may change it; shared ones are read-only.
+        "shared": item.owner is None,
+        "editable": owner is not None and item.owner == owner,
         # Capability data. Nulls are meaningful: where these are unknown the
         # engine abstains rather than guessing, so the UI shows them as gaps
         # worth filling rather than hiding them.
-        "grind_min_clicks": _as_float(item.grind_min_clicks),
-        "grind_max_clicks": _as_float(item.grind_max_clicks),
-        "grind_step_clicks": _as_float(item.grind_step_clicks),
-        "grind_um_per_click": _as_float(item.grind_um_per_click),
+        "grind_min_clicks": as_float(item.grind_min_clicks),
+        "grind_max_clicks": as_float(item.grind_max_clicks),
+        "grind_step_clicks": as_float(item.grind_step_clicks),
+        "grind_um_per_click": as_float(item.grind_um_per_click),
         "finer_direction": item.finer_direction,
         "burr_type": item.burr_type,
-        "basket_size_g": _as_float(item.basket_size_g),
-        "temp_min_c": _as_float(item.temp_min_c),
-        "temp_max_c": _as_float(item.temp_max_c),
+        "basket_size_g": as_float(item.basket_size_g),
+        "temp_min_c": as_float(item.temp_min_c),
+        "temp_max_c": as_float(item.temp_max_c),
         "temp_controllable": bool(item.temp_controllable),
         "spec_source": item.spec_source,
     }
@@ -326,22 +341,21 @@ def ensure_default_setup(db: Any, owner: str) -> BrewSetup:
 
 
 def get_active_setup(db: Any, owner: str) -> BrewSetup:
-    fallback = ensure_default_setup(db, owner)
-    setting_value = get_setting(db, owner, "active_setup_id")
-    if setting_value:
-        try:
-            setup_id = int(setting_value)
-            existing = (
-                db.query(BrewSetup)
-                .filter(BrewSetup.id == setup_id, BrewSetup.owner == owner)
-                .first()
-            )
-            if existing:
-                return existing
-        except ValueError:
-            pass
-    set_setting(db, owner, "active_setup_id", str(fallback.id))
-    return fallback
+    """The setup recipes are computed for and new shots are logged on.
+
+    The one chosen in the app, else the user's oldest. It only writes the
+    first time a user is ever seen, to give them a default setup.
+    """
+    chosen = get_setting(db, owner, "active_setup_id")
+    if chosen and chosen.isdigit():
+        setup = (
+            db.query(BrewSetup)
+            .filter(BrewSetup.id == int(chosen), BrewSetup.owner == owner)
+            .first()
+        )
+        if setup is not None:
+            return setup
+    return ensure_default_setup(db, owner)
 
 
 def serialize_setup(setup: BrewSetup) -> dict[str, Any]:
@@ -431,131 +445,128 @@ def resolve_log_values(
     }
 
 
-def save_dial_in_log(
-    owner: str,
-    coffee_data: dict[str, Any],
-    recommendation: str,
-    actual_grind: str | None = None,
-    dose_g: float | None = None,
-    image_name: str | None = None,
-    yield_g: float | None = None,
-    water_g: float | None = None,
-    time_s: float | None = None,
-    taste_axis: str | None = None,
-    astringent: bool | None = None,
-    brew_temp_c: float | None = None,
-    preinfusion_s: float | None = None,
-    pause_s: float | None = None,
-    recommendation_id: int | None = None,
-) -> None:
-    db = SessionLocal()
-    try:
-        bean_name = as_non_empty_text(coffee_data.get("name"))
-        bean_roaster = as_non_empty_text(coffee_data.get("roaster"))
-        bean_origin = as_non_empty_text(coffee_data.get("origin"))
-        bean_process = as_non_empty_text(coffee_data.get("process"))
-        bean_roast_level = as_non_empty_text(coffee_data.get("roast_level"))
+def new_shot(owner: str, bean_id: int, setup: BrewSetup, **fields: Any) -> DialInLog:
+    """A shot row logged on `setup`: its equipment and method are the setup's."""
+    return DialInLog(
+        owner=owner,
+        bean_id=bean_id,
+        grinder_id=setup.grinder_id,
+        machine_id=setup.machine_id,
+        setup_id=setup.id,
+        brew_method=setup.method,
+        **fields,
+    )
 
-        # An explicit id beats the fuzzy name match. find_existing_bean's 0.9
-        # similarity threshold is a good guess at identity but is not identity,
-        # so a shot logged against a known bean must never be attached to a
-        # similarly-named one.
-        bean = None
-        explicit_id = coffee_data.get("bean_id")
-        if explicit_id is not None:
-            bean = db.get(Bean, int(explicit_id))
-            # A bean_id from another user's library must not attach a shot.
-            if bean is not None and bean.owner != owner:
-                bean = None
-        if bean is None:
-            bean = find_existing_bean(
-                db,
-                owner,
-                name=bean_name,
-                roaster=bean_roaster,
-                origin=bean_origin,
-                process=bean_process,
+
+def _bean_for_shot(db: Any, owner: str, coffee_data: dict[str, Any]) -> Bean:
+    """The coffee a shot belongs to, created on its first shot.
+
+    An explicit id beats the fuzzy name match: find_existing_bean's 0.9
+    similarity threshold is a good guess at identity but is not identity, so a
+    shot logged against a known bean must never land on a similarly-named one.
+    """
+    explicit_id = coffee_data.get("bean_id")
+    if isinstance(explicit_id, int) or (
+        isinstance(explicit_id, str) and explicit_id.isdigit()
+    ):
+        bean = db.get(Bean, int(explicit_id))
+        # A bean_id from another user's library must not attach a shot.
+        if bean is not None and bean.owner == owner:
+            return bean
+
+    name = as_non_empty_text(coffee_data.get("name"))
+    roaster = as_non_empty_text(coffee_data.get("roaster"))
+    origin = as_non_empty_text(coffee_data.get("origin"))
+    process = as_non_empty_text(coffee_data.get("process"))
+    existing = find_existing_bean(
+        db, owner, name=name, roaster=roaster, origin=origin, process=process
+    )
+    if existing is not None:
+        return existing
+
+    roast_level = as_non_empty_text(coffee_data.get("roast_level"))
+    bean = Bean(
+        owner=owner,
+        roaster=roaster,
+        name=name,
+        origin=origin,
+        process=process,
+        roast_level=roast_level,
+        roast_date=parse_roast_date(coffee_data.get("roast_date")),
+        # It drives the roast-level temperature band and the roast term in
+        # similarity, so a bean stored without it is invisible to both.
+        roast_level_ord=roast_level_ordinal(roast_level),
+    )
+    db.add(bean)
+    db.flush()
+    return bean
+
+
+def save_shot(db: Any, owner: str, setup: BrewSetup, body: FeedbackRequest) -> Bean:
+    """Record a shot from the wizard, and return the coffee it was logged on.
+
+    One transaction: a first shot on a new bag creates the coffee and the shot
+    together, or neither.
+    """
+    bean = _bean_for_shot(db, owner, body.coffee_data)
+
+    # The grind value comes from what the user actually set. It is never
+    # recovered by parsing the LLM's prose -- that round-trip is what fed
+    # generated numbers back in as if they were measurements.
+    grind_setting = body.actual_grind.strip() if body.actual_grind else "Unknown"
+    grind_clicks = parse_grind_clicks(grind_setting)
+    # The wizard's timer measures tenths; the column is whole seconds.
+    time_s = None if body.time_s is None else round(body.time_s)
+    image_name = body.image_name or body.coffee_data.get("image_name")
+
+    # The client echoes the id of the recommendation it was shown. Only link
+    # it if it is this user's: otherwise any id would attach a stranger's
+    # recommendation to this shot, and the shot history would then show their
+    # suggested grind.
+    recommendation_id = body.recommendation_id
+    if recommendation_id is not None:
+        owned = (
+            db.query(Recommendation.id)
+            .filter(
+                Recommendation.id == recommendation_id,
+                Recommendation.owner == owner,
             )
-        if not bean:
-            bean = Bean(
-                owner=owner,
-                roaster=bean_roaster,
-                name=bean_name,
-                origin=bean_origin,
-                process=bean_process,
-                roast_level=bean_roast_level,
-                # Derive the ordinal at the point of saving. It drives the
-                # roast-level temperature band and the roast term in
-                # similarity, so a bean stored without it is invisible to
-                # both -- which is what left every stored bean at NULL.
-                roast_level_ord=roast_level_ordinal(bean_roast_level),
-            )
-            db.add(bean)
-            db.commit()
-            db.refresh(bean)
-
-        active_setup = get_active_setup(db, owner)
-        grinder = active_setup.grinder if active_setup else None
-        machine = active_setup.machine if active_setup else None
-        if not grinder or not machine:
-            return
-
-        # The grind value comes from what the user actually set. It is never
-        # recovered by parsing the LLM's prose -- that round-trip is what fed
-        # generated numbers back in as if they were measurements.
-        grind_setting = actual_grind.strip() if actual_grind else "Unknown"
-        grind_clicks = parse_grind_clicks(grind_setting)
-
-        resolved_dose_g = (
-            dose_g if dose_g is not None else get_default_dose_g(db, owner)
+            .first()
         )
-        # The wizard's timer measures tenths; the column is whole seconds.
-        resolved_time_s = None if time_s is None else round(time_s)
-        resolved_image_name = image_name or coffee_data.get("image_name")
-        if resolved_image_name:
-            resolved_image_name = os.path.basename(str(resolved_image_name))
+        if owned is None:
+            recommendation_id = None
 
-        db.add(
-            DialInLog(
-                owner=owner,
-                bean_id=bean.id,
-                grinder_id=grinder.id,
-                machine_id=machine.id,
-                setup_id=active_setup.id if active_setup else None,
-                brew_method=getattr(active_setup, "method", None),
-                grind_setting=grind_setting,
+    db.add(
+        new_shot(
+            owner,
+            bean.id,
+            setup,
+            grind_setting=grind_setting,
+            grind_clicks=grind_clicks,
+            dose_g=body.dose_g
+            if body.dose_g is not None
+            else get_default_dose_g(db, owner),
+            # Whatever the user actually measured; anything they left blank
+            # stays None rather than being filled with a default.
+            yield_g=body.yield_g,
+            water_g=body.water_g,
+            time_s=time_s,
+            taste_axis=body.taste_axis,
+            astringent=body.astringent,
+            brew_temp_c=body.brew_temp_c,
+            preinfusion_s=body.preinfusion_s,
+            pause_s=body.pause_s,
+            recommendation_id=recommendation_id,
+            data_quality=classify_data_quality(
                 grind_clicks=grind_clicks,
-                dose_g=resolved_dose_g,
-                # Whatever the user actually measured; anything they left
-                # blank stays None rather than being filled with a default.
-                yield_g=yield_g,
-                water_g=water_g,
-                time_s=resolved_time_s,
-                taste_axis=taste_axis,
-                astringent=astringent,
-                brew_temp_c=brew_temp_c,
-                preinfusion_s=preinfusion_s,
-                pause_s=pause_s,
+                time_s=time_s,
+                yield_g=body.yield_g,
+                water_g=body.water_g,
                 rating=None,
-                tasting_notes=None,
-                recommendation_id=recommendation_id,
-                # LLM prose is kept, but out of the human tasting-notes field
-                # and out of anything the engine reads.
-                llm_note=recommendation,
-                data_quality=classify_data_quality(
-                    grind_clicks=grind_clicks,
-                    time_s=resolved_time_s,
-                    yield_g=yield_g,
-                    water_g=water_g,
-                    rating=None,
-                    taste_axis=taste_axis,
-                ),
-                image_path=resolved_image_name,
-            )
+                taste_axis=body.taste_axis,
+            ),
+            image_path=os.path.basename(str(image_name)) if image_name else None,
         )
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    )
+    db.commit()
+    return bean

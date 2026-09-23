@@ -1,9 +1,8 @@
 """The language model's remaining job: explain numbers it did not choose.
 
-The engine decides the recipe. Gemini writes the prose around it and reads
-free-text tasting notes into a structured axis -- both jobs where a language
-model is genuinely better than arithmetic, neither of which involves inventing
-a measurement.
+The engine decides the recipe. Gemini writes the prose around it -- a job
+where a language model is genuinely better than arithmetic, and one that
+involves no measurement.
 
 Three independent layers stop a number leaking back in, because a prompt
 instruction alone is the weakest possible guarantee:
@@ -26,16 +25,16 @@ removed.
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any
 
+from google import genai
 from pydantic import BaseModel
 
 from core.brewing import Recipe
-from core.optional_deps import require_genai
 
 from .model_selection import (
     GEMINI_MODEL_CANDIDATES,
-    thinking_level_for,
+    json_config,
     try_model_candidates,
 )
 
@@ -53,20 +52,6 @@ class Rationale(BaseModel):
     headline: str
     why: str
     what_to_watch: str
-
-
-class TasteReading(BaseModel):
-    """Free-text tasting notes read into the structured axis.
-
-    Offered to the user as a suggestion to confirm, never committed silently:
-    the taste axis drives corrections, so a misreading would propagate.
-    """
-
-    taste_axis: (
-        Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"] | None
-    ) = None
-    astringent: bool | None = None
-    confidence: Literal["low", "medium", "high"] = "low"
 
 
 def scrub_numerals(text: str, allowed: frozenset[str]) -> str | None:
@@ -174,11 +159,9 @@ def write_rationale(
     allowed = _allowed_tokens(recipe)
 
     try:
-        genai, types = require_genai()
-    except RuntimeError:
+        client = genai.Client()
+    except Exception:  # no API key: the template is a complete answer
         return template, None
-
-    client = genai.Client()
     prompt = _build_prompt(recipe, confidence_label, context)
     parsed: Rationale | None = None
     used_model: str | None = None
@@ -186,21 +169,13 @@ def write_rationale(
     def call_model(model_name: str) -> Any:
         nonlocal used_model
         used_model = model_name
-        config: dict[str, Any] = {
-            "response_mime_type": "application/json",
-            "response_schema": Rationale,
-            "temperature": 0.2,
-        }
         # Prose only: the engine has already fixed every number, and
         # scrub_numerals rejects any the model invents. Extended reasoning has
-        # nothing to decide here, so it would only add latency to a wait.
-        level = thinking_level_for(model_name)
-        if level:
-            config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
+        # nothing to decide here, so json_config keeps thinking at "low".
         return client.models.generate_content(
             model=model_name,
-            contents=[prompt],
-            config=types.GenerateContentConfig(**config),
+            contents=prompt,
+            config=json_config(model_name, Rationale, temperature=0.2),
         )
 
     def evaluate(response: Any) -> tuple[bool, str | None]:

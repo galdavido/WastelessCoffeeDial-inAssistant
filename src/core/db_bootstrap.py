@@ -12,9 +12,8 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect, text
 
-from database.database import SessionLocal, engine
+from database.database import SessionLocal
 from database.models import Equipment
 
 logger = logging.getLogger(__name__)
@@ -31,39 +30,16 @@ def _alembic_config() -> Config:
 
 
 def run_migrations(retries: int = 10, delay_seconds: float = 2.0) -> None:
-    """Bring the database schema up to ``head``.
+    """Bring the database schema up to ``head``, retrying while it starts up.
 
-    Retries while the database is still starting up. Databases created by the
-    pre-Alembic ``create_all`` bootstrap are reconciled by stamping the initial
-    revision instead of re-creating tables.
+    Every live database was created by these migrations. (The pre-Alembic
+    database this used to detect and stamp was discarded on 2026-09-08.)
     """
 
     last_exc: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
-            with engine.connect() as conn:
-                inspector = inspect(conn)
-                has_alembic = inspector.has_table("alembic_version")
-                has_legacy_schema = inspector.has_table("beans")
-
-                if not has_alembic and has_legacy_schema:
-                    logger.warning(
-                        "Pre-Alembic schema detected; reconciling before stamping."
-                    )
-                    conn.execute(
-                        text(
-                            "ALTER TABLE dial_in_logs "
-                            "ADD COLUMN IF NOT EXISTS image_path TEXT"
-                        )
-                    )
-                    conn.commit()
-
-            cfg = _alembic_config()
-            if not has_alembic and has_legacy_schema:
-                command.stamp(cfg, "head")
-            else:
-                command.upgrade(cfg, "head")
-
+            command.upgrade(_alembic_config(), "head")
             logger.info("Database schema is up to date.")
             return
         except Exception as exc:  # noqa: BLE001 - DB may not be ready yet

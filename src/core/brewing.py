@@ -15,13 +15,17 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
 Method = Literal["espresso", "pourover", "moka"]
 TasteAxis = Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"]
 ConstantKind = Literal["PHYSICS", "LITERATURE", "CALIBRATED", "HEURISTIC"]
+# Where a recipe's numbers came from. "history" and "calibrated" mean a
+# correction to this coffee's own last shot; "setup_law" means the coffee is
+# new and the dial was solved from the grinder's fitted law instead.
+Basis = Literal["prior", "history", "calibrated", "setup_law"]
 
 # Taste axis as a signed scale, so "how far from balanced, and which way" is
 # arithmetic rather than a chain of if-statements.
@@ -91,24 +95,12 @@ CONSTANTS: dict[str, Constant] = {
     ),
     # --- literature: other ------------------------------------------------
     "degas_rest_days": Constant(7.0, "days", "LITERATURE", "#degassing"),
-    "cameron_dose_reduction": Constant(
-        0.20,
-        "fraction",
-        "LITERATURE",
-        "#cameron-reproducibility",
-        "20 g -> 15 g in the paper's protocol",
-    ),
-    "cameron_dose_reduction_max": Constant(
-        0.25, "fraction", "LITERATURE", "#cameron-reproducibility"
-    ),
     "temp_light_lo": Constant(94.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_light_hi": Constant(96.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_medium_lo": Constant(92.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_medium_hi": Constant(94.0, "C", "LITERATURE", "#temp-by-roast"),
     "temp_dark_lo": Constant(90.5, "C", "LITERATURE", "#temp-by-roast"),
     "temp_dark_hi": Constant(92.5, "C", "LITERATURE", "#temp-by-roast"),
-    "tds_plausible_lo": Constant(6.0, "percent", "LITERATURE", "#sca-bands"),
-    "tds_plausible_hi": Constant(14.0, "percent", "LITERATURE", "#sca-bands"),
     # --- calibrated -------------------------------------------------------
     "d_ref_espresso_um": Constant(300.0, "um", "CALIBRATED", "#beta-prior"),
     "d_ref_pourover_um": Constant(700.0, "um", "CALIBRATED", "#beta-prior"),
@@ -124,20 +116,16 @@ CONSTANTS: dict[str, Constant] = {
     "kappa_espresso": Constant(4.0, "shots", "HEURISTIC", "#shrinkage"),
     "kappa_pourover": Constant(8.0, "shots", "HEURISTIC", "#shrinkage"),
     "kappa_bean": Constant(2.0, "shots", "HEURISTIC", "#shrinkage"),
-    "similarity_setup": Constant(0.40, "weight", "HEURISTIC", "#similarity"),
     "similarity_roast": Constant(0.25, "weight", "HEURISTIC", "#similarity"),
     "similarity_process": Constant(0.15, "weight", "HEURISTIC", "#similarity"),
     "similarity_origin": Constant(0.10, "weight", "HEURISTIC", "#similarity"),
     "similarity_freshness": Constant(0.10, "weight", "HEURISTIC", "#similarity"),
-    "similarity_floor": Constant(0.45, "score", "HEURISTIC", "#similarity"),
-    "similarity_recency_decay": Constant(0.97, "per_week", "HEURISTIC", "#similarity"),
     "bean_offset_floor": Constant(
         0.25,
         "score",
         "HEURISTIC",
         "#similarity",
-        "bean-only similarity, so the 0.40 setup term is excluded and 0.60 is "
-        "the ceiling; below this an offset is not worth borrowing",
+        "bean similarity tops out at 0.60; below this an offset is not worth borrowing",
     ),
     "roast_time_modifier_s": Constant(1.0, "s", "HEURISTIC", "#roast-time-modifier"),
     "fresh_band_widening": Constant(2.0, "factor", "HEURISTIC", "#fresh-band"),
@@ -367,18 +355,6 @@ def brew_ratio(shot: ShotRecord) -> float | None:
     return numerator / shot.dose_g
 
 
-def flow_rate_gps(shot: ShotRecord) -> float | None:
-    """Average mass flow in g/s."""
-    if not shot.time_s or shot.time_s <= 0:
-        return None
-    mass = shot.yield_g if shot.method == "espresso" else shot.water_g
-    if mass is None:
-        mass = shot.water_g if shot.method == "espresso" else shot.yield_g
-    if mass is None or mass <= 0:
-        return None
-    return mass / shot.time_s
-
-
 def normalised_time(shot: ShotRecord) -> float | None:
     """T_r = time / brew_ratio -- see docs/science.md#normalised-time.
 
@@ -393,21 +369,6 @@ def normalised_time(shot: ShotRecord) -> float | None:
 def taste_offset(taste: TasteAxis | None) -> int | None:
     """Signed distance from balanced: negative sour, positive bitter."""
     return None if taste is None else TASTE_SCALE[taste]
-
-
-def extraction_yield_pct(shot: ShotRecord, tds_pct: float | None) -> float | None:
-    """EY% = beverage x TDS / dose -- only when a TDS measurement exists.
-
-    Returns None without a refractometer reading, and callers must render that
-    as "not measured" rather than substituting a guess. See
-    docs/science.md#limits.
-    """
-    if tds_pct is None or shot.dose_g <= 0:
-        return None
-    beverage = shot.yield_g if shot.yield_g is not None else shot.water_g
-    if beverage is None or beverage <= 0:
-        return None
-    return beverage * tds_pct / shot.dose_g
 
 
 # --------------------------------------------------------------------------
@@ -755,10 +716,7 @@ class Recipe:
     # there is enough variation to say whether changing it helps.
     preinfusion_s: float | None = None
     pause_s: float | None = None
-    # Where the numbers came from. "history" and "calibrated" mean a
-    # correction to this coffee's own last shot; "setup_law" means the coffee
-    # is new and the dial was solved from the grinder's fitted law instead.
-    basis: Literal["prior", "history", "calibrated", "setup_law"] = "prior"
+    basis: Basis = "prior"
     confidence: float = 0.0
     guardrails_hit: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
@@ -796,15 +754,28 @@ def correct(
     machine: MachineCaps,
     days_since_roast: int | None = None,
     roast_level_ord: int | None = None,
+    dose_g: float | None = None,
 ) -> Recipe:
     """Propose the next recipe from the last measured shot.
 
     One lever at a time, in priority order: the first rule that fires decides
     the change, and the rest are recorded as what to try next. Changing two
     things at once means learning nothing from the result.
+
+    ``dose_g`` is the dose the user asked for. Left out, the next shot keeps
+    the anchor's dose -- the dose they actually use for this coffee.
     """
     notes: list[str] = []
-    dose = last.dose_g
+    dose = last.dose_g if dose_g is None else dose_g
+    if abs(dose - last.dose_g) >= 0.5:
+        # The grind law has no dose term yet (docs/science.md#beta-law), so the
+        # setting below is still solved for the anchor's dose. Say so rather
+        # than let the time move without warning.
+        notes.append(
+            "you changed the dose from your last shot on this coffee, and the "
+            "grind is still worked out from that shot -- a heavier dose runs "
+            "slower and a lighter one faster, so watch the time"
+        )
     ratio = brew_ratio(last)
     tr = normalised_time(last)
     grind = last.grind_clicks
@@ -926,23 +897,6 @@ def correct(
 
     notes.append("this one looks on target -- keep it the same and repeat it")
     return build()
-
-
-def propose_dose_reduction(dose_g: float) -> tuple[float, str]:
-    """The Cameron reproducibility move. docs/science.md#cameron-reproducibility.
-
-    When channeling keeps recurring, stop chasing the grind: use less coffee
-    and grind coarser. A shallower bed drops less pressure and channels less,
-    and it uses a fifth less coffee for a better, more repeatable shot.
-    """
-    reduced = round(dose_g * (1.0 - value_of("cameron_dose_reduction")), 1)
-    return (
-        reduced,
-        f"channeling keeps recurring at this dose. Rather than chasing it with "
-        f"the grinder, try {reduced:g} g instead of {dose_g:g} g and grind a "
-        f"little coarser -- a shallower puck channels less, and you use less "
-        f"coffee for a better shot",
-    )
 
 
 def resistance_disagreement(
@@ -1127,6 +1081,7 @@ def apply_guardrails(
             grind = snapped
 
     # --- dose ----------------------------------------------------------
+    asked_dose = dose
     if machine.basket_size_g is not None:
         lo = machine.basket_size_g * value_of("basket_fill_lo")
         hi = machine.basket_size_g * value_of("basket_fill_hi")
@@ -1134,11 +1089,21 @@ def apply_guardrails(
             dose = min(max(dose, lo), hi)
             hits.append("dose_basket_capacity")
             notes.append(f"your basket holds about {machine.basket_size_g:g} g")
-    else:
+    elif recipe.method == "espresso":
+        # An espresso basket range. A dripper or a moka funnel of unknown size
+        # has no such bound, and clamping a 30 g pour-over to 22 g is wrong.
         lo, hi = value_of("dose_min_g"), value_of("dose_max_g")
         if dose < lo or dose > hi:
             dose = min(max(dose, lo), hi)
             hits.append("dose_plausible_range")
+    water_g = recipe.water_g
+    if dose != asked_dose and asked_dose > 0:
+        # Keep the ratio: the output was sized for the dose that was asked for.
+        scale = dose / asked_dose
+        if yield_g is not None:
+            yield_g = round(yield_g * scale, 1)
+        if water_g is not None:
+            water_g = round(water_g * scale, 1)
 
     # --- ratio / yield -------------------------------------------------
     if target is not None and yield_g is not None and dose > 0:
@@ -1167,16 +1132,13 @@ def apply_guardrails(
             temp = clamped
             hits.append("temp_machine_range")
 
-    return Recipe(
-        method=recipe.method,
+    return replace(
+        recipe,
         dose_g=round(dose, 1),
         grind_clicks=grind,
         yield_g=yield_g,
-        water_g=recipe.water_g,
+        water_g=water_g,
         brew_temp_c=temp,
-        target_time_s=recipe.target_time_s,
-        basis=recipe.basis,
-        confidence=recipe.confidence,
         guardrails_hit=tuple(hits),
         notes=tuple(notes),
     )

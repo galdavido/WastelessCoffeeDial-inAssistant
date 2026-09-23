@@ -35,12 +35,10 @@ class TestProjectConventions(unittest.TestCase):
         """
         import inspect
 
-        from core import web_routes
+        from core.routes.coffees import delete_coffee
         from database.models import Base
 
-        source = inspect.getsource(web_routes)
-        start = source.index('@app.delete("/api/logs/{bean_id}")')
-        delete_source = source[start : start + 2000]
+        delete_source = inspect.getsource(delete_coffee)
 
         referencing = {
             table.name
@@ -89,23 +87,6 @@ class TestProjectConventions(unittest.TestCase):
                 result.returncode, 0, f"{name} failed to parse:\n{result.stderr}"
             )
 
-    def test_simulator_is_not_imported_by_production_code(self) -> None:
-        """core/sim.py is a test fixture: its taste model is deliberately crude.
-
-        If it ever leaks into a request path, simulated physics starts
-        influencing real recommendations.
-        """
-        offenders = []
-        for path in (_ROOT / "src").rglob("*.py"):
-            if path.name == "sim.py":
-                continue
-            text = path.read_text(encoding="utf-8")
-            if "import sim" in text or "from .sim" in text or "core.sim" in text:
-                offenders.append(str(path.relative_to(_ROOT)))
-        self.assertEqual(
-            offenders, [], f"production modules importing the simulator: {offenders}"
-        )
-
     def test_engine_core_stays_import_clean_of_the_database(self) -> None:
         """brewing/calibration must import without DATABASE_URL set.
 
@@ -116,7 +97,7 @@ class TestProjectConventions(unittest.TestCase):
         import ast
 
         banned_roots = {"database", "sqlalchemy", "google", "alembic"}
-        for module in ("brewing.py", "calibration.py", "sim.py"):
+        for module in ("brewing.py", "calibration.py"):
             path = _ROOT / "src" / "core" / module
             if not path.is_file():
                 continue

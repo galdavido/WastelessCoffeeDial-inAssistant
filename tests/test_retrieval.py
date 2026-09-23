@@ -8,47 +8,35 @@ the integration path.
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime, timedelta
 
-from core.brewing import ShotRecord
+from core.brewing import ShotRecord, value_of
 from core.retrieval import (
     BeanFeatures,
     canonical_process,
     classify_tier,
-    recency_factor,
     similarity,
 )
 
 
 class TestSimilarity(unittest.TestCase):
-    def test_same_setup_dominates(self) -> None:
-        """A click number from another grinder is nearly meaningless."""
-        a = BeanFeatures(roast_level_ord=3, process="Washed", origin="Kenya")
-        same = similarity(a, a, same_setup=True)
-        other = similarity(a, a, same_setup=False)
-        self.assertGreater(same - other, 0.35)
-
-    def test_identical_bean_on_same_setup_scores_near_one(self) -> None:
+    def test_an_identical_coffee_scores_the_ceiling(self) -> None:
         a = BeanFeatures(
             roast_level_ord=2, process="Washed", origin="Kenya", days_since_roast=10
         )
-        self.assertAlmostEqual(similarity(a, a, same_setup=True), 1.0, places=6)
+        self.assertAlmostEqual(similarity(a, a), 0.60, places=6)
+        self.assertGreater(similarity(a, a), value_of("bean_offset_floor"))
 
     def test_roast_distance_reduces_the_score(self) -> None:
         light = BeanFeatures(roast_level_ord=1)
         dark = BeanFeatures(roast_level_ord=5)
         medium = BeanFeatures(roast_level_ord=3)
-        self.assertGreater(
-            similarity(light, medium, False), similarity(light, dark, False)
-        )
+        self.assertGreater(similarity(light, medium), similarity(light, dark))
 
     def test_regional_origins_partially_match(self) -> None:
         kenya = BeanFeatures(origin="Kenya")
         ethiopia = BeanFeatures(origin="Ethiopia")
         brazil = BeanFeatures(origin="Brazil")
-        self.assertGreater(
-            similarity(kenya, ethiopia, False), similarity(kenya, brazil, False)
-        )
+        self.assertGreater(similarity(kenya, ethiopia), similarity(kenya, brazil))
 
     def test_process_aliases_are_canonicalised(self) -> None:
         self.assertEqual(canonical_process("Fully Washed"), "washed")
@@ -60,20 +48,7 @@ class TestSimilarity(unittest.TestCase):
         """Missing data must not look like agreement."""
         known = BeanFeatures(roast_level_ord=3, process="Washed", origin="Kenya")
         unknown = BeanFeatures()
-        self.assertEqual(similarity(known, unknown, same_setup=False), 0.0)
-
-
-class TestRecency(unittest.TestCase):
-    def test_recent_shots_are_undiscounted(self) -> None:
-        now = datetime.now(UTC)
-        self.assertAlmostEqual(recency_factor(now, now), 1.0, places=3)
-
-    def test_old_shots_decay_but_never_to_zero(self) -> None:
-        now = datetime.now(UTC)
-        old = now - timedelta(weeks=52)
-        factor = recency_factor(old, now)
-        self.assertLess(factor, 1.0)
-        self.assertGreaterEqual(factor, 0.7)
+        self.assertEqual(similarity(known, unknown), 0.0)
 
 
 class TestColdStartCascade(unittest.TestCase):

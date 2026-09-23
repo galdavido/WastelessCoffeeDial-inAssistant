@@ -73,6 +73,15 @@ class TestAiRefactors(unittest.TestCase):
         self.assertEqual(parsed_valid["origin"], "Ethiopia")
         self.assertIsNone(parsed_invalid)
 
+    def test_an_unreadable_image_raises_rather_than_setting_shared_state(self) -> None:
+        """The failure travels with the call, so concurrent scans cannot swap it."""
+        import ai.vision as vision
+
+        with self.assertRaises(vision.VisionError) as ctx:
+            vision.analyze_coffee_bag(b"not an image")
+        self.assertIn("Failed to read image", str(ctx.exception))
+        self.assertFalse(hasattr(vision, "get_last_vision_error"))
+
 
 class TestThinkingLevel(unittest.TestCase):
     """Only Gemini 3.x takes thinking_level, and sending it elsewhere aborts.
@@ -119,6 +128,20 @@ class TestThinkingLevel(unittest.TestCase):
         """No candidate may sit in the gap between the two rules."""
         for model in GEMINI_MODEL_CANDIDATES:
             self.assertIn(thinking_level_for(model), (None, "low", "high"), model)
+
+    def test_the_shared_config_only_sends_thinking_where_accepted(self) -> None:
+        from google.genai import types
+
+        from ai.model_selection import json_config
+        from ai.rationale import Rationale
+
+        new = json_config("gemini-3.8-flash", Rationale, temperature=0.2)
+        assert new.thinking_config is not None
+        self.assertEqual(new.thinking_config.thinking_level, types.ThinkingLevel.LOW)
+        self.assertEqual(new.response_mime_type, "application/json")
+
+        old = json_config("gemini-2.5-flash", Rationale, temperature=0.2)
+        self.assertIsNone(old.thinking_config)
 
 
 if __name__ == "__main__":

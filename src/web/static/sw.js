@@ -3,7 +3,7 @@
 // CSS and JS are NOT precached by bare path: they are versioned URLs, and
 // precaching the unversioned path is what previously let a stale app.js pair
 // up with a fresh style.css. They are cached on first fetch instead.
-const CACHE = 'wcda-v29';
+const CACHE = 'wcda-v37';
 const PRECACHE = [
   '/',
   '/static/manifest.json',
@@ -56,8 +56,12 @@ self.addEventListener('fetch', event => {
       fetch(request, { cache: 'reload' })
         .catch(() => fetch(request))
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put(request, copy)).catch(() => {});
+          // Only a good response may become the offline copy. Caching a 404 or
+          // a 500 would replay that error whenever the network is down.
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put(request, copy)).catch(() => {});
+          }
           return response;
         })
         .catch(() =>

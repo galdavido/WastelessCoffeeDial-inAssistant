@@ -26,10 +26,9 @@ class TestWebAppWiring(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_index_is_served(self) -> None:
-        for path in ("/", "/mobile", "/desktop"):
-            response = client.get(path)
-            self.assertEqual(response.status_code, 200, path)
-            self.assertIn("text/html", response.headers["content-type"])
+        response = client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
 
     def test_security_headers_present(self) -> None:
         response = client.get("/healthz")
@@ -59,7 +58,9 @@ class TestWebAppWiring(unittest.TestCase):
             "/api/recommendation",
             json={"coffee_data": {"name": "Test"}, "dose_g": 0},
         )
-        self.assertEqual(response.status_code, 400)
+        # Rejected by the schema, before any database work.
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"][0]["loc"], ["body", "dose_g"])
 
     def test_app_shell_is_revalidated(self) -> None:
         # Without no-cache the browser may serve a stale app.js alongside a
@@ -68,6 +69,18 @@ class TestWebAppWiring(unittest.TestCase):
             response = client.get(path)
             self.assertEqual(response.status_code, 200, path)
             self.assertEqual(response.headers.get("Cache-Control"), "no-cache", path)
+
+    def test_pages_carry_no_inline_styles(self) -> None:
+        """The CSP is default-src 'self', so inline styles are silently dropped.
+
+        One did exist -- style="margin-top:16px" in the equipment form -- and
+        the browser has been refusing it, and logging a CSP error, all along.
+        """
+        static = Path(__file__).resolve().parents[1] / "src" / "web" / "static"
+        for name in ("index.html", "admin.html"):
+            html = (static / name).read_text(encoding="utf-8")
+            self.assertNotIn(" style=", html, name)
+            self.assertNotIn("<style", html, name)
 
     def test_static_assets_are_version_pinned(self) -> None:
         # The ?v= query must be present so a redeploy cannot reuse a cached URL.
@@ -151,7 +164,7 @@ class TestWebAppWiring(unittest.TestCase):
         """
         from core.web_schemas import FeedbackRequest, LogDetailsInput
 
-        body = FeedbackRequest(coffee_data={}, recommendation="", time_s=27.3)
+        body = FeedbackRequest(coffee_data={}, time_s=27.3)
         self.assertEqual(body.time_s, 27.3)
         self.assertEqual(LogDetailsInput(time_s=27.5).time_s, 27.5)
 
@@ -182,7 +195,9 @@ class TestWebAppWiring(unittest.TestCase):
         # /api/setups/{setup_id} (which would parse "active" as an int).
         response = client.put("/api/setups/active", json={})
         self.assertEqual(response.status_code, 422)
-        self.assertIn("setup_id is required", response.text)
+        # Shadowed, the complaint would be about the *path* ("active" is not
+        # an int); reaching select_setup, it is the missing body field.
+        self.assertEqual(response.json()["detail"][0]["loc"], ["body", "setup_id"])
 
 
 class TestRequestIdentity(unittest.TestCase):

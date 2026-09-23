@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -21,11 +22,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
+
+def as_float(value: Any) -> float | None:
+    """Numeric columns come back as Decimal; the engine and the API speak floats."""
+    return None if value is None else float(value)
+
+
 # The friends instance is multi-user: `owner` is the Tailscale login the row
 # belongs to (see core.auth). The single-user dev instance puts every row under
 # one owner ("owner" by default), which is also what migration 0005 backfills
-# onto pre-multi-user data. Equipment is deliberately not owned -- it is a
-# shared hardware-spec catalogue.
+# onto pre-multi-user data. Equipment is the exception: a shared hardware-spec
+# catalogue everyone can pick from, where `owner` only records who may edit an
+# entry (NULL = shared and read-only; see migration 0007).
 
 
 # 1. Beans table
@@ -52,6 +60,9 @@ class Equipment(Base):
     __tablename__ = "equipment"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # Who added it, and so the only person who may change it. NULL is a shared
+    # entry (the seeded hardware), read-only for everyone.
+    owner: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     type: Mapped[str] = mapped_column(String)
     brand: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String)
@@ -170,11 +181,13 @@ class DialInLog(Base):
     # Optional forever: no code path may require a refractometer.
     tds_pct: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
     # 'measured' | 'partial' | 'synthetic' | 'imported'.
-    # Only 'measured' rows may feed calibration.
+    # Only 'measured' rows may feed calibration, so a row that nobody
+    # classified defaults to 'partial' (migration 0008), never to 'measured'.
     data_quality: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="measured", default="measured"
+        String, nullable=False, server_default="partial", default="partial"
     )
-    # LLM prose lives here; tasting_notes is reserved for the human.
+    # Legacy: the LLM prose each shot was logged with, no longer written. The
+    # explanation now lives on the linked recommendations.rationale_text.
     llm_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommendation_id: Mapped[int | None] = mapped_column(
         ForeignKey("recommendations.id"), nullable=True
@@ -188,9 +201,10 @@ class DialInLog(Base):
 
 
 # 4. Simple key-value settings table for app preferences.
-# Settings are per-owner: active_setup_id, default_dose_g and
-# default_grind_offset_clicks were global singletons before multi-user, so the
-# unique key is (owner, key), not key alone.
+# Settings are per-owner: active_setup_id and default_dose_g were global
+# singletons before multi-user, so the unique key is (owner, key), not key
+# alone. (Old rows may still hold default_grind_offset_clicks, a setting the
+# engine never read; it was removed and nothing reads the rows.)
 class AppSetting(Base):
     __tablename__ = "app_settings"
     __table_args__ = (

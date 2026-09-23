@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-from core.optional_deps import load_dotenv_if_available
-
-load_dotenv_if_available()
+# The one place .env is loaded. Everything that reads configuration imports
+# this module first (it is what needs DATABASE_URL), so this runs before any
+# of it is read.
+load_dotenv()
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 if SQLALCHEMY_DATABASE_URL is None:

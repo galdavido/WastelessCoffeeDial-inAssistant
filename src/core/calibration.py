@@ -59,21 +59,11 @@ class Calibration:
         return self.beta_source == "shrunk"
 
 
-def theil_sen_slope(points: Sequence[tuple[float, float]]) -> float | None:
-    """Median of pairwise slopes. Robust to a minority of bad measurements."""
-    slopes = [
-        (y2 - y1) / (x2 - x1)
-        for i, (x1, y1) in enumerate(points)
-        for (x2, y2) in points[i + 1 :]
-        if x2 != x1
-    ]
-    if not slopes:
-        return None
-    return statistics.median(slopes)
-
-
 def theil_sen_comparable(shots: Sequence[ShotRecord]) -> float | None:
     """Theil-Sen over shot pairs that were actually prepared the same way.
+
+    The median of pairwise slopes, so a minority of mis-logged shots barely
+    moves it.
 
     Because the estimator is built from pairwise slopes, excluding an
     incomparable pair is exactly one term dropped -- no reweighting, no model
@@ -180,9 +170,12 @@ def fit_setup(
     fitted: float | None = None
     min_span = 3.0 * (caps.step_clicks or 1.0)
     if n_eff >= 3 and span >= min_span:
-        # Prefer the prep-aware fit; fall back to the plain one when nothing
-        # records pre-infusion, where every pair counts as comparable anyway.
-        fitted = theil_sen_comparable(shots) or theil_sen_slope(points)
+        # Only comparable pairs count. There is deliberately no fallback to
+        # pooling every pair: this returns None exactly when there is no
+        # same-coffee, same-preparation pair to learn from, and pooling then
+        # measures the gap between bags (or between preparations) instead of
+        # the grinder. The prior is the honest answer in that case.
+        fitted = theil_sen_comparable(shots)
         # A fit whose sign disagrees with the physics is not a better estimate
         # of the slope -- it is the channeling signature. Discard it and let
         # the guardrail in brewing.finest_useful_clicks deal with it.

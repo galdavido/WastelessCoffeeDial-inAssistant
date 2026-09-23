@@ -4,7 +4,8 @@ name: wcda-prod
 
 services:
   db:
-    # pgvector image: the schema uses the `vector` extension (scraped_equipment.embedding).
+    # pgvector image kept for continuity with the live volume. No migration uses
+    # the `vector` extension any more; plain postgres:16 is what CI runs.
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:

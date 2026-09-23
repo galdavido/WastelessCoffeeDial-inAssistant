@@ -14,6 +14,7 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
+from _sim import BedParams, simulate_shot
 from core.brewing import GrinderCaps, MachineCaps, ShotRecord, target_for
 from core.eval_harness import (
     MIN_PAIRS_FOR_DIRECTION,
@@ -23,7 +24,6 @@ from core.eval_harness import (
     guardrail_violations,
     held_out_time_error,
 )
-from core.sim import BedParams, simulate_shot
 
 K6 = GrinderCaps(
     min_clicks=0.0,

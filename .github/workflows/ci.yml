@@ -33,7 +33,6 @@ jobs:
 
       - name: Type check
         run: mypy src
-        continue-on-error: true
 
       - name: Dependency audit
         run: pip-audit --strict --progress-spinner off

@@ -35,7 +35,6 @@ dev = [
 ]
 
 [project.scripts]
-wcda = "core.main:cli"
 wcda-backtest = "core.backtest_cli:cli"
 
 [tool.setuptools]

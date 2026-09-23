@@ -1,28 +1,26 @@
 """Find the past shots worth learning from.
 
-Replaces the exact-string matching that used to live in ai/rag.py
+Replaces the exact-string matching the first version used
 (`Bean.process == x OR Bean.origin == y`, filtered to `rating >= 4`), which
 returned nothing at all for a coffee the user had not brewed before -- the
 common case -- and conflated two different questions.
 
-Those questions are kept apart here:
+What is here instead:
 
 * **Calibration shots** answer "how does this grinder behave?". Physics does
   not care whether a shot tasted nice, so there is deliberately no rating
   filter -- only a completeness one. A bad-tasting shot with a recorded time
-  is excellent calibration data.
-* **Exemplars** answer "what worked on a coffee like this one?" and are
-  ranked by a structured, explainable similarity score.
-
-Both read only `data_quality = 'measured'`, so the fabricated rows quarantined
-by migration 0003 can never come back.
+  is excellent calibration data. Only `data_quality = 'measured'` rows are
+  read, so the fabricated rows quarantined by migration 0003 never come back.
+* **Bean similarity** answers "which coffees does this new one resemble?",
+  with a structured, explainable score, so a coffee with no shots of its own
+  can borrow the per-bean offset of the ones it resembles.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import select
@@ -87,19 +85,13 @@ def _region_of(origin: str | None) -> str | None:
     return None
 
 
-def similarity(
-    target: BeanFeatures, candidate: BeanFeatures, same_setup: bool
-) -> float:
-    """How much this past shot should inform the current coffee.
+def similarity(target: BeanFeatures, candidate: BeanFeatures) -> float:
+    """How closely one coffee resembles another, from 0 up to 0.60.
 
     Deterministic and explainable by design: the user can be told exactly why
-    a shot was considered relevant, which an embedding cannot do.
+    a coffee was considered similar, which an embedding cannot do.
     """
     score = 0.0
-
-    if same_setup:
-        # Dominant: a click number from a different grinder means very little.
-        score += value_of("similarity_setup")
 
     if target.roast_level_ord is not None and candidate.roast_level_ord is not None:
         closeness = 1.0 - abs(target.roast_level_ord - candidate.roast_level_ord) / 4.0
@@ -123,17 +115,6 @@ def similarity(
         score += value_of("similarity_freshness") * (1.0 - delta / 21.0)
 
     return score
-
-
-def recency_factor(created_at: datetime | None, now: datetime | None = None) -> float:
-    """Older shots count for less: burrs wear, retention changes, palates shift."""
-    if created_at is None:
-        return 1.0
-    now = now or datetime.now(UTC)
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
-    weeks = max(0.0, (now - created_at).days / 7.0)
-    return max(0.7, value_of("similarity_recency_decay") ** weeks)
 
 
 def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRecord:
@@ -201,7 +182,7 @@ def shots_for_bean(
     from the wrong bag.
 
     An empty list is the right answer for a coffee scanned for the first time:
-    `web_routes._bean_for` hands the engine a transient Bean with no id, and
+    `routes.recipe._bean_for` hands the engine a transient Bean with no id, and
     the caller falls through to solving the grind law instead.
     """
     if bean_id is None:
@@ -239,10 +220,8 @@ def borrow_bean_offset(
 ) -> tuple[float, int]:
     """Seed a new coffee's delta_bean from the coffees that resemble it.
 
-    Scored with ``same_setup=False`` on purpose: every candidate is already on
-    this setup, so keeping that term would add the same 0.40 to all of them
-    and flatten the comparison that actually carries information here --
-    roast level, process and origin.
+    Every candidate is already on this setup, so only the bean terms --
+    roast level, process, origin, freshness -- carry information here.
 
     Returns the weighted offset and how many coffees contributed, so the
     rationale can say whether it borrowed anything. ``(0.0, 0)`` means nothing
@@ -257,7 +236,7 @@ def borrow_bean_offset(
         candidate = features.get(bean_id)
         if candidate is None:
             continue
-        score = similarity(target, candidate, same_setup=False)
+        score = similarity(target, candidate)
         if score < threshold:
             continue
         weighted += score * delta
@@ -268,55 +247,18 @@ def borrow_bean_offset(
     return weighted / total, used
 
 
-def fetch_exemplars(
-    db: Session,
-    owner: str,
-    target: BeanFeatures,
-    setup_id: int | None,
-    method: Method,
-    limit: int = 8,
-) -> list[tuple[ShotRecord, float]]:
-    """Well-rated past shots on similar coffee, best match first.
-
-    Scoped to ``owner``: without this filter a well-rated shot logged by
-    another user on a similar coffee would be pulled in and fed to the
-    rationale, so one person's history would colour another's advice.
-    """
-    stmt = (
-        select(DialInLog, Bean)
-        .join(Bean, DialInLog.bean_id == Bean.id)
-        .where(DialInLog.owner == owner)
-        .where(DialInLog.data_quality == "measured")
-        .where(DialInLog.rating.is_not(None))
-        .where(DialInLog.rating >= 4)
-    )
-    scored: list[tuple[ShotRecord, float]] = []
-    floor = value_of("similarity_floor")
-    for log, bean in db.execute(stmt).tuples():
-        candidate = BeanFeatures(
-            roast_level_ord=bean.roast_level_ord,
-            process=bean.process,
-            origin=bean.origin,
-        )
-        score = similarity(target, candidate, same_setup=log.setup_id == setup_id)
-        score *= recency_factor(log.created_at)
-        if score >= floor:
-            scored.append((to_shot_record(log, bean, method), score))
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored[:limit]
-
-
 def classify_tier(
     calibration_shots: Sequence[ShotRecord],
     bean_id: int | None,
     has_hardware_caps: bool,
 ) -> CalibrationTier:
-    """Which cold-start tier this recommendation falls into.
+    """How much of this recommendation rests on the user's own shots.
 
-    Tier E is the honest one: with no measured shots *and* no hardware range,
-    there is genuinely no information from which to name a click number, so
-    the engine says so and asks for one measurement instead of inventing a
-    starting point.
+    A (this coffee, several settings) down to D (nothing measured, hardware
+    range known) and E (nothing measured, no hardware range either). Recorded
+    with every recommendation for back-testing. Whether a first grind setting
+    can be named at all is a separate question, answered by
+    brewing.cold_start_clicks; when it cannot, calibration_protocol says so.
     """
     usable = [
         s
@@ -334,12 +276,36 @@ def classify_tier(
     return "D" if has_hardware_caps else "E"
 
 
-CALIBRATION_PROTOCOL = (
-    "I don't know this grinder's range yet, so any click number I gave you "
-    "would be invented. Set it to the middle of its range, pull {dose:g} g in "
-    "to {yield_:g} g out, and note the time and how it tastes -- one measured "
-    "shot is all I need to solve the next setting properly."
-)
+def calibration_protocol(method: Method, dose_g: float, out_g: float) -> str:
+    """What to do when the engine cannot name a first grind setting.
+
+    Said instead of a number, never alongside an invented one. For espresso and
+    pour-over the dial cannot be located without the grinder's microns per
+    click (docs/science.md#cold-start) -- the middle of the range is *not* a
+    stand-in, because that range spans espresso to French press. For moka there
+    is no grind law to solve at all: the stove sets the brew time.
+    """
+    if method == "moka":
+        return (
+            f"A moka pot's grind isn't solved from brew time -- the stove sets "
+            f"that, not the grind -- so there is no setting to calculate. Use a "
+            f"grind a little coarser than espresso that doesn't pack when you "
+            f"fill the basket, brew {dose_g:g} g with {out_g:g} g of water, and "
+            f"note how it tastes."
+        )
+    brew = (
+        f"pull {dose_g:g} g in to {out_g:g} g out"
+        if method == "espresso"
+        else f"brew {dose_g:g} g with {out_g:g} g of water"
+    )
+    return (
+        "I can't place this grinder's dial yet -- that needs its microns per "
+        "click, which isn't recorded -- so any setting I gave you would be "
+        f"invented. Start where you normally would, {brew}, and note the "
+        "setting, the time and how it tastes: one measured shot is all I need "
+        "to solve the next setting properly. Adding your grinder's microns per "
+        "click under Equipment gets you a starting number next time."
+    )
 
 
 def get_active_setup_method(setup: BrewSetup | Any | None) -> Method:

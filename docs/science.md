@@ -61,6 +61,13 @@ What the engine can honestly say: *given your grinder, your machine and what
 you actually measured, here is the setting that should land your time and ratio
 in the target band.*
 
+**Dose bounds.** With a basket size recorded, the dose is held to 75–105% of
+it. Without one, an *espresso* dose is held to 12–22 g, the span of ordinary
+single-to-triple baskets. Pour-over and moka get no default bound: a dripper
+has no fixed capacity, and a moka funnel's is whatever `basket_size_g` says.
+Whenever a dose is clamped, the yield or water is scaled with it so the ratio
+the recipe was built around survives the clamp.
+
 ---
 
 ## 2. Physics {#physics}
@@ -155,6 +162,12 @@ cap — itself `0.25·|1/β|` — widening in step instead of catching it. Being
 saved by a covariate filter aimed at something else is not a safeguard, and
 it disappears as soon as two bags are brewed at the same temperature.
 
+The fit used to fall back to pooling *every* pair whenever no comparable pair
+existed. That fallback fired in exactly the cases this section forbids — one
+shot per coffee, or every same-coffee pair prepared differently — so it was
+removed (2026-09-23). No comparable pair now means no fit: `β` stays at the
+prior until a coffee has been measured at two settings.
+
 *No shots on this coffee.* Nothing to correct from, so the law is used in
 **absolute** form and solved for the dial:
 
@@ -189,6 +202,11 @@ have no published effect on how a coffee grinds, which makes the dose reading
 the more likely one. The fix is to put `+ γ·ln(dose)` in the law and re-fit,
 leaving `δ_bean` to carry only what is genuinely the coffee — until then,
 `δ_bean` should be read as "this bag, at the dose you use for it".
+
+Until that term exists, a dose the user asks for is honoured (and the yield or
+water scaled to keep the ratio), but the grind is still solved from the last
+shot's dose — so the recipe says so, and tells the user which way the time
+will move.
 
 ### 2.5 Extraction yield {#ey-formula}
 
@@ -333,6 +351,11 @@ Lower bed depth `L` reduces the pressure drop (2.1), which reduces the
 channeling that (3.9) describes. For an app named "Wasteless", using a quarter
 less coffee for a better shot is the headline move.
 
+**Not yet acted on.** No code path proposes this today: a `propose_dose_reduction`
+helper existed, but nothing called it and it was removed (2026-09-23). Wiring it
+in needs a trigger — "channeling keeps recurring at this dose" — which is the
+dose term the grind law still lacks ([#beta-law](#beta-law)).
+
 ### 3.11 Temperature by roast level {#temp-by-roast}
 
 Within the SCA band, lighter roasts are conventionally brewed hotter (more
@@ -423,24 +446,28 @@ fitted. Pure guess, easily revised.
 
 ### 5.2 Similarity weights {#similarity}
 
-same setup 0.40, roast level 0.25, process 0.15, origin 0.10, freshness 0.10;
-match floor 0.45; recency multiplier `0.97^weeks_ago`. Setup dominates because
-a click number from a different grinder is close to meaningless.
+roast level 0.25, process 0.15, origin 0.10 (half for the same region),
+freshness 0.10 — a ceiling of 0.60. Used for one thing only: choosing which of
+a setup's coffees a new one borrows its `δ̂_bean` from
+([#beta-law](#beta-law)).
+
+(Until 2026-09-23 it also ranked "exemplar" shots across every setup, with a
+0.40 same-setup term, a 0.45 floor and a `0.97^weeks` recency decay. The
+exemplars fed only a sentence in the rationale claiming they had informed a
+recipe they took no part in, so the search and its three constants were
+removed.)
 
 **Caveat on the bean terms, recorded 2026-09-13.** Uman et al. (*Sci Rep*
 2016) found particle size distribution to be **independent of bean origin and
 processing method** — the two terms carrying 0.15 and 0.10 here. Roast level
 and grinding temperature did matter. So origin and process are defensible as
-*taste* neighbours for retrieving exemplars, but they have no published basis
-as predictors of how a coffee grinds, and `δ_bean` should not be justified by
-them. See the confound noted in [#beta-law](#beta-law).
+*taste* neighbours, but they have no published basis as predictors of how a
+coffee grinds, and `δ_bean` should not be justified by them. See the confound noted in [#beta-law](#beta-law).
 
 **Bean-offset floor 0.25.** When seeding `δ̂_bean` for a coffee with no shots
-([#beta-law](#beta-law)), every candidate is already on this setup, so the
-0.40 setup term is excluded — it would add the same amount to all of them and
-flatten the only comparison that carries information. That puts the ceiling at
-0.60, so 0.25 asks for roughly a close roast match plus one of process or
-origin. Below it, borrowing an offset is worse than assuming the setup's
+([#beta-law](#beta-law)), every candidate is already on this setup. Against
+the 0.60 ceiling, 0.25 asks for roughly a close roast match plus one of process
+or origin. Below it, borrowing an offset is worse than assuming the setup's
 average bean. Another pure guess.
 
 ### 5.3 Roast-level time modifier {#roast-time-modifier}
@@ -602,14 +629,14 @@ the grind law is disabled outright (`β_prior = None`).
 
 ## 7. The simulator {#simulator}
 
-`src/core/sim.py` implements Darcy + Kozeny–Carman plus a logistic bypass term
+`tests/_sim.py` implements Darcy + Kozeny–Carman plus a logistic bypass term
 so that a fraction of flow short-circuits through a low-resistance channel as
 particle size falls below an onset diameter. This reproduces the non-monotonic
 yield curve of [#cameron](#cameron) from first principles, which lets the
 correction policy be tested before any real shots exist.
 
-It is a **test fixture only**. Its taste mapping in particular is crude. No
-production module may import it, and a convention test enforces that.
+It is a **test fixture only**. Its taste mapping in particular is crude, which
+is why it lives under `tests/`, out of reach of every production module.
 
 ---
 

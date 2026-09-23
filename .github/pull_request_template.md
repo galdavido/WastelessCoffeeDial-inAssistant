@@ -27,7 +27,7 @@ Closes #
 ## Checklist
 
 - [ ] Code follows project style guidelines (pre-commit passes)
-- [ ] Tests pass: `PYTHONPATH=src python -m unittest discover -s tests -v`
+- [ ] Checks pass: `ruff check . && ruff format --check . && mypy src && pytest` (API-flow tests need `DATABASE_URL`)
 - [ ] No new warnings or errors
 - [ ] Documentation updated if needed
 - [ ] Commit messages are clear and descriptive

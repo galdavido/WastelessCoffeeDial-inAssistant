@@ -16,7 +16,7 @@ from database.models import BrewSetup
 
 from .auth import single_user_owner
 from .brewing import target_for
-from .engine import _grinder_caps, _machine_caps
+from .engine import grinder_caps, machine_caps
 from .eval_harness import backtest
 from .retrieval import fetch_calibration_shots, get_active_setup_method
 
@@ -41,8 +41,8 @@ def run(setup_id: int | None = None, owner: str | None = None) -> int:
 
         for setup in setups:
             method = get_active_setup_method(setup)
-            caps = _grinder_caps(setup.grinder)
-            machine = _machine_caps(setup.machine)
+            caps = grinder_caps(setup.grinder)
+            machine = machine_caps(setup.machine)
             shots = fetch_calibration_shots(db, owner, setup.id, method)
 
             print("=" * 60)

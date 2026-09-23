@@ -18,7 +18,10 @@ let engineVersion = null;
    library, which is what lets the engine work from the real row. */
 let currentBeanId = null;
 let currentCoffeeData = null;
-let currentRecommendation = null;
+/* The bag photo from a scan. Kept apart from currentCoffeeData, which a
+   recompute replaces, and sent with the first shot only: that is the shot the
+   photo belongs to. */
+let currentImageName = null;
 // The engine's structured numbers. Read these directly rather than parsing
 // them back out of the prose — the prose is an explanation, not a source.
 let currentRecipe = null;
@@ -48,25 +51,12 @@ function on(id, event, handler) {
   return el;
 }
 
-/* Basket capacity shifts with roast: a dense dark roast packs less mass into the
-   same basket than a fluffy light roast. These are the midpoints of the ranges
-   that fit the user's basket (dark ~16-17 g, light ~18-19 g). Order matters —
-   the more specific "medium-dark" test must come before the bare "dark" test. */
-const DOSE_BY_ROAST = [
-  { test: /medium[-\s]?dark/i, dose: 17 },
-  { test: /dark|french|italian|vienna/i, dose: 16.5 },
-  { test: /light|blonde|blond|cinnamon|nordic|scandinav/i, dose: 18.5 },
-  { test: /medium/i, dose: 17.5 },
-];
-
-function suggestedDoseForRoast(roastLevel, fallback) {
-  const text = String(roastLevel || '').trim();
-  if (text) {
-    for (const rule of DOSE_BY_ROAST) {
-      if (rule.test.test(text)) return rule.dose;
-    }
-  }
-  return fallback;
+/* The dose field always shows the dose the recipe on screen was computed for:
+   the server returns it as coffee_data.preferred_dose_g, including the
+   roast-aware first guess for a coffee with no shots (dose_from_roast). */
+function showRecipeDose(coffee) {
+  const dose = Number(coffee?.preferred_dose_g) || 16;
+  setScanDose(dose, { fromRoast: Boolean(coffee?.dose_from_roast), roastLevel: coffee?.roast_level });
 }
 
 function setScanDose(value, { fromRoast = false, roastLevel = '' } = {}) {
@@ -97,13 +87,11 @@ function showPanel(id) {
    cannot survive a recompute or be posted after a shot is logged. */
 function setRecommendation(data) {
   currentRecipe = data.recipe || null;
-  currentRecommendation = data.recommendation || '';
   currentRecommendationId = data.recommendation_id ?? null;
 }
 
 function clearRecommendation() {
   currentRecipe = null;
-  currentRecommendation = null;
   currentRecommendationId = null;
 }
 
@@ -111,6 +99,7 @@ function clearCoffee() {
   clearRecommendation();
   currentCoffeeData = null;
   currentBeanId = null;
+  currentImageName = null;
 }
 
 /* ── Dialogs ────────────────────────────────────────────────────────────── */
@@ -284,9 +273,10 @@ function historyNote(shots) {
   const [latest, previous] = measured;
   if (latest.band === 'in') return 'Your last shot landed in the target band.';
   if (latest.band && latest.band === previous.band) {
-    const movedRight = latest.delta_clicks !== null
-      && ((latest.band === 'long' && latest.delta_clicks > 0)
-        || (latest.band === 'fast' && latest.delta_clicks < 0));
+    // `direction` comes from the server, which knows which way this grinder's
+    // dial runs; a bigger number is not coarser on every grinder.
+    const movedRight = (latest.band === 'long' && latest.direction === 'coarser')
+      || (latest.band === 'fast' && latest.direction === 'finer');
     return movedRight
       ? `Two in a row ${latest.band === 'long' ? 'ran long' : 'ran fast'} — `
         + 'the last change went the right way, just not far enough.'
@@ -384,7 +374,7 @@ async function openBean(entry) {
     return;
   }
   renderCoffeeCard(currentCoffeeData);
-  setScanDose(Number(currentCoffeeData?.preferred_dose_g) || 16);
+  showRecipeDose(currentCoffeeData);
   loadHistory(currentBeanId);
   showPanel('recipe-view');
 }
@@ -406,17 +396,10 @@ async function analyzeFile(file) {
 
     currentCoffeeData = data.coffee_data;
     currentBeanId = data.coffee_data?.bean_id ?? null;
+    currentImageName = data.coffee_data?.image_name ?? null;
     renderCoffeeCard(currentCoffeeData);
     renderRecipe(data);
-
-    // Pre-fill the per-shot dose with a roast-aware guess; the user can override
-    // it and hit "Update recipe" to regenerate the recommendation.
-    const baseDose = Number(currentCoffeeData.preferred_dose_g) || 16;
-    const guessDose = suggestedDoseForRoast(currentCoffeeData.roast_level, baseDose);
-    setScanDose(guessDose, {
-      fromRoast: guessDose !== baseDose,
-      roastLevel: currentCoffeeData.roast_level,
-    });
+    showRecipeDose(currentCoffeeData);
 
     loadHistory(currentBeanId);
     showPanel('recipe-view');
@@ -440,9 +423,13 @@ async function recalcForDose() {
   try {
     const ok = await refreshRecommendation({ dose });
     if (ok) {
-      if (currentCoffeeData) currentCoffeeData.preferred_dose_g = dose;
-      $('dose-adjust-hint').textContent = `Recipe updated for ${dose} g.`;
-      showToast(`Recipe updated for ${dose} g`);
+      // The basket guardrail can move the dose; show what the recipe is for.
+      const used = Number(currentCoffeeData?.preferred_dose_g) || dose;
+      $('scan-dose-input').value = String(used);
+      $('dose-adjust-hint').textContent = used === dose
+        ? `Recipe updated for ${used} g.`
+        : `Recipe updated for ${used} g — ${dose} g doesn't fit your basket.`;
+      showToast(`Recipe updated for ${used} g`);
     }
   } finally {
     btn.disabled = false;
@@ -943,7 +930,7 @@ function renderRecipe(data) {
   const prose = data.rationale
     ? [data.rationale.headline, data.rationale.why, data.rationale.what_to_watch]
         .filter(Boolean).join('\n\n')
-    : currentRecommendation;
+    : '';
   $('recommendation-text').textContent = prose || '—';
   $('recipe-confidence').textContent = data.confidence_label || '';
 
@@ -1246,7 +1233,6 @@ async function saveFeedback(worked) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         coffee_data:    currentCoffeeData,
-        recommendation: currentRecommendation,
         actual_grind:   actualGrind,
         dose_g:         doseUsed,
         // Anything left blank is sent as null and stored as unmeasured.
@@ -1259,7 +1245,7 @@ async function saveFeedback(worked) {
         pause_s:        num(worked?.pause_s),
         brew_temp_c:    num(worked?.brew_temp_c),
         recommendation_id: currentRecommendationId,
-        image_name:     currentCoffeeData?.image_name ?? null,
+        image_name:     currentImageName,
       }),
     });
     if (!res.ok) {
@@ -1268,6 +1254,12 @@ async function saveFeedback(worked) {
       const d = await res.json().catch(() => ({}));
       throw new Error(getApiErrorMessage(d, 'Save failed'));
     }
+
+    // A bag's first shot creates the coffee; from here on it is addressed by
+    // id, which is what lets its history show straight away.
+    const saved = await res.json().catch(() => ({}));
+    if (saved.bean_id) currentBeanId = Number(saved.bean_id);
+    currentImageName = null;
 
     closeShotWizard();
     // That recommendation has been consumed. Clearing it here is what stops
@@ -1326,8 +1318,7 @@ async function loadSettings() {
     $('active-grinder-name').textContent = gearName(eq.grinder);
     $('active-machine-name').textContent = gearName(eq.machine);
 
-    $('dose-input').value   = set.dose_g            ?? '';
-    $('offset-input').value = set.grind_offset_clicks ?? '';
+    $('dose-input').value = set.dose_g ?? '';
   } catch {
     showToast('⚠️ Could not load settings');
   }
@@ -1493,8 +1484,10 @@ function renderEquipmentList() {
         <div class="setup-item-meta">${escapeHtml(labelForType(item.type))}</div>
       </div>
       <div class="setup-item-actions">
-        <button class="btn btn-sm btn-ghost js-equipment-edit">Edit</button>
-        <button class="btn btn-sm btn-ghost js-equipment-delete">Delete</button>
+        ${item.editable
+          ? `<button class="btn btn-sm btn-ghost js-equipment-edit">Edit</button>
+             <button class="btn btn-sm btn-ghost js-equipment-delete">Delete</button>`
+          : `<span class="setup-item-meta" title="Only whoever added this can change it. Add your own entry to use different details.">${item.shared ? 'Shared' : 'Added by someone else'}</span>`}
       </div>
     `;
     row.querySelector('.js-equipment-edit')?.addEventListener('click', () => populateEquipmentForm(item));
@@ -1589,7 +1582,7 @@ async function selectSetup(setupId) {
     const res = await fetch('/api/setups/active', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ setup_id: parsed, active_setup_id: parsed }),
+      body: JSON.stringify({ setup_id: parsed }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not switch setup'));
@@ -1827,14 +1820,6 @@ on('btn-save-dose', 'click', async () => {
   const val = parseFloat($('dose-input').value);
   if (!val || val <= 0) { showToast('Enter a valid dose'); return; }
   await putJson('/api/settings/dose', { dose_g: val }, `Dose set to ${val}g ✓`);
-});
-
-on('btn-save-offset', 'click', async () => {
-  const raw = $('offset-input').value.trim();
-  if (raw === '') { showToast('Enter an offset value'); return; }
-  const val = parseFloat(raw);
-  if (isNaN(val)) { showToast('Enter a valid number'); return; }
-  await putJson('/api/settings/grind-offset', { offset_clicks: val }, `Offset set to ${val > 0 ? '+' : ''}${val} clicks ✓`);
 });
 
 async function putJson(url, body, successMsg) {
