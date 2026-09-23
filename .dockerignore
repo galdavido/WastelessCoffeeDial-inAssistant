@@ -9,7 +9,6 @@
 .gitignore
 .gitattributes
 .pre-commit-config.yaml
-.devcontainer
 .vscode
 .idea
 *.swp
