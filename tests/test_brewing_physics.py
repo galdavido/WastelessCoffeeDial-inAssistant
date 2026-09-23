@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import unittest
 
+from _sim import BedParams, simulate_shot
 from core.brewing import (
     GrinderCaps,
     ShotRecord,
@@ -21,7 +22,6 @@ from core.brewing import (
     solve_grind,
     target_for,
 )
-from core.sim import BedParams, simulate_shot
 
 K6 = GrinderCaps(
     min_clicks=0.0,

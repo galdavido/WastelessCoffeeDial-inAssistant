@@ -629,14 +629,14 @@ the grind law is disabled outright (`β_prior = None`).
 
 ## 7. The simulator {#simulator}
 
-`src/core/sim.py` implements Darcy + Kozeny–Carman plus a logistic bypass term
+`tests/_sim.py` implements Darcy + Kozeny–Carman plus a logistic bypass term
 so that a fraction of flow short-circuits through a low-resistance channel as
 particle size falls below an onset diameter. This reproduces the non-monotonic
 yield curve of [#cameron](#cameron) from first principles, which lets the
 correction policy be tested before any real shots exist.
 
-It is a **test fixture only**. Its taste mapping in particular is crude. No
-production module may import it, and a convention test enforces that.
+It is a **test fixture only**. Its taste mapping in particular is crude, which
+is why it lives under `tests/`, out of reach of every production module.
 
 ---
 

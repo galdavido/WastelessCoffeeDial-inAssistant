@@ -15,6 +15,7 @@ from __future__ import annotations
 import random
 import unittest
 
+from _sim import BedParams, simulate_shot
 from core.brewing import (
     GrinderCaps,
     MachineCaps,
@@ -30,7 +31,6 @@ from core.brewing import (
     target_for,
 )
 from core.calibration import fit_setup, theil_sen_comparable
-from core.sim import BedParams, simulate_shot
 
 K6 = GrinderCaps(
     min_clicks=0.0,

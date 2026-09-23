@@ -8,9 +8,8 @@ principles: as the grind gets finer past the onset, shot time stops rising and
 then falls, while yield drops because the bypassed coffee is barely extracted.
 
 This exists so the correction policy can be tested before any real shots have
-been logged. It is deliberately crude -- the taste mapping especially -- and
-**no production module may import it**; tests/test_project_conventions.py
-enforces that.
+been logged. It is deliberately crude -- the taste mapping especially -- which
+is why it lives under tests/, where no production module can import it.
 """
 
 from __future__ import annotations
@@ -18,13 +17,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .brewing import GrinderCaps, TasteAxis
+from core.brewing import GrinderCaps, TasteAxis
 
 # Simulator parameters. These are fixture values, not project constants, and
 # deliberately live outside brewing.CONSTANTS -- nothing in production reads
 # them. See docs/science.md#simulator.
-WATER_DENSITY_KG_M3 = 1000.0
-MU_PA_S = 3.0e-4  # water at ~93 C
 DEFAULT_DP_BAR = 9.0
 DEFAULT_POROSITY = 0.35
 DEFAULT_BASKET_DIA_MM = 51.0
