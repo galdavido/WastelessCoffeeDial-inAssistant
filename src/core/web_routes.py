@@ -166,6 +166,7 @@ def _engine_recommendation(
     owner: str,
     coffee_data: dict[str, Any],
     bean: Bean | None = None,
+    dose_g: float | None = None,
 ) -> dict[str, Any]:
     """Run the deterministic engine and shape the API response.
 
@@ -177,13 +178,20 @@ def _engine_recommendation(
 
     `bean` is passed in when the caller already has the real row (recommending
     for a saved coffee); otherwise one is found or fabricated from coffee_data.
+
+    `dose_g` is a dose the user explicitly asked for. Without one the engine
+    picks: this coffee's last dose, or the user's default for a new coffee.
+    Either way coffee_data comes back carrying the dose the recipe is for, so
+    the dose field on screen always matches the recipe under it.
     """
     setup = get_active_setup(db, owner)
     if bean is None:
         bean = _bean_for(db, owner, coffee_data)
-    dose = coffee_data.get("preferred_dose_g") or get_default_dose_g(db, owner)
 
-    result = recommend(db, owner, setup, bean, float(dose))
+    result = recommend(
+        db, owner, setup, bean, dose_g, default_dose_g=get_default_dose_g(db, owner)
+    )
+    coffee_data["preferred_dose_g"] = result.recipe.dose_g
 
     recommendation_id: int | None = None
     if bean is not None and bean.id is not None:
@@ -326,7 +334,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 logger.warning("Could not persist uploaded image to %s", uploads_dir)
                 image_name = None
 
-        coffee_data["preferred_dose_g"] = get_default_dose_g(db, owner)
         coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(
             db, owner
         )
@@ -366,17 +373,15 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         else:
             coffee_data = dict(body.coffee_data or {})
 
-        if body.dose_g is not None:
-            coffee_data["preferred_dose_g"] = body.dose_g
-        else:
-            coffee_data.setdefault("preferred_dose_g", get_default_dose_g(db, owner))
         # Grind offset is a server-side preference, never trusted from the client.
         coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(
             db, owner
         )
 
         try:
-            payload = _engine_recommendation(db, owner, coffee_data, bean=bean)
+            payload = _engine_recommendation(
+                db, owner, coffee_data, bean=bean, dose_g=body.dose_g
+            )
         except Exception as exc:
             raise _server_error(exc, "refresh recommendation") from exc
         # Echo the profile back so the client renders one shape from either

@@ -61,6 +61,13 @@ What the engine can honestly say: *given your grinder, your machine and what
 you actually measured, here is the setting that should land your time and ratio
 in the target band.*
 
+**Dose bounds.** With a basket size recorded, the dose is held to 75–105% of
+it. Without one, an *espresso* dose is held to 12–22 g, the span of ordinary
+single-to-triple baskets. Pour-over and moka get no default bound: a dripper
+has no fixed capacity, and a moka funnel's is whatever `basket_size_g` says.
+Whenever a dose is clamped, the yield or water is scaled with it so the ratio
+the recipe was built around survives the clamp.
+
 ---
 
 ## 2. Physics {#physics}
@@ -189,6 +196,11 @@ have no published effect on how a coffee grinds, which makes the dose reading
 the more likely one. The fix is to put `+ γ·ln(dose)` in the law and re-fit,
 leaving `δ_bean` to carry only what is genuinely the coffee — until then,
 `δ_bean` should be read as "this bag, at the dose you use for it".
+
+Until that term exists, a dose the user asks for is honoured (and the yield or
+water scaled to keep the ratio), but the grind is still solved from the last
+shot's dose — so the recipe says so, and tells the user which way the time
+will move.
 
 ### 2.5 Extraction yield {#ey-formula}
 

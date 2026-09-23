@@ -177,6 +177,27 @@ class TestScanAndPull(FlowTestCase):
         self.assertLess(body["recipe"]["grind_clicks"], 20.0)
         self.assertIsNotNone(body["recommendation_id"])
 
+    def test_the_dose_on_screen_is_the_dose_the_recipe_is_for(self) -> None:
+        """Regression: a coffee with a shot ignored the dose field entirely."""
+        self.make_setup()
+        self.log_shot(self.scan()["coffee_data"], dose_g=18.0, yield_g=36.0)
+        bean_id = self.only_coffee()["bean_id"]
+
+        # Opening the coffee: its own dose, not the user's 16 g default.
+        body = self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+        self.assertEqual(body["recipe"]["dose_g"], 18.0)
+        self.assertEqual(body["coffee_data"]["preferred_dose_g"], 18.0)
+
+        # Asking for 20 g gets a 20 g recipe at the same ratio.
+        body = self.ok(
+            self.api.post(
+                "/api/recommendation", json={"bean_id": bean_id, "dose_g": 20}
+            )
+        )
+        self.assertEqual(body["recipe"]["dose_g"], 20.0)
+        self.assertEqual(body["recipe"]["yield_g"], 40.0)
+        self.assertEqual(body["coffee_data"]["preferred_dose_g"], 20.0)
+
     def test_the_second_shot_keeps_the_bag_photo_on_the_card(self) -> None:
         self.make_setup()
         scan = self.scan()

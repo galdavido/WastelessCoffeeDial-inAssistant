@@ -60,8 +60,10 @@ def get_best_grind_setting(
             )
 
         setup = get_active_setup(db, owner)
-        dose = coffee_json.get("preferred_dose_g") or get_default_dose_g(db, owner)
-        result = recommend(db, owner, setup, bean, float(dose))
+        dose = coffee_json.get("preferred_dose_g")
+        result = recommend(
+            db, owner, setup, bean, dose, default_dose_g=get_default_dose_g(db, owner)
+        )
         return render_legacy_text(result)
     except Exception as exc:  # pragma: no cover - defensive, as before
         return f"Error occurred while building the recommendation: {exc}"

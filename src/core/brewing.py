@@ -796,15 +796,28 @@ def correct(
     machine: MachineCaps,
     days_since_roast: int | None = None,
     roast_level_ord: int | None = None,
+    dose_g: float | None = None,
 ) -> Recipe:
     """Propose the next recipe from the last measured shot.
 
     One lever at a time, in priority order: the first rule that fires decides
     the change, and the rest are recorded as what to try next. Changing two
     things at once means learning nothing from the result.
+
+    ``dose_g`` is the dose the user asked for. Left out, the next shot keeps
+    the anchor's dose -- the dose they actually use for this coffee.
     """
     notes: list[str] = []
-    dose = last.dose_g
+    dose = last.dose_g if dose_g is None else dose_g
+    if abs(dose - last.dose_g) >= 0.5:
+        # The grind law has no dose term yet (docs/science.md#beta-law), so the
+        # setting below is still solved for the anchor's dose. Say so rather
+        # than let the time move without warning.
+        notes.append(
+            "you changed the dose from your last shot on this coffee, and the "
+            "grind is still worked out from that shot -- a heavier dose runs "
+            "slower and a lighter one faster, so watch the time"
+        )
     ratio = brew_ratio(last)
     tr = normalised_time(last)
     grind = last.grind_clicks
@@ -1127,6 +1140,7 @@ def apply_guardrails(
             grind = snapped
 
     # --- dose ----------------------------------------------------------
+    asked_dose = dose
     if machine.basket_size_g is not None:
         lo = machine.basket_size_g * value_of("basket_fill_lo")
         hi = machine.basket_size_g * value_of("basket_fill_hi")
@@ -1134,11 +1148,21 @@ def apply_guardrails(
             dose = min(max(dose, lo), hi)
             hits.append("dose_basket_capacity")
             notes.append(f"your basket holds about {machine.basket_size_g:g} g")
-    else:
+    elif recipe.method == "espresso":
+        # An espresso basket range. A dripper or a moka funnel of unknown size
+        # has no such bound, and clamping a 30 g pour-over to 22 g is wrong.
         lo, hi = value_of("dose_min_g"), value_of("dose_max_g")
         if dose < lo or dose > hi:
             dose = min(max(dose, lo), hi)
             hits.append("dose_plausible_range")
+    water_g = recipe.water_g
+    if dose != asked_dose and asked_dose > 0:
+        # Keep the ratio: the output was sized for the dose that was asked for.
+        scale = dose / asked_dose
+        if yield_g is not None:
+            yield_g = round(yield_g * scale, 1)
+        if water_g is not None:
+            water_g = round(water_g * scale, 1)
 
     # --- ratio / yield -------------------------------------------------
     if target is not None and yield_g is not None and dose > 0:
@@ -1172,7 +1196,7 @@ def apply_guardrails(
         dose_g=round(dose, 1),
         grind_clicks=grind,
         yield_g=yield_g,
-        water_g=recipe.water_g,
+        water_g=water_g,
         brew_temp_c=temp,
         target_time_s=recipe.target_time_s,
         basis=recipe.basis,

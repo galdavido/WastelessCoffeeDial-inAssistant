@@ -352,5 +352,74 @@ class TestMethodAwareness(unittest.TestCase):
         self.assertIsNone(recipe.yield_g)
 
 
+class TestDose(unittest.TestCase):
+    """The dose the user asks for is the dose the recipe is for."""
+
+    SHOT = ShotRecord(
+        method="espresso",
+        dose_g=18.0,
+        grind_clicks=30.0,
+        yield_g=36.0,
+        time_s=27.0,
+        taste_axis="balanced",
+    )
+    NO_BASKET = MachineCaps(basket_size_g=None, temp_controllable=False)
+
+    def test_without_a_request_the_coffee_keeps_its_own_dose(self) -> None:
+        recipe = correct(self.SHOT, TARGET, beta_prior("espresso", K6), K6, PID_MACHINE)
+        self.assertEqual(recipe.dose_g, 18.0)
+        self.assertEqual(recipe.yield_g, 36.0)
+
+    def test_a_requested_dose_is_honoured_and_the_ratio_kept(self) -> None:
+        """Regression: the dose field was ignored once a coffee had a shot."""
+        recipe = correct(
+            self.SHOT,
+            TARGET,
+            beta_prior("espresso", K6),
+            K6,
+            self.NO_BASKET,
+            dose_g=20.0,
+        )
+        self.assertEqual(recipe.dose_g, 20.0)
+        self.assertEqual(recipe.yield_g, 40.0)
+        self.assertTrue(
+            any("changed the dose" in note for note in recipe.notes),
+            "the grind is still solved at the old dose, and the user must be told",
+        )
+
+    def test_espresso_without_a_basket_is_held_to_a_plausible_dose(self) -> None:
+        recipe = Recipe(method="espresso", dose_g=30.0, yield_g=60.0)
+        guarded = apply_guardrails(recipe, K6, self.NO_BASKET, [], TARGET)
+        self.assertEqual(guarded.dose_g, 22.0)
+        self.assertIn("dose_plausible_range", guarded.guardrails_hit)
+        assert guarded.yield_g is not None
+        self.assertAlmostEqual(guarded.yield_g / guarded.dose_g, 2.0, places=2)
+
+    def test_pourover_and_moka_doses_are_not_clamped_to_an_espresso_basket(
+        self,
+    ) -> None:
+        """Regression: a 30 g pour-over came back as 22 g at about 1:22."""
+        for method, dose, water in (("pourover", 30.0, 480.0), ("moka", 28.0, 224.0)):
+            recipe = Recipe(method=method, dose_g=dose, water_g=water)  # type: ignore[arg-type]
+            guarded = apply_guardrails(
+                recipe,
+                K6,
+                self.NO_BASKET,
+                [],
+                target_for(method),  # type: ignore[arg-type]
+            )
+            self.assertEqual(guarded.dose_g, dose, method)
+            self.assertEqual(guarded.water_g, water, method)
+            self.assertEqual(guarded.guardrails_hit, (), method)
+
+    def test_a_basket_clamp_scales_the_water_too(self) -> None:
+        moka_funnel = MachineCaps(basket_size_g=15.0)
+        recipe = Recipe(method="moka", dose_g=20.0, water_g=160.0)
+        guarded = apply_guardrails(recipe, K6, moka_funnel, [], target_for("moka"))
+        self.assertIn("dose_basket_capacity", guarded.guardrails_hit)
+        assert guarded.water_g is not None
+        self.assertAlmostEqual(guarded.water_g / guarded.dose_g, 8.0, places=1)
+
+
 if __name__ == "__main__":
     unittest.main()

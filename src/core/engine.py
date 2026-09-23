@@ -105,10 +105,15 @@ def recommend(
     owner: str,
     setup: BrewSetup | None,
     bean: Bean | None,
-    dose_g: float,
+    dose_g: float | None,
+    default_dose_g: float,
     style: str | None = None,
 ) -> EngineResult:
     """Produce a recommendation for the active setup and this coffee.
+
+    ``dose_g`` is a dose the user explicitly asked for, or None. With None, a
+    coffee that has shots keeps the dose of its last one, and a new coffee
+    starts from ``default_dose_g`` (the user's stored preference).
 
     Every shot the engine learns from is scoped to ``owner`` so users on the
     same instance never inform each other's numbers or rationale.
@@ -158,9 +163,12 @@ def recommend(
             machine_caps,
             days_since_roast=days,
             roast_level_ord=roast_ord,
+            dose_g=dose_g,
         )
         basis = "calibrated" if calibration.is_fitted else "history"
     else:
+        if dose_g is None:
+            dose_g = default_dose_g
         # No shots on this coffee yet. Where the setup has a fitted law, solve
         # it for the target rather than correcting from a different coffee,
         # seeding the per-bean offset from the coffees this one resembles.
