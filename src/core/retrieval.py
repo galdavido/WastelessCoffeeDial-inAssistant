@@ -5,24 +5,22 @@ Replaces the exact-string matching the first version used
 returned nothing at all for a coffee the user had not brewed before -- the
 common case -- and conflated two different questions.
 
-Those questions are kept apart here:
+What is here instead:
 
 * **Calibration shots** answer "how does this grinder behave?". Physics does
   not care whether a shot tasted nice, so there is deliberately no rating
   filter -- only a completeness one. A bad-tasting shot with a recorded time
-  is excellent calibration data.
-* **Exemplars** answer "what worked on a coffee like this one?" and are
-  ranked by a structured, explainable similarity score.
-
-Both read only `data_quality = 'measured'`, so the fabricated rows quarantined
-by migration 0003 can never come back.
+  is excellent calibration data. Only `data_quality = 'measured'` rows are
+  read, so the fabricated rows quarantined by migration 0003 never come back.
+* **Bean similarity** answers "which coffees does this new one resemble?",
+  with a structured, explainable score, so a coffee with no shots of its own
+  can borrow the per-bean offset of the ones it resembles.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import select
@@ -87,19 +85,13 @@ def _region_of(origin: str | None) -> str | None:
     return None
 
 
-def similarity(
-    target: BeanFeatures, candidate: BeanFeatures, same_setup: bool
-) -> float:
-    """How much this past shot should inform the current coffee.
+def similarity(target: BeanFeatures, candidate: BeanFeatures) -> float:
+    """How closely one coffee resembles another, from 0 up to 0.60.
 
     Deterministic and explainable by design: the user can be told exactly why
-    a shot was considered relevant, which an embedding cannot do.
+    a coffee was considered similar, which an embedding cannot do.
     """
     score = 0.0
-
-    if same_setup:
-        # Dominant: a click number from a different grinder means very little.
-        score += value_of("similarity_setup")
 
     if target.roast_level_ord is not None and candidate.roast_level_ord is not None:
         closeness = 1.0 - abs(target.roast_level_ord - candidate.roast_level_ord) / 4.0
@@ -123,17 +115,6 @@ def similarity(
         score += value_of("similarity_freshness") * (1.0 - delta / 21.0)
 
     return score
-
-
-def recency_factor(created_at: datetime | None, now: datetime | None = None) -> float:
-    """Older shots count for less: burrs wear, retention changes, palates shift."""
-    if created_at is None:
-        return 1.0
-    now = now or datetime.now(UTC)
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
-    weeks = max(0.0, (now - created_at).days / 7.0)
-    return max(0.7, value_of("similarity_recency_decay") ** weeks)
 
 
 def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRecord:
@@ -239,10 +220,8 @@ def borrow_bean_offset(
 ) -> tuple[float, int]:
     """Seed a new coffee's delta_bean from the coffees that resemble it.
 
-    Scored with ``same_setup=False`` on purpose: every candidate is already on
-    this setup, so keeping that term would add the same 0.40 to all of them
-    and flatten the comparison that actually carries information here --
-    roast level, process and origin.
+    Every candidate is already on this setup, so only the bean terms --
+    roast level, process, origin, freshness -- carry information here.
 
     Returns the weighted offset and how many coffees contributed, so the
     rationale can say whether it borrowed anything. ``(0.0, 0)`` means nothing
@@ -257,7 +236,7 @@ def borrow_bean_offset(
         candidate = features.get(bean_id)
         if candidate is None:
             continue
-        score = similarity(target, candidate, same_setup=False)
+        score = similarity(target, candidate)
         if score < threshold:
             continue
         weighted += score * delta
@@ -266,44 +245,6 @@ def borrow_bean_offset(
     if total <= 0:
         return 0.0, 0
     return weighted / total, used
-
-
-def fetch_exemplars(
-    db: Session,
-    owner: str,
-    target: BeanFeatures,
-    setup_id: int | None,
-    method: Method,
-    limit: int = 8,
-) -> list[tuple[ShotRecord, float]]:
-    """Well-rated past shots on similar coffee, best match first.
-
-    Scoped to ``owner``: without this filter a well-rated shot logged by
-    another user on a similar coffee would be pulled in and fed to the
-    rationale, so one person's history would colour another's advice.
-    """
-    stmt = (
-        select(DialInLog, Bean)
-        .join(Bean, DialInLog.bean_id == Bean.id)
-        .where(DialInLog.owner == owner)
-        .where(DialInLog.data_quality == "measured")
-        .where(DialInLog.rating.is_not(None))
-        .where(DialInLog.rating >= 4)
-    )
-    scored: list[tuple[ShotRecord, float]] = []
-    floor = value_of("similarity_floor")
-    for log, bean in db.execute(stmt).tuples():
-        candidate = BeanFeatures(
-            roast_level_ord=bean.roast_level_ord,
-            process=bean.process,
-            origin=bean.origin,
-        )
-        score = similarity(target, candidate, same_setup=log.setup_id == setup_id)
-        score *= recency_factor(log.created_at)
-        if score >= floor:
-            scored.append((to_shot_record(log, bean, method), score))
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored[:limit]
 
 
 def classify_tier(

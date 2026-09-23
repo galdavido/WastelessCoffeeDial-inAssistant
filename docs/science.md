@@ -441,24 +441,28 @@ fitted. Pure guess, easily revised.
 
 ### 5.2 Similarity weights {#similarity}
 
-same setup 0.40, roast level 0.25, process 0.15, origin 0.10, freshness 0.10;
-match floor 0.45; recency multiplier `0.97^weeks_ago`. Setup dominates because
-a click number from a different grinder is close to meaningless.
+roast level 0.25, process 0.15, origin 0.10 (half for the same region),
+freshness 0.10 — a ceiling of 0.60. Used for one thing only: choosing which of
+a setup's coffees a new one borrows its `δ̂_bean` from
+([#beta-law](#beta-law)).
+
+(Until 2026-09-23 it also ranked "exemplar" shots across every setup, with a
+0.40 same-setup term, a 0.45 floor and a `0.97^weeks` recency decay. The
+exemplars fed only a sentence in the rationale claiming they had informed a
+recipe they took no part in, so the search and its three constants were
+removed.)
 
 **Caveat on the bean terms, recorded 2026-09-13.** Uman et al. (*Sci Rep*
 2016) found particle size distribution to be **independent of bean origin and
 processing method** — the two terms carrying 0.15 and 0.10 here. Roast level
 and grinding temperature did matter. So origin and process are defensible as
-*taste* neighbours for retrieving exemplars, but they have no published basis
-as predictors of how a coffee grinds, and `δ_bean` should not be justified by
-them. See the confound noted in [#beta-law](#beta-law).
+*taste* neighbours, but they have no published basis as predictors of how a
+coffee grinds, and `δ_bean` should not be justified by them. See the confound noted in [#beta-law](#beta-law).
 
 **Bean-offset floor 0.25.** When seeding `δ̂_bean` for a coffee with no shots
-([#beta-law](#beta-law)), every candidate is already on this setup, so the
-0.40 setup term is excluded — it would add the same amount to all of them and
-flatten the only comparison that carries information. That puts the ceiling at
-0.60, so 0.25 asks for roughly a close roast match plus one of process or
-origin. Below it, borrowing an offset is worse than assuming the setup's
+([#beta-law](#beta-law)), every candidate is already on this setup. Against
+the 0.60 ceiling, 0.25 asks for roughly a close roast match plus one of process
+or origin. Below it, borrowing an offset is worse than assuming the setup's
 average bean. Another pure guess.
 
 ### 5.3 Roast-level time modifier {#roast-time-modifier}

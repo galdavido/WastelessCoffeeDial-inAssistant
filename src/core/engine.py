@@ -46,7 +46,6 @@ from .retrieval import (
     classify_tier,
     fetch_bean_features,
     fetch_calibration_shots,
-    fetch_exemplars,
     get_active_setup_method,
     shots_for_bean,
 )
@@ -150,8 +149,6 @@ def recommend(
         origin=bean.origin if bean else None,
         days_since_roast=days,
     )
-    exemplars = fetch_exemplars(db, owner, target_features, setup_id, method)
-
     protocol: str | None = None
     if bean_history:
         # Correct from the most recent measured shot of this coffee.
@@ -289,10 +286,6 @@ def recommend(
         f"{len(bean_history)} of them on this coffee)."
     ]
     context_lines.extend(recipe.notes)
-    if exemplars:
-        context_lines.append(
-            f"{len(exemplars)} similar well-rated shots informed this."
-        )
     rationale, llm_model = write_rationale(recipe, label, "\n".join(context_lines))
 
     return EngineResult(
