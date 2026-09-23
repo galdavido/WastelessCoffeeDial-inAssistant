@@ -1306,8 +1306,7 @@ async function loadSettings() {
     $('active-grinder-name').textContent = gearName(eq.grinder);
     $('active-machine-name').textContent = gearName(eq.machine);
 
-    $('dose-input').value   = set.dose_g            ?? '';
-    $('offset-input').value = set.grind_offset_clicks ?? '';
+    $('dose-input').value = set.dose_g ?? '';
   } catch {
     showToast('⚠️ Could not load settings');
   }
@@ -1571,7 +1570,7 @@ async function selectSetup(setupId) {
     const res = await fetch('/api/setups/active', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ setup_id: parsed, active_setup_id: parsed }),
+      body: JSON.stringify({ setup_id: parsed }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(getApiErrorMessage(data, 'Could not switch setup'));
@@ -1809,14 +1808,6 @@ on('btn-save-dose', 'click', async () => {
   const val = parseFloat($('dose-input').value);
   if (!val || val <= 0) { showToast('Enter a valid dose'); return; }
   await putJson('/api/settings/dose', { dose_g: val }, `Dose set to ${val}g ✓`);
-});
-
-on('btn-save-offset', 'click', async () => {
-  const raw = $('offset-input').value.trim();
-  if (raw === '') { showToast('Enter an offset value'); return; }
-  const val = parseFloat(raw);
-  if (isNaN(val)) { showToast('Enter a valid number'); return; }
-  await putJson('/api/settings/grind-offset', { offset_clicks: val }, `Offset set to ${val > 0 ? '+' : ''}${val} clicks ✓`);
 });
 
 async function putJson(url, body, successMsg) {

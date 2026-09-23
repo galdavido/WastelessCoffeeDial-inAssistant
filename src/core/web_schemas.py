@@ -53,10 +53,6 @@ class DoseUpdate(BaseModel):
     dose_g: float
 
 
-class GrindOffsetUpdate(BaseModel):
-    offset_clicks: float
-
-
 class SetupInput(BaseModel):
     name: str
     grinder_id: int
@@ -67,8 +63,7 @@ class SetupInput(BaseModel):
 
 
 class SetupSelectInput(BaseModel):
-    setup_id: int | None = None
-    active_setup_id: int | None = None
+    setup_id: int
 
 
 class EquipmentCapabilityFields(BaseModel):

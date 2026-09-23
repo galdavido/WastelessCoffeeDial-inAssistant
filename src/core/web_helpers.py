@@ -42,27 +42,6 @@ def set_default_dose_g(db: Any, owner: str, dose: float) -> None:
     set_setting(db, owner, "default_dose_g", str(dose))
 
 
-def get_grind_offset_clicks(db: Any, owner: str) -> float:
-    setting = (
-        db.query(AppSetting)
-        .filter(
-            AppSetting.owner == owner,
-            AppSetting.key == "default_grind_offset_clicks",
-        )
-        .first()
-    )
-    if not setting:
-        return 0.0
-    try:
-        return float(setting.value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def set_grind_offset_clicks(db: Any, owner: str, offset: float) -> None:
-    set_setting(db, owner, "default_grind_offset_clicks", str(offset))
-
-
 def as_non_empty_text(value: Any, default: str = "Unknown") -> str:
     if value is None:
         return default

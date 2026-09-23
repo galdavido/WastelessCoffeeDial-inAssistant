@@ -63,11 +63,8 @@ _SECURITY_HEADERS = {
 # worker a stale app.js while style.css is fresh - a torn cache that renders
 # the app incorrectly. "no-cache" still stores the file; the ETag makes the
 # revalidation a cheap 304.
-_REVALIDATE_PATHS = ("/", "/mobile", "/desktop")
-
-
 def _must_revalidate(path: str) -> bool:
-    return path in _REVALIDATE_PATHS or path.startswith("/static/")
+    return path == "/" or path.startswith("/static/")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

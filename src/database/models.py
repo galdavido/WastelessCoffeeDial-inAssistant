@@ -194,9 +194,10 @@ class DialInLog(Base):
 
 
 # 4. Simple key-value settings table for app preferences.
-# Settings are per-owner: active_setup_id, default_dose_g and
-# default_grind_offset_clicks were global singletons before multi-user, so the
-# unique key is (owner, key), not key alone.
+# Settings are per-owner: active_setup_id and default_dose_g were global
+# singletons before multi-user, so the unique key is (owner, key), not key
+# alone. (Old rows may still hold default_grind_offset_clicks, a setting the
+# engine never read; it was removed and nothing reads the rows.)
 class AppSetting(Base):
     __tablename__ = "app_settings"
     __table_args__ = (

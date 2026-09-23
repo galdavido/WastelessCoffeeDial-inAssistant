@@ -32,7 +32,6 @@ from .web_helpers import (
     find_existing_bean,
     get_active_setup,
     get_default_dose_g,
-    get_grind_offset_clicks,
     latest_photo_log,
     parse_roast_date,
     read_asset_version,
@@ -42,7 +41,6 @@ from .web_helpers import (
     serialize_equipment,
     serialize_setup,
     set_default_dose_g,
-    set_grind_offset_clicks,
     set_setting,
     starting_dose_for_roast,
 )
@@ -52,7 +50,6 @@ from .web_schemas import (
     EquipmentLibraryCreateInput,
     EquipmentLibraryUpdateInput,
     FeedbackRequest,
-    GrindOffsetUpdate,
     RecommendationRequest,
     SetupInput,
     SetupSelectInput,
@@ -263,15 +260,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     def root() -> FileResponse:
         return _index()
 
-    # Legacy paths kept for bookmarks / the service-worker precache.
-    @app.get("/mobile", include_in_schema=False)
-    def mobile_ui() -> FileResponse:
-        return _index()
-
-    @app.get("/desktop", include_in_schema=False)
-    def desktop_ui() -> FileResponse:
-        return _index()
-
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -365,9 +353,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
                 logger.warning("Could not persist uploaded image to %s", uploads_dir)
                 image_name = None
 
-        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(
-            db, owner
-        )
         if image_name:
             coffee_data["image_name"] = image_name
 
@@ -403,11 +388,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             coffee_data = bean_coffee_data(bean)
         else:
             coffee_data = dict(body.coffee_data or {})
-
-        # Grind offset is a server-side preference, never trusted from the client.
-        coffee_data["preferred_grind_offset_clicks"] = get_grind_offset_clicks(
-            db, owner
-        )
 
         try:
             payload = _engine_recommendation(
@@ -480,10 +460,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     def get_settings(
         db: Session = Depends(get_db), owner: str = Depends(get_owner)
     ) -> dict[str, float]:
-        return {
-            "dose_g": get_default_dose_g(db, owner),
-            "grind_offset_clicks": get_grind_offset_clicks(db, owner),
-        }
+        return {"dose_g": get_default_dose_g(db, owner)}
 
     @app.get("/api/logs")
     def get_logs(
@@ -883,13 +860,9 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     ) -> dict[str, Any]:
         # Declared before "/api/setups/{setup_id}" so the literal "active" path
         # is not captured as an integer setup_id path parameter.
-        selected_id = body.setup_id or body.active_setup_id
-        if not selected_id:
-            raise HTTPException(status_code=422, detail="setup_id is required")
-
         setup = (
             db.query(BrewSetup)
-            .filter(BrewSetup.id == selected_id, BrewSetup.owner == owner)
+            .filter(BrewSetup.id == body.setup_id, BrewSetup.owner == owner)
             .first()
         )
         if not setup:
@@ -1140,16 +1113,3 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             db.rollback()
             raise _server_error(exc, "update dose") from exc
         return {"status": "updated", "dose_g": body.dose_g}
-
-    @app.put("/api/settings/grind-offset")
-    def update_grind_offset(
-        body: GrindOffsetUpdate,
-        db: Session = Depends(get_db),
-        owner: str = Depends(get_owner),
-    ) -> dict[str, Any]:
-        try:
-            set_grind_offset_clicks(db, owner, body.offset_clicks)
-        except Exception as exc:
-            db.rollback()
-            raise _server_error(exc, "update grind offset") from exc
-        return {"status": "updated", "offset_clicks": body.offset_clicks}

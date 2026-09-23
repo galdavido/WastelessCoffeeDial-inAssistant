@@ -680,3 +680,8 @@ class TestLegacyClients(FlowTestCase):
         self.assertNotIn("recommendation", scan)
         self.log_shot(scan["coffee_data"], recommendation="old prose")
         self.assertEqual(self.only_coffee()["logs_count"], 1)
+
+    def test_settings_carry_only_what_the_engine_reads(self) -> None:
+        self.assertEqual(set(self.ok(self.api.get("/api/settings"))), {"dose_g"})
+        response = self.api.put("/api/settings/grind-offset", json={"offset_clicks": 1})
+        self.assertIn(response.status_code, (404, 405))

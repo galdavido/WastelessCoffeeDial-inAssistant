@@ -26,10 +26,9 @@ class TestWebAppWiring(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_index_is_served(self) -> None:
-        for path in ("/", "/mobile", "/desktop"):
-            response = client.get(path)
-            self.assertEqual(response.status_code, 200, path)
-            self.assertIn("text/html", response.headers["content-type"])
+        response = client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
 
     def test_security_headers_present(self) -> None:
         response = client.get("/healthz")
@@ -182,7 +181,9 @@ class TestWebAppWiring(unittest.TestCase):
         # /api/setups/{setup_id} (which would parse "active" as an int).
         response = client.put("/api/setups/active", json={})
         self.assertEqual(response.status_code, 422)
-        self.assertIn("setup_id is required", response.text)
+        # Shadowed, the complaint would be about the *path* ("active" is not
+        # an int); reaching select_setup, it is the missing body field.
+        self.assertEqual(response.json()["detail"][0]["loc"], ["body", "setup_id"])
 
 
 class TestRequestIdentity(unittest.TestCase):
