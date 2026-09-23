@@ -311,12 +311,13 @@ def classify_tier(
     bean_id: int | None,
     has_hardware_caps: bool,
 ) -> CalibrationTier:
-    """Which cold-start tier this recommendation falls into.
+    """How much of this recommendation rests on the user's own shots.
 
-    Tier E is the honest one: with no measured shots *and* no hardware range,
-    there is genuinely no information from which to name a click number, so
-    the engine says so and asks for one measurement instead of inventing a
-    starting point.
+    A (this coffee, several settings) down to D (nothing measured, hardware
+    range known) and E (nothing measured, no hardware range either). Recorded
+    with every recommendation for back-testing. Whether a first grind setting
+    can be named at all is a separate question, answered by
+    brewing.cold_start_clicks; when it cannot, calibration_protocol says so.
     """
     usable = [
         s
@@ -334,12 +335,36 @@ def classify_tier(
     return "D" if has_hardware_caps else "E"
 
 
-CALIBRATION_PROTOCOL = (
-    "I don't know this grinder's range yet, so any click number I gave you "
-    "would be invented. Set it to the middle of its range, pull {dose:g} g in "
-    "to {yield_:g} g out, and note the time and how it tastes -- one measured "
-    "shot is all I need to solve the next setting properly."
-)
+def calibration_protocol(method: Method, dose_g: float, out_g: float) -> str:
+    """What to do when the engine cannot name a first grind setting.
+
+    Said instead of a number, never alongside an invented one. For espresso and
+    pour-over the dial cannot be located without the grinder's microns per
+    click (docs/science.md#cold-start) -- the middle of the range is *not* a
+    stand-in, because that range spans espresso to French press. For moka there
+    is no grind law to solve at all: the stove sets the brew time.
+    """
+    if method == "moka":
+        return (
+            f"A moka pot's grind isn't solved from brew time -- the stove sets "
+            f"that, not the grind -- so there is no setting to calculate. Use a "
+            f"grind a little coarser than espresso that doesn't pack when you "
+            f"fill the basket, brew {dose_g:g} g with {out_g:g} g of water, and "
+            f"note how it tastes."
+        )
+    brew = (
+        f"pull {dose_g:g} g in to {out_g:g} g out"
+        if method == "espresso"
+        else f"brew {dose_g:g} g with {out_g:g} g of water"
+    )
+    return (
+        "I can't place this grinder's dial yet -- that needs its microns per "
+        "click, which isn't recorded -- so any setting I gave you would be "
+        f"invented. Start where you normally would, {brew}, and note the "
+        "setting, the time and how it tastes: one measured shot is all I need "
+        "to solve the next setting properly. Adding your grinder's microns per "
+        "click under Equipment gets you a starting number next time."
+    )
 
 
 def get_active_setup_method(setup: BrewSetup | Any | None) -> Method:

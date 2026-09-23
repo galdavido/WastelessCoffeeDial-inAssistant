@@ -596,3 +596,57 @@ class TestShotHistory(FlowTestCase):
         latest = self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["shots"][0]
         self.assertEqual(latest["delta_clicks"], 2.0)
         self.assertEqual(latest["direction"], "finer")
+
+
+class TestFirstShotWithoutADial(FlowTestCase):
+    def _setup(self, grinder_fields: dict[str, Any], method: str) -> None:
+        grinder = self.ok(
+            self.api.post(
+                "/api/equipment/library",
+                json={
+                    "type": "grinder",
+                    "brand": "Bare",
+                    "model": "G",
+                    **grinder_fields,
+                },
+            )
+        )["equipment"]
+        machine = self.ok(
+            self.api.post(
+                "/api/equipment/library",
+                json={
+                    "type": "espresso_machine" if method == "espresso" else "other",
+                    "brand": "Bare",
+                    "model": "Moka pot" if method == "moka" else "M",
+                },
+            )
+        )["equipment"]
+        setup = self.ok(
+            self.api.post(
+                "/api/setups",
+                json={
+                    "name": "Bare",
+                    "grinder_id": grinder["id"],
+                    "machine_id": machine["id"],
+                    "method": method,
+                },
+            )
+        )["setup"]
+        self.ok(self.api.put("/api/setups/active", json={"setup_id": setup["id"]}))
+
+    def test_an_unmeasured_grinder_gets_instructions_not_a_number(self) -> None:
+        """Even with a known range: its middle is far too coarse for espresso."""
+        self._setup({"grind_min_clicks": 0, "grind_max_clicks": 120}, "espresso")
+        body = self.scan()
+        self.assertIsNone(body["recipe"]["grind_clicks"])
+        protocol = body["protocol"]
+        self.assertIn("microns per click", protocol)
+        self.assertNotIn("middle of its range", protocol)
+        self.assertIn("18.5 g in to 37 g out", protocol)
+
+    def test_moka_is_told_why_there_is_no_setting(self) -> None:
+        self._setup({}, "moka")
+        body = self.scan()
+        self.assertIsNone(body["recipe"]["grind_clicks"])
+        self.assertIn("stove", body["protocol"])
+        self.assertNotIn("pull", body["protocol"])

@@ -40,9 +40,9 @@ from .brewing import (
 )
 from .calibration import Calibration, confidence_label, fit_setup
 from .retrieval import (
-    CALIBRATION_PROTOCOL,
     BeanFeatures,
     borrow_bean_offset,
+    calibration_protocol,
     classify_tier,
     fetch_bean_features,
     fetch_calibration_shots,
@@ -213,8 +213,8 @@ def recommend(
                 # Tier E: nothing measured and no way to locate the dial. Any
                 # click number here would be invented, so ask for one
                 # measurement.
-                protocol = CALIBRATION_PROTOCOL.format(
-                    dose=dose_g, yield_=round(dose_g * target.ratio_aim, 1)
+                protocol = calibration_protocol(
+                    method, dose_g, round(dose_g * target.ratio_aim, 1)
                 )
                 notes.append(protocol)
         recipe = Recipe(
