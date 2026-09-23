@@ -7,7 +7,6 @@ from pydantic import BaseModel, model_validator
 
 class FeedbackRequest(BaseModel):
     coffee_data: dict[str, Any]
-    recommendation: str
     actual_grind: str | None = None
     dose_g: float | None = None
     image_name: str | None = None

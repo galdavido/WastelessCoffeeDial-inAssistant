@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ai.rationale import Rationale, render_template, write_rationale
+from ai.rationale import Rationale, write_rationale
 from database.models import Bean, BrewSetup, Equipment, Recommendation
 
 from .brewing import (
@@ -371,17 +371,3 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
         "tier": result.tier,
         "protocol": result.protocol,
     }
-
-
-def render_legacy_text(result: EngineResult) -> str:
-    """The old free-text field, kept one release for stale PWA clients.
-
-    Built from the structured result rather than parsed back out of it, so the
-    number in the prose is the engine's number.
-    """
-    rationale = result.rationale or render_template(result.recipe, "")
-    lines = [rationale.headline, "", rationale.why, "", rationale.what_to_watch]
-    if result.recipe.grind_clicks is not None:
-        lines.append("")
-        lines.append(f"Suggested Grind Setting: {result.recipe.grind_clicks:g} clicks")
-    return "\n".join(lines)

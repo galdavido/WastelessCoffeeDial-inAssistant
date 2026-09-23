@@ -179,7 +179,8 @@ class DialInLog(Base):
     data_quality: Mapped[str] = mapped_column(
         String, nullable=False, server_default="partial", default="partial"
     )
-    # LLM prose lives here; tasting_notes is reserved for the human.
+    # Legacy: the LLM prose each shot was logged with, no longer written. The
+    # explanation now lives on the linked recommendations.rationale_text.
     llm_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommendation_id: Mapped[int | None] = mapped_column(
         ForeignKey("recommendations.id"), nullable=True

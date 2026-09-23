@@ -1,6 +1,6 @@
 """Find the past shots worth learning from.
 
-Replaces the exact-string matching that used to live in ai/rag.py
+Replaces the exact-string matching the first version used
 (`Bean.process == x OR Bean.origin == y`, filtered to `rating >= 4`), which
 returned nothing at all for a coffee the user had not brewed before -- the
 common case -- and conflated two different questions.

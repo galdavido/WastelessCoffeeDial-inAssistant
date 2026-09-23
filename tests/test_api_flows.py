@@ -111,7 +111,6 @@ class FlowTestCase(DatabaseTestCase):
     def log_shot(self, coffee: dict[str, Any], **fields: Any) -> None:
         body = {
             "coffee_data": coffee,
-            "recommendation": "",
             "actual_grind": "20",
             "dose_g": 18.0,
             "yield_g": 36.0,
@@ -515,7 +514,6 @@ class TestOwnershipOfDerivedRows(FlowTestCase):
                 "/api/feedback",
                 json={
                     "coffee_data": scan["coffee_data"],
-                    "recommendation": "",
                     "actual_grind": "21",
                     "recommendation_id": foreign_id,
                 },
@@ -670,3 +668,15 @@ class TestUnclassifiedShots(DatabaseTestCase):
         from database.models import DialInLog
 
         self.assertEqual(DialInLog.__table__.c.data_quality.default.arg, "partial")
+
+
+class TestLegacyClients(FlowTestCase):
+    def test_a_cached_client_that_still_sends_the_old_prose_can_log_a_shot(
+        self,
+    ) -> None:
+        """The field is gone, but a stale PWA may send it for a while."""
+        self.make_setup()
+        scan = self.scan()
+        self.assertNotIn("recommendation", scan)
+        self.log_shot(scan["coffee_data"], recommendation="old prose")
+        self.assertEqual(self.only_coffee()["logs_count"], 1)

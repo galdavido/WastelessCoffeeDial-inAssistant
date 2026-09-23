@@ -151,7 +151,7 @@ class TestWebAppWiring(unittest.TestCase):
         """
         from core.web_schemas import FeedbackRequest, LogDetailsInput
 
-        body = FeedbackRequest(coffee_data={}, recommendation="", time_s=27.3)
+        body = FeedbackRequest(coffee_data={}, time_s=27.3)
         self.assertEqual(body.time_s, 27.3)
         self.assertEqual(LogDetailsInput(time_s=27.5).time_s, 27.5)
 

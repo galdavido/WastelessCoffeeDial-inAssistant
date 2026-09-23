@@ -23,7 +23,6 @@ from .engine import (
     _grinder_caps,
     persist_recommendation,
     recommend,
-    render_legacy_text,
     serialize_result,
 )
 from .retrieval import get_active_setup_method, to_shot_record
@@ -195,11 +194,8 @@ def _engine_recommendation(
 ) -> dict[str, Any]:
     """Run the deterministic engine and shape the API response.
 
-    The response is a superset: `recipe` and `rationale` are the real
-    contract, while the legacy `recommendation` string is rendered *from* the
-    structured result so older PWA clients keep working for one release. The
-    number in that prose is the engine's number, not one parsed back out of
-    generated text.
+    The numbers are in `recipe` and the prose in `rationale`, kept apart so
+    nothing ever parses a number back out of generated text.
 
     `bean` is passed in when the caller already has the real row (recommending
     for a saved coffee); otherwise one is found or fabricated from coffee_data.
@@ -239,7 +235,6 @@ def _engine_recommendation(
         recommendation_id = persist_recommendation(db, owner, result, setup, bean)
 
     payload = serialize_result(result)
-    payload["recommendation"] = render_legacy_text(result)
     payload["recommendation_id"] = recommendation_id
     return payload
 
@@ -434,7 +429,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             save_dial_in_log(
                 owner,
                 body.coffee_data,
-                body.recommendation,
                 actual_grind=body.actual_grind,
                 dose_g=body.dose_g,
                 image_name=body.image_name,

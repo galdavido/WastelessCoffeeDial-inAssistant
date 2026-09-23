@@ -478,7 +478,6 @@ def resolve_log_values(
 def save_dial_in_log(
     owner: str,
     coffee_data: dict[str, Any],
-    recommendation: str,
     actual_grind: str | None = None,
     dose_g: float | None = None,
     image_name: str | None = None,
@@ -599,9 +598,6 @@ def save_dial_in_log(
                 rating=None,
                 tasting_notes=None,
                 recommendation_id=recommendation_id,
-                # LLM prose is kept, but out of the human tasting-notes field
-                # and out of anything the engine reads.
-                llm_note=recommendation,
                 data_quality=classify_data_quality(
                     grind_clicks=grind_clicks,
                     time_s=resolved_time_s,

@@ -18,7 +18,6 @@ let engineVersion = null;
    library, which is what lets the engine work from the real row. */
 let currentBeanId = null;
 let currentCoffeeData = null;
-let currentRecommendation = null;
 // The engine's structured numbers. Read these directly rather than parsing
 // them back out of the prose — the prose is an explanation, not a source.
 let currentRecipe = null;
@@ -84,13 +83,11 @@ function showPanel(id) {
    cannot survive a recompute or be posted after a shot is logged. */
 function setRecommendation(data) {
   currentRecipe = data.recipe || null;
-  currentRecommendation = data.recommendation || '';
   currentRecommendationId = data.recommendation_id ?? null;
 }
 
 function clearRecommendation() {
   currentRecipe = null;
-  currentRecommendation = null;
   currentRecommendationId = null;
 }
 
@@ -927,7 +924,7 @@ function renderRecipe(data) {
   const prose = data.rationale
     ? [data.rationale.headline, data.rationale.why, data.rationale.what_to_watch]
         .filter(Boolean).join('\n\n')
-    : currentRecommendation;
+    : '';
   $('recommendation-text').textContent = prose || '—';
   $('recipe-confidence').textContent = data.confidence_label || '';
 
@@ -1230,7 +1227,6 @@ async function saveFeedback(worked) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         coffee_data:    currentCoffeeData,
-        recommendation: currentRecommendation,
         actual_grind:   actualGrind,
         dose_g:         doseUsed,
         // Anything left blank is sent as null and stored as unmeasured.

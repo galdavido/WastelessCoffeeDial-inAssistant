@@ -31,7 +31,6 @@ COPY --from=builder /opt/venv /opt/venv
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY src ./src
-COPY data/test_bag.jpg ./data/test_bag.jpg
 
 RUN mkdir -p /app/data/log_images && chown -R app:app /app
 USER app
