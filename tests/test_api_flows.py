@@ -245,6 +245,13 @@ class TestScanFailures(FlowTestCase):
         self.assertEqual(response.status_code, 422)
         self.assertIn("invalid JSON schema", response.json()["detail"])
 
+    def test_a_format_that_cannot_be_decoded_is_refused_up_front(self) -> None:
+        response = self.api.post(
+            "/api/analyze", files={"file": ("bag.heic", b"....", "image/heic")}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("JPEG, PNG or WebP", response.json()["detail"])
+
     def test_an_oversized_upload_is_refused(self) -> None:
         from core.routes.recipe import MAX_UPLOAD_BYTES
 

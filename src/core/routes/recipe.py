@@ -35,14 +35,11 @@ logger = logging.getLogger("wcda.routes")
 router = APIRouter()
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
-_ALLOWED_IMAGE_TYPES = {
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-}
-_ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+# What Pillow can decode as installed. HEIC/HEIF used to be listed here too,
+# but with no HEIF plugin every such upload failed at decode; phones convert
+# HEIC to JPEG for a web upload anyway.
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _bean_for(db: Session, owner: str, coffee_data: dict[str, Any]) -> Bean:
@@ -140,7 +137,7 @@ def analyze_image(
     content_type = (file.content_type or "").lower()
     if content_type not in _ALLOWED_IMAGE_TYPES:
         raise HTTPException(
-            status_code=400, detail="File must be a JPEG, PNG, WebP or HEIC image."
+            status_code=400, detail="File must be a JPEG, PNG or WebP image."
         )
 
     suffix = os.path.splitext(file.filename or "")[1].lower()
