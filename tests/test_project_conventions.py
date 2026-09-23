@@ -35,12 +35,10 @@ class TestProjectConventions(unittest.TestCase):
         """
         import inspect
 
-        from core import web_routes
+        from core.routes.coffees import delete_coffee
         from database.models import Base
 
-        source = inspect.getsource(web_routes)
-        start = source.index('@app.delete("/api/logs/{bean_id}")')
-        delete_source = source[start : start + 2000]
+        delete_source = inspect.getsource(delete_coffee)
 
         referencing = {
             table.name

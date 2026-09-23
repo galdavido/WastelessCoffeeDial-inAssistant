@@ -48,7 +48,7 @@ class FlowTestCase(DatabaseTestCase):
         self._patches = [
             patch("core.engine.write_rationale", _template_rationale),
             patch(
-                "core.web_routes.analyze_coffee_bag",
+                "core.routes.recipe.analyze_coffee_bag",
                 lambda _path: dict(_COFFEE),
             ),
         ]
@@ -238,7 +238,7 @@ class TestScanFailures(FlowTestCase):
         def fail(_image: bytes) -> dict[str, Any]:
             raise VisionError("gemini-3.8-flash: invalid JSON schema in response")
 
-        with patch("core.web_routes.analyze_coffee_bag", fail):
+        with patch("core.routes.recipe.analyze_coffee_bag", fail):
             response = self.api.post(
                 "/api/analyze", files={"file": ("bag.png", _png(), "image/png")}
             )
@@ -246,7 +246,7 @@ class TestScanFailures(FlowTestCase):
         self.assertIn("invalid JSON schema", response.json()["detail"])
 
     def test_an_oversized_upload_is_refused(self) -> None:
-        from core.web_routes import MAX_UPLOAD_BYTES
+        from core.routes.recipe import MAX_UPLOAD_BYTES
 
         big = b"\xff" * (MAX_UPLOAD_BYTES + 10)
         response = self.api.post(
@@ -685,3 +685,44 @@ class TestLegacyClients(FlowTestCase):
         self.assertEqual(set(self.ok(self.api.get("/api/settings"))), {"dose_g"})
         response = self.api.put("/api/settings/grind-offset", json={"offset_clicks": 1})
         self.assertIn(response.status_code, (404, 405))
+
+
+class TestRestructuredRoutes(FlowTestCase):
+    def test_a_first_shot_returns_the_new_coffees_id(self) -> None:
+        """So the app can show the bag's history straight after its first shot."""
+        self.make_setup()
+        scan = self.scan()
+        self.assertNotIn("bean_id", scan["coffee_data"], "a new bag has no row yet")
+        body = {"coffee_data": scan["coffee_data"], "actual_grind": "20"}
+        saved = self.ok(self.api.post("/api/feedback", json=body))
+        self.assertEqual(saved["bean_id"], self.only_coffee()["bean_id"])
+
+        # Scanning the same bag again recognises it.
+        self.assertEqual(self.scan()["coffee_data"]["bean_id"], saved["bean_id"])
+
+    def test_reading_the_setups_writes_nothing_after_the_first_visit(self) -> None:
+        from database.database import SessionLocal
+        from database.models import AppSetting
+
+        first = self.ok(self.api.get("/api/setups"))
+        self.ok(self.api.get("/api/setups"))
+        with SessionLocal() as db:
+            rows = db.query(AppSetting).filter(AppSetting.owner == self.api.owner).all()
+        self.assertEqual(rows, [], "no active_setup_id is persisted just by reading")
+        self.assertEqual(len(first["setups"]), 1)
+
+    def test_a_setup_with_shots_is_kept_with_a_reason(self) -> None:
+        self.ok(self.api.get("/api/setups"))  # the default setup, so two exist
+        self.make_setup()
+        self.log_shot(self.scan()["coffee_data"])
+        used = self.ok(self.api.get("/api/setups"))["active_setup_id"]
+        response = self.api.delete(f"/api/setups/{used}")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("shots logged", response.json()["detail"])
+
+    def test_an_unknown_equipment_type_is_refused_by_the_schema(self) -> None:
+        response = self.api.post(
+            "/api/equipment/library",
+            json={"type": "kettle", "brand": "x", "model": "y"},
+        )
+        self.assertEqual(response.status_code, 422)

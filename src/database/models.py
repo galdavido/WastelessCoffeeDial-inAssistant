@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -20,6 +21,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+
+def as_float(value: Any) -> float | None:
+    """Numeric columns come back as Decimal; the engine and the API speak floats."""
+    return None if value is None else float(value)
+
 
 # The friends instance is multi-user: `owner` is the Tailscale login the row
 # belongs to (see core.auth). The single-user dev instance puts every row under

@@ -15,13 +15,17 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
 Method = Literal["espresso", "pourover", "moka"]
 TasteAxis = Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"]
 ConstantKind = Literal["PHYSICS", "LITERATURE", "CALIBRATED", "HEURISTIC"]
+# Where a recipe's numbers came from. "history" and "calibrated" mean a
+# correction to this coffee's own last shot; "setup_law" means the coffee is
+# new and the dial was solved from the grinder's fitted law instead.
+Basis = Literal["prior", "history", "calibrated", "setup_law"]
 
 # Taste axis as a signed scale, so "how far from balanced, and which way" is
 # arithmetic rather than a chain of if-statements.
@@ -712,10 +716,7 @@ class Recipe:
     # there is enough variation to say whether changing it helps.
     preinfusion_s: float | None = None
     pause_s: float | None = None
-    # Where the numbers came from. "history" and "calibrated" mean a
-    # correction to this coffee's own last shot; "setup_law" means the coffee
-    # is new and the dial was solved from the grinder's fitted law instead.
-    basis: Literal["prior", "history", "calibrated", "setup_law"] = "prior"
+    basis: Basis = "prior"
     confidence: float = 0.0
     guardrails_hit: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
@@ -1131,16 +1132,13 @@ def apply_guardrails(
             temp = clamped
             hits.append("temp_machine_range")
 
-    return Recipe(
-        method=recipe.method,
+    return replace(
+        recipe,
         dose_g=round(dose, 1),
         grind_clicks=grind,
         yield_g=yield_g,
         water_g=water_g,
         brew_temp_c=temp,
-        target_time_s=recipe.target_time_s,
-        basis=recipe.basis,
-        confidence=recipe.confidence,
         guardrails_hit=tuple(hits),
         notes=tuple(notes),
     )

@@ -13,16 +13,17 @@ given anything to say about it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ai.rationale import Rationale, write_rationale
-from database.models import Bean, BrewSetup, Equipment, Recommendation
+from database.models import Bean, BrewSetup, Equipment, Recommendation, as_float
 
 from .brewing import (
+    Basis,
     GrinderCaps,
     MachineCaps,
     Method,
@@ -63,34 +64,30 @@ class EngineResult:
     protocol: str | None = None
 
 
-def _grinder_caps(grinder: Equipment | None) -> GrinderCaps:
+def grinder_caps(grinder: Equipment | None) -> GrinderCaps:
     if grinder is None:
         return GrinderCaps()
     direction = grinder.finer_direction or "lower_is_finer"
     return GrinderCaps(
-        min_clicks=_as_float(grinder.grind_min_clicks),
-        max_clicks=_as_float(grinder.grind_max_clicks),
-        step_clicks=_as_float(grinder.grind_step_clicks) or 1.0,
-        um_per_click=_as_float(grinder.grind_um_per_click),
+        min_clicks=as_float(grinder.grind_min_clicks),
+        max_clicks=as_float(grinder.grind_max_clicks),
+        step_clicks=as_float(grinder.grind_step_clicks) or 1.0,
+        um_per_click=as_float(grinder.grind_um_per_click),
         finer_direction="higher_is_finer"
         if direction == "higher_is_finer"
         else "lower_is_finer",
     )
 
 
-def _machine_caps(machine: Equipment | None) -> MachineCaps:
+def machine_caps(machine: Equipment | None) -> MachineCaps:
     if machine is None:
         return MachineCaps()
     return MachineCaps(
-        basket_size_g=_as_float(machine.basket_size_g),
-        temp_min_c=_as_float(machine.temp_min_c),
-        temp_max_c=_as_float(machine.temp_max_c),
+        basket_size_g=as_float(machine.basket_size_g),
+        temp_min_c=as_float(machine.temp_min_c),
+        temp_max_c=as_float(machine.temp_max_c),
         temp_controllable=bool(machine.temp_controllable),
     )
-
-
-def _as_float(value: Any) -> float | None:
-    return None if value is None else float(value)
 
 
 def _days_since_roast(roast_date: date | None, today: date | None = None) -> int | None:
@@ -120,8 +117,8 @@ def recommend(
     method: Method = get_active_setup_method(setup)
     grinder = setup.grinder if setup else None
     machine = setup.machine if setup else None
-    caps = _grinder_caps(grinder)
-    machine_caps = _machine_caps(machine)
+    caps = grinder_caps(grinder)
+    machine_spec = machine_caps(machine)
     target = target_for(method, style)
 
     setup_id = setup.id if setup else None
@@ -150,6 +147,7 @@ def recommend(
         days_since_roast=days,
     )
     protocol: str | None = None
+    basis: Basis
     if bean_history:
         # Correct from the most recent measured shot of this coffee.
         recipe = correct(
@@ -157,7 +155,7 @@ def recommend(
             target,
             calibration.beta,
             caps,
-            machine_caps,
+            machine_spec,
             days_since_roast=days,
             roast_level_ord=roast_ord,
             dose_g=dose_g,
@@ -231,20 +229,14 @@ def recommend(
             # cannot hold one.
             brew_temp_c=(
                 round(sum(temp_band_for_roast(roast_ord)) / 2.0, 1)
-                if machine_caps.temp_controllable
+                if machine_spec.temp_controllable
                 else None
             ),
             target_time_s=target.time_hi,
             notes=tuple(notes),
         )
 
-    recipe = Recipe(
-        **{
-            **recipe.__dict__,
-            "basis": basis,
-            "confidence": calibration.confidence,
-        }
-    )
+    recipe = replace(recipe, basis=basis, confidence=calibration.confidence)
     # The channeling floor is bean-scoped for the same reason the anchor is.
     # Its triggers compare normalised times against each other ("a finer
     # setting that ran no slower means the water channeled") and read the
@@ -254,7 +246,7 @@ def recommend(
     # no reason to obey. A coffee with no shots of its own falls back to the
     # setup, which is the conservative direction: more triggers, not fewer.
     recipe = apply_guardrails(
-        recipe, caps, machine_caps, bean_history or history, target
+        recipe, caps, machine_spec, bean_history or history, target
     )
 
     # Pre-infusion: a second resistance reading, and advice once there is
@@ -272,13 +264,11 @@ def recommend(
     pi_s, pause_s, prep_note = prep_advice(history)
     prep_notes.append(prep_note)
 
-    recipe = Recipe(
-        **{
-            **recipe.__dict__,
-            "preinfusion_s": pi_s,
-            "pause_s": pause_s,
-            "notes": recipe.notes + tuple(prep_notes),
-        }
+    recipe = replace(
+        recipe,
+        preinfusion_s=pi_s,
+        pause_s=pause_s,
+        notes=recipe.notes + tuple(prep_notes),
     )
 
     context_lines = [

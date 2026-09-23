@@ -18,6 +18,10 @@ let engineVersion = null;
    library, which is what lets the engine work from the real row. */
 let currentBeanId = null;
 let currentCoffeeData = null;
+/* The bag photo from a scan. Kept apart from currentCoffeeData, which a
+   recompute replaces, and sent with the first shot only: that is the shot the
+   photo belongs to. */
+let currentImageName = null;
 // The engine's structured numbers. Read these directly rather than parsing
 // them back out of the prose — the prose is an explanation, not a source.
 let currentRecipe = null;
@@ -95,6 +99,7 @@ function clearCoffee() {
   clearRecommendation();
   currentCoffeeData = null;
   currentBeanId = null;
+  currentImageName = null;
 }
 
 /* ── Dialogs ────────────────────────────────────────────────────────────── */
@@ -391,6 +396,7 @@ async function analyzeFile(file) {
 
     currentCoffeeData = data.coffee_data;
     currentBeanId = data.coffee_data?.bean_id ?? null;
+    currentImageName = data.coffee_data?.image_name ?? null;
     renderCoffeeCard(currentCoffeeData);
     renderRecipe(data);
     showRecipeDose(currentCoffeeData);
@@ -1239,7 +1245,7 @@ async function saveFeedback(worked) {
         pause_s:        num(worked?.pause_s),
         brew_temp_c:    num(worked?.brew_temp_c),
         recommendation_id: currentRecommendationId,
-        image_name:     currentCoffeeData?.image_name ?? null,
+        image_name:     currentImageName,
       }),
     });
     if (!res.ok) {
@@ -1248,6 +1254,12 @@ async function saveFeedback(worked) {
       const d = await res.json().catch(() => ({}));
       throw new Error(getApiErrorMessage(d, 'Save failed'));
     }
+
+    // A bag's first shot creates the coffee; from here on it is addressed by
+    // id, which is what lets its history show straight away.
+    const saved = await res.json().catch(() => ({}));
+    if (saved.bean_id) currentBeanId = Number(saved.bean_id);
+    currentImageName = null;
 
     closeShotWizard();
     // That recommendation has been consumed. Clearing it here is what stops

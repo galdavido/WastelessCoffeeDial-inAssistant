@@ -58,7 +58,9 @@ class TestWebAppWiring(unittest.TestCase):
             "/api/recommendation",
             json={"coffee_data": {"name": "Test"}, "dose_g": 0},
         )
-        self.assertEqual(response.status_code, 400)
+        # Rejected by the schema, before any database work.
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"][0]["loc"], ["body", "dose_g"])
 
     def test_app_shell_is_revalidated(self) -> None:
         # Without no-cache the browser may serve a stale app.js alongside a

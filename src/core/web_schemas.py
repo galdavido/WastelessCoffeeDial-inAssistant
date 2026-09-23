@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+# Names typed by a person: a coffee, a roaster, a grinder, a setup. The cap is
+# far above anything real and only stops a runaway paste reaching the table.
+Name = Annotated[str, Field(max_length=200)]
+PositiveGrams = Annotated[float, Field(gt=0)]
 
 
 class FeedbackRequest(BaseModel):
@@ -40,7 +45,7 @@ class RecommendationRequest(BaseModel):
 
     coffee_data: dict[str, Any] | None = None
     bean_id: int | None = None
-    dose_g: float | None = None
+    dose_g: PositiveGrams | None = None
 
     @model_validator(mode="after")
     def _needs_a_subject(self) -> RecommendationRequest:
@@ -50,15 +55,15 @@ class RecommendationRequest(BaseModel):
 
 
 class DoseUpdate(BaseModel):
-    dose_g: float
+    dose_g: PositiveGrams
 
 
 class SetupInput(BaseModel):
-    name: str
+    name: Name
     grinder_id: int
     machine_id: int
     # Drives the target bands and which levers the engine may move. Left
-    # unset, the engine falls back to espresso.
+    # unset, it is inferred from the brewer.
     method: Literal["espresso", "pourover", "moka"] | None = None
 
 
@@ -66,38 +71,30 @@ class SetupSelectInput(BaseModel):
     setup_id: int
 
 
-class EquipmentCapabilityFields(BaseModel):
-    """What the hardware can physically do.
+class EquipmentInput(BaseModel):
+    """An equipment entry, and what the hardware can physically do.
 
-    All optional. Where the engine has no capability data it abstains from
-    recommending a value rather than guessing one, so a blank field is a
-    safe answer -- but spec_source should carry a citation whenever the
-    numbers are filled in, since an uncited capability row is a guess.
+    The capabilities are all optional. Where the engine has no capability
+    data it abstains from recommending a value rather than guessing one, so a
+    blank field is a safe answer -- but spec_source should carry a citation
+    whenever the numbers are filled in, since an uncited capability row is a
+    guess.
     """
 
+    type: Literal["grinder", "espresso_machine", "filter", "other"]
+    brand: Name
+    model: Name
     grind_min_clicks: float | None = None
     grind_max_clicks: float | None = None
     grind_step_clicks: float | None = None
     grind_um_per_click: float | None = None
     finer_direction: Literal["lower_is_finer", "higher_is_finer"] | None = None
-    burr_type: str | None = None
+    burr_type: Name | None = None
     basket_size_g: float | None = None
     temp_min_c: float | None = None
     temp_max_c: float | None = None
     temp_controllable: bool | None = None
-    spec_source: str | None = None
-
-
-class EquipmentLibraryCreateInput(EquipmentCapabilityFields):
-    type: str
-    brand: str
-    model: str
-
-
-class EquipmentLibraryUpdateInput(EquipmentCapabilityFields):
-    type: str
-    brand: str
-    model: str
+    spec_source: Annotated[str, Field(max_length=2000)] | None = None
 
 
 class LogDetailsInput(BaseModel):
@@ -112,9 +109,9 @@ class LogDetailsInput(BaseModel):
 
 
 class BeanRecordInput(BaseModel):
-    roaster: str
-    name: str
-    origin: str
-    process: str
-    roast_level: str
+    roaster: Name
+    name: Name
+    origin: Name
+    process: Name
+    roast_level: Name
     log: LogDetailsInput | None = None

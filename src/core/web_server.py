@@ -13,7 +13,8 @@ from core.admin_db import admin_enabled, warn_if_half_configured
 from core.admin_routes import register_admin_routes
 from core.auth import warn_if_misconfigured
 from core.db_bootstrap import run_migrations, seed_baseline_equipment
-from core.web_routes import register_routes
+from core.routes import register_routes
+from core.routes.common import STATIC_DIR
 from database.database import engine
 
 logging.basicConfig(
@@ -21,10 +22,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger("wcda")
-
-_STATIC_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "web", "static")
-)
 
 
 @asynccontextmanager
@@ -76,14 +73,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI(title="Wasteless Coffee Dial-in Assistant", lifespan=lifespan)
 app.add_middleware(SecurityHeadersMiddleware)
-app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
-register_routes(app, _STATIC_DIR)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+register_routes(app)
 
 # Only where this instance is pointed at another one's database, which is the
 # dev instance and never the friends instance. Alembic and every ordinary route
 # stay on the local engine regardless.
 if admin_enabled():
-    register_admin_routes(app, _STATIC_DIR)
+    register_admin_routes(app, str(STATIC_DIR))
 
 
 def main() -> None:
