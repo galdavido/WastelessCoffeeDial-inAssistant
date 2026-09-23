@@ -19,7 +19,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=37" />
+  <link rel="stylesheet" href="/static/style.css?v=39" />
 </head>
 <body>
   <div id="app">
@@ -167,6 +167,10 @@
             <div class="recipe-flags" id="recipe-flags"></div>
             <div class="rec-body" id="recommendation-text">—</div>
             <p class="recipe-confidence" id="recipe-confidence"></p>
+            <!-- The confidence label is a claim; this is the evidence for it. -->
+            <button class="btn btn-sm btn-ghost fit-open" id="btn-fit-view" type="button" hidden>
+              See the working
+            </button>
           </div>
 
           <!-- What you have tried on this bag, and which way it moved. -->
@@ -439,6 +443,67 @@
   </div>
 
   <!-- Full-screen photo viewer (tap a bag photo on a log card) -->
+  <!-- Behind the curtain: the fit the recommendation fell out of. Filled from
+       GET /api/fit, which re-runs the engine pass the recipe came from with
+       the prose switched off — nothing on this screen is recomputed here, so
+       the picture cannot disagree with the number you were given. -->
+  <div class="dialog-overlay hidden" id="fit-dialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h3 class="dialog-title">Your grind law</h3>
+        <p class="dialog-sub">
+          Every click number falls out of one line fitted to your own shots.
+          This is that line, and the shots under it.
+        </p>
+      </div>
+      <div class="dialog-body">
+        <p class="fit-status" id="fit-status">Reading the fit…</p>
+
+        <div id="fit-content" hidden>
+          <section class="fit-section" id="fit-chart-section" hidden>
+            <h4 class="fit-h">The fit</h4>
+            <p class="fit-sub">Each shot, the law through them, and where the number came from</p>
+            <div class="fit-card">
+              <div class="fit-chart" id="fit-chart"></div>
+              <p class="fit-probe" id="fit-probe"></p>
+              <div class="fit-legend" id="fit-legend"></div>
+            </div>
+            <div class="fit-callout" id="fit-gap" hidden></div>
+          </section>
+
+          <section class="fit-section" id="fit-strip-section" hidden>
+            <h4 class="fit-h">What the slope is made of</h4>
+            <p class="fit-sub">The fit is the median of every pairwise slope — so here is every one of them</p>
+            <div class="fit-card">
+              <div class="fit-chart" id="fit-strip"></div>
+              <div class="fit-legend" id="fit-strip-legend"></div>
+            </div>
+            <div class="fit-callout" id="fit-spread" hidden></div>
+          </section>
+
+          <section class="fit-section">
+            <h4 class="fit-h">How much of this is yours</h4>
+            <p class="fit-sub">Confidence, decomposed into the things that produce it</p>
+            <p class="fit-empty" id="fit-empty" hidden>
+              There is no fitted line yet — it takes three measured shots on this
+              coffee, at two or more grind settings. Until then the numbers below
+              come from the grinder's specification rather than from you.
+            </p>
+            <div class="fit-prov" id="fit-prov" hidden>
+              <div class="fit-prov-bar" id="fit-prov-bar"></div>
+              <div class="fit-prov-key" id="fit-prov-key"></div>
+            </div>
+            <div class="fit-tiles" id="fit-tiles"></div>
+            <ul class="fit-ladder" id="fit-ladder"></ul>
+          </section>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" id="btn-close-fit" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="dialog-overlay lightbox hidden" id="photo-viewer">
     <button class="lightbox-close" id="btn-close-photo" type="button" aria-label="Close photo">&times;</button>
     <img class="lightbox-img" id="photo-viewer-img" src="" alt="Coffee bag photo" />
@@ -613,6 +678,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=37"></script>
+  <script src="/static/app.js?v=39"></script>
 </body>
 </html>

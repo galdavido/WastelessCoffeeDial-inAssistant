@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import unittest
 
-from ai.rationale import Rationale, render_template, scrub_numerals
+from ai.rationale import (
+    Rationale,
+    _allowed_tokens,
+    render_template,
+    scrub_numerals,
+)
 from core.brewing import Recipe
 
 RECIPE = Recipe(
@@ -89,6 +94,54 @@ class TestRationaleSchema(unittest.TestCase):
         """Layer 1: structured output cannot emit a field that isn't declared."""
         for field in Rationale.model_fields.values():
             self.assertIs(field.annotation, str)
+
+
+class TestEngineSuppliedNumbersAreAllowed(unittest.TestCase):
+    """Quoting the engine back is not inventing a number.
+
+    Regression for a live fault: the allow-list was built from
+    ``recipe.numeric_tokens()`` alone, but the prompt also shows the model the
+    engine's notes and confidence label, which name past grind settings and
+    shot counts, and invites it to explain them. A good recommendation was
+    discarded for saying "going finer to 26 clicks caused channeling" -- 26
+    being a setting the engine itself had just described. The whole response
+    was rejected, an extra model call was spent, and the user got the template.
+
+    The guarantee is unchanged in substance: a number the engine never
+    produced appears in none of these sources and is still refused.
+    """
+
+    CONTEXT = (
+        "Tier A (7 measured shots on this setup, 3 of them on this coffee).\n"
+        "Going finer to 26 did not slow the shot relative to 28, "
+        "which is the channeling signature."
+    )
+    LABEL = "Medium - learning from 7 settings on this setup"
+
+    def setUp(self) -> None:
+        self.allowed = _allowed_tokens(RECIPE, self.LABEL, self.CONTEXT, str(RECIPE))
+
+    def test_a_setting_from_the_engines_notes_is_allowed(self) -> None:
+        text = "Going finer to 26 clicks caused channeling, so we stay at 33."
+        self.assertEqual(scrub_numerals(text, self.allowed), text)
+
+    def test_a_shot_count_from_the_confidence_label_is_allowed(self) -> None:
+        text = "This is drawn from 7 settings you have already measured."
+        self.assertEqual(scrub_numerals(text, self.allowed), text)
+
+    def test_an_invented_number_is_still_rejected(self) -> None:
+        """The layer still has to do its job."""
+        for invented in (
+            "Try 41 clicks instead.",
+            "Brew this at 93 C.",
+            "You are extracting at 21.5%.",
+            "Pull it to 52 g.",
+        ):
+            self.assertIsNone(scrub_numerals(invented, self.allowed), invented)
+
+    def test_recipe_numbers_survive_the_widening(self) -> None:
+        text = "Grind at 33 and pull 18 g into 36 g."
+        self.assertEqual(scrub_numerals(text, self.allowed), text)
 
 
 if __name__ == "__main__":

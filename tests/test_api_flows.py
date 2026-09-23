@@ -187,6 +187,25 @@ class TestScanAndPull(FlowTestCase):
         self.assertLess(body["recipe"]["grind_clicks"], 20.0)
         self.assertIsNotNone(body["recommendation_id"])
 
+    def test_the_fit_view_shows_the_pass_the_recipe_came_from(self) -> None:
+        self.make_setup()
+        scan = self.scan()
+        self.log_shot(scan["coffee_data"], actual_grind="20", time_s=18.0)
+        self.log_shot(scan["coffee_data"], actual_grind="16", time_s=27.0)
+        bean_id = self.only_coffee()["bean_id"]
+
+        recipe = self.ok(
+            self.api.post("/api/recommendation", json={"bean_id": bean_id})
+        )["recipe"]
+        fit = self.ok(self.api.get(f"/api/fit?bean_id={bean_id}"))
+        self.assertEqual(fit["recipe"]["grind_clicks"], recipe["grind_clicks"])
+        self.assertEqual(len(fit["shots"]), 2)
+        self.assertTrue(any(b["is_current"] for b in fit["beans"]))
+
+        # Another user's coffee is not theirs to inspect.
+        other = self.another_user()
+        self.assertEqual(other.get(f"/api/fit?bean_id={bean_id}").status_code, 404)
+
     def test_the_dose_on_screen_is_the_dose_the_recipe_is_for(self) -> None:
         """Regression: a coffee with a shot ignored the dose field entirely."""
         self.make_setup()

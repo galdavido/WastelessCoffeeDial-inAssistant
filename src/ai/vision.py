@@ -11,7 +11,11 @@ from pydantic import BaseModel
 
 from ai.model_selection import (
     GEMINI_MODEL_CANDIDATES,
+    VISION_ATTEMPT_CEILING_MS,
+    VISION_ATTEMPT_TIMEOUT_S,
+    VISION_BUDGET_S,
     json_config,
+    resolve_budget_s,
     try_model_candidates,
 )
 
@@ -68,46 +72,56 @@ def analyze_coffee_bag(image: bytes) -> dict[str, Any]:
         raise VisionError(f"Failed to read image: {exc}") from exc
 
     try:
-        client = genai.Client()
+        # The ceiling is not the budget -- the API rejects a deadline under
+        # 10s. try_model_candidates enforces the real budget; this only stops
+        # an abandoned attempt holding its connection indefinitely.
+        client = genai.Client(
+            http_options=types.HttpOptions(timeout=VISION_ATTEMPT_CEILING_MS)
+        )
     except Exception as exc:  # no API key, most likely
         raise VisionError(f"The bag reader is not available: {exc}") from exc
 
     prompt = _build_prompt()
+    parsed_payload: dict[str, Any] | None = None
+    contents: list[types.PartUnionDict] = [prompt, photo]
 
-    try:
-        parsed_payload: dict[str, Any] | None = None
-
-        contents: list[types.PartUnionDict] = [prompt, photo]
-
-        def call_model(model_name: str) -> Any:
-            return client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=json_config(model_name, CoffeeData, temperature=0.1),
-            )
-
-        def evaluate_response(response: Any) -> tuple[bool, str | None]:
-            nonlocal parsed_payload
-
-            text = getattr(response, "text", None)
-            if text is None:
-                return False, "empty response"
-
-            parsed = _parse_coffee_data_response(text)
-            if parsed is None:
-                return False, "invalid JSON schema in response"
-
-            parsed_payload = parsed
-            return True, None
-
-        _response, last_error = try_model_candidates(
-            GEMINI_MODEL_CANDIDATES,
-            call_model=call_model,
-            evaluate_result=evaluate_response,
+    def call_model(model_name: str) -> Any:
+        return client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=json_config(model_name, CoffeeData, temperature=0.1),
         )
 
-        if parsed_payload is None:
-            raise VisionError(last_error or "Unknown extraction error")
-        return parsed_payload
-    finally:
-        client.close()
+    def evaluate_response(response: Any) -> tuple[bool, str | None]:
+        nonlocal parsed_payload
+
+        text = getattr(response, "text", None)
+        if text is None:
+            return False, "empty response"
+
+        parsed = _parse_coffee_data_response(text)
+        if parsed is None:
+            return False, "invalid JSON schema in response"
+
+        parsed_payload = parsed
+        return True, None
+
+    _response, last_error = try_model_candidates(
+        GEMINI_MODEL_CANDIDATES,
+        call_model=call_model,
+        evaluate_result=evaluate_response,
+        # Reading a bag photo is legitimately slower than writing prose
+        # about numbers that are already decided, and there is no
+        # deterministic fallback for OCR -- failing fast here would just
+        # mean the user retypes the bag by hand. Hence a wider budget than
+        # the rationale call's, and a per-attempt cap wide enough for a
+        # real reading (12.6-19.3s measured) rather than the prose call's.
+        budget_s=resolve_budget_s(VISION_BUDGET_S, "WCDA_VISION_BUDGET_S"),
+        attempt_timeout_s=VISION_ATTEMPT_TIMEOUT_S,
+        # Deferred, not `finally`: an abandoned attempt still holds this client.
+        on_all_done=client.close,
+    )
+
+    if parsed_payload is None:
+        raise VisionError(last_error or "Unknown extraction error")
+    return parsed_payload

@@ -16,10 +16,12 @@ from core.brewing import (
     ShotRecord,
     finest_useful_clicks,
     normalised_time,
+    preinfusion_experiment,
     prep_advice,
     prep_comparable,
     resistance_disagreement,
     target_for,
+    value_of,
 )
 from core.calibration import theil_sen_comparable
 
@@ -55,6 +57,135 @@ def _shot(
         taste_axis=taste,  # type: ignore[arg-type]
         rating=rating,
     )
+
+
+class TestPreinfusionExperiment(unittest.TestCase):
+    """The way out of the dead end where the grind lever is gone.
+
+    Once the channeling floor binds, the engine may not grind finer. Before
+    this, prep_advice went on reporting the user's own usual pre-infusion back
+    to them while its note told them to try a longer one -- so the advice and
+    the number contradicted each other and nothing ever moved.
+    """
+
+    def _habitual(self, n: int = 8, pi: float = 2.0) -> list[ShotRecord]:
+        """A user who has always pre-infused for the same short time."""
+        return [
+            _shot(28 + i % 3, 16.0, preinfusion_s=pi, pause_s=2.0) for i in range(n)
+        ]
+
+    def test_it_fires_when_the_grind_is_stuck(self) -> None:
+        got = preinfusion_experiment(self._habitual(), "espresso", grind_is_stuck=True)
+        assert got is not None
+        self.assertGreater(got.preinfusion_s, 2.0)
+
+    def test_it_does_not_override_the_guardrailed_grind(self) -> None:
+        """Holding the grind means leaving it alone, not re-pointing it.
+
+        The experiment only runs because the channeling floor clamped the
+        grind, so carrying a grind number of its own could land finer than
+        that floor and silently undo the clamp.
+        """
+        got = preinfusion_experiment(self._habitual(), "espresso", grind_is_stuck=True)
+        assert got is not None
+        self.assertFalse(hasattr(got, "grind_clicks"))
+
+    def test_it_reaches_the_duration_that_earns_channeling_relief(self) -> None:
+        """The target is not arbitrary: at this duration the engine already
+        credits pre-infusion with allowing a finer grind."""
+        got = preinfusion_experiment(self._habitual(), "espresso", grind_is_stuck=True)
+        assert got is not None
+        self.assertGreaterEqual(
+            got.preinfusion_s, value_of("preinfusion_min_for_relief_s")
+        )
+
+    def test_the_new_duration_is_not_grind_evidence_against_the_old(self) -> None:
+        """It must clear prep_tolerance_s, or the experiment's shots would be
+        paired with the old ones and the change would land in the slope."""
+        got = preinfusion_experiment(self._habitual(), "espresso", grind_is_stuck=True)
+        assert got is not None
+        self.assertGreater(got.preinfusion_s - 2.0, value_of("prep_tolerance_s"))
+
+    def test_it_stays_quiet_while_the_grind_still_has_room(self) -> None:
+        got = preinfusion_experiment(self._habitual(), "espresso", grind_is_stuck=False)
+        self.assertIsNone(got)
+
+    def test_it_stays_quiet_on_pourover(self) -> None:
+        """A bloom is a different mechanism with a different purpose."""
+        shots = [
+            ShotRecord(
+                method="pourover",
+                dose_g=18.0,
+                grind_clicks=60.0,
+                water_g=288.0,
+                time_s=180.0,
+                preinfusion_s=2.0,
+            )
+            for _ in range(8)
+        ]
+        got = preinfusion_experiment(shots, "pourover", grind_is_stuck=True)
+        self.assertIsNone(got)
+
+    def test_it_stays_quiet_when_the_user_already_preinfuses_long(self) -> None:
+        """Nothing to test: this puck is already being mitigated."""
+        long_pi = value_of("preinfusion_min_for_relief_s") + 1.0
+        got = preinfusion_experiment(
+            self._habitual(pi=long_pi),
+            "espresso",
+            grind_is_stuck=True,
+        )
+        self.assertIsNone(got)
+
+    def test_it_stays_quiet_without_enough_history(self) -> None:
+        got = preinfusion_experiment(
+            self._habitual(n=2), "espresso", grind_is_stuck=True
+        )
+        self.assertIsNone(got)
+
+    def test_it_keeps_asking_until_the_new_duration_has_enough_shots(self) -> None:
+        """One shot at a new setting is an anecdote, not a comparison."""
+        shots = self._habitual()
+        target = preinfusion_experiment(shots, "espresso", grind_is_stuck=True)
+        assert target is not None
+        needed = int(value_of("min_shots_at_new_prep"))
+
+        for done in range(1, needed):
+            trial = shots + [
+                _shot(28, 20.0, preinfusion_s=target.preinfusion_s, pause_s=2.0)
+                for _ in range(done)
+            ]
+            self.assertIsNotNone(
+                preinfusion_experiment(trial, "espresso", grind_is_stuck=True),
+                f"should still be running after {done} shot(s)",
+            )
+
+    def test_it_stops_once_the_comparison_can_be_made(self) -> None:
+        shots = self._habitual()
+        target = preinfusion_experiment(shots, "espresso", grind_is_stuck=True)
+        assert target is not None
+        gathered = shots + [
+            _shot(28, 20.0, preinfusion_s=target.preinfusion_s, pause_s=2.0)
+            for _ in range(int(value_of("min_shots_at_new_prep")))
+        ]
+        self.assertIsNone(
+            preinfusion_experiment(gathered, "espresso", grind_is_stuck=True)
+        )
+
+    def test_the_target_does_not_creep_while_the_experiment_runs(self) -> None:
+        """The baseline is the habitual duration, not a running median that
+        the experiment's own long shots would drag upward."""
+        shots = self._habitual()
+        first = preinfusion_experiment(shots, "espresso", grind_is_stuck=True)
+        assert first is not None
+        mid = shots + [_shot(28, 20.0, preinfusion_s=first.preinfusion_s, pause_s=2.0)]
+        second = preinfusion_experiment(mid, "espresso", grind_is_stuck=True)
+        assert second is not None
+        self.assertEqual(first.preinfusion_s, second.preinfusion_s)
+
+    def test_the_note_tells_the_user_to_change_nothing_else(self) -> None:
+        got = preinfusion_experiment(self._habitual(), "espresso", grind_is_stuck=True)
+        assert got is not None
+        self.assertIn("nothing else", got.note.lower())
 
 
 class TestShotTimeExcludesPreinfusion(unittest.TestCase):

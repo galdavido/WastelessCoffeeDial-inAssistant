@@ -16,7 +16,12 @@ from database.models import Bean, BrewSetup
 
 from ..auth import get_owner
 from ..db_session import get_db
-from ..engine import persist_recommendation, recommend, serialize_result
+from ..engine import (
+    persist_recommendation,
+    recommend,
+    serialize_fit,
+    serialize_result,
+)
 from ..web_helpers import (
     as_non_empty_text,
     bean_coffee_data,
@@ -202,6 +207,54 @@ def refresh_recommendation(
         return _recommend(db, owner, setup, coffee_data, bean=bean, dose_g=body.dose_g)
     except Exception as exc:
         raise server_error(exc, "refresh recommendation") from exc
+
+
+@router.get("/api/fit")
+def get_fit(
+    bean_id: int | None = None,
+    db: Session = Depends(get_db),
+    owner: str = Depends(get_owner),
+    setup: BrewSetup = Depends(active_setup),
+) -> dict[str, Any]:
+    """The working behind the current recommendation.
+
+    Read-only and model-free: it runs the same engine pass the recipe came
+    from with the prose switched off, so what it returns is the fit that
+    produced the number rather than a reconstruction that could disagree
+    with it. Nothing is persisted -- opening the view must not write a
+    recommendation row.
+    """
+    bean: Bean | None = None
+    if bean_id is not None:
+        bean = db.query(Bean).filter(Bean.id == bean_id, Bean.owner == owner).first()
+        if bean is None:
+            raise HTTPException(status_code=404, detail="Coffee not found")
+
+    # The same default dose _recommend passes, so the fit is the pass the
+    # recipe on screen came from.
+    roast_dose = starting_dose_for_roast(bean.roast_level_ord) if bean else None
+    try:
+        result = recommend(
+            db,
+            owner,
+            setup,
+            bean,
+            None,
+            default_dose_g=roast_dose or get_default_dose_g(db, owner),
+            explain=False,
+        )
+    except Exception as exc:
+        raise server_error(exc, "build fit view") from exc
+
+    bean_ids = {s.bean_id for s in result.history if s.bean_id is not None}
+    bean_ids.update(result.calibration.bean_offsets)
+    names: dict[int, str] = {}
+    if bean_ids:
+        names = {
+            row.id: row.name
+            for row in db.query(Bean).filter(Bean.id.in_(bean_ids), Bean.owner == owner)
+        }
+    return serialize_fit(result, names, bean_id)
 
 
 @router.post("/api/feedback")

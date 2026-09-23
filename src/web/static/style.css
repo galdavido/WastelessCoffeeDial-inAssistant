@@ -57,6 +57,15 @@
   --warn:       #D9A036;
   --bad:        #C4614F;
 
+  /* Chart series. Three hues rather than three shades of clay, because muted
+     earth tones alone cannot be told apart as series -- checked for lightness,
+     chroma and colour-blind separation against --bg-card. Never used as the
+     only cue: clay against green is ΔE 7.1 under protanopia, so shape or a
+     direct label carries the identity too. */
+  --cat-1:      #C68134;
+  --cat-2:      #4F7C3A;
+  --cat-3:      #6F87D8;
+
   --font-ui:      "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
 
@@ -690,6 +699,8 @@ select.input { background-image: none; }
 .form-section-title {
   font-size: 12px; font-weight: 600; color: var(--text-2);
 }
+/* The CSP blocks inline styles outright, so a style="" here would simply not
+   apply -- the spacing has to come from a class. */
 .form-section-title-spaced { margin-top: 16px; }
 .form-grid { display: grid; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -1235,6 +1246,136 @@ select.input { background-image: none; }
   min-height: 28px;
 }
 .timer-tools { display: flex; gap: 10px; justify-content: center; }
+
+/* ── Behind the curtain: the fit view ────────────────────────────────────── */
+/* A reading view inside a dialog, so it is set as a short document: serif
+   heads, an uppercase standfirst, and cards that hold the drawing. Wider than
+   the other dialogs because two charts have to be legible in it. */
+#fit-dialog .dialog-card { max-width: 720px; }
+@media (min-width: 760px) {
+  #fit-dialog { align-items: center; padding: 16px; }
+  #fit-dialog .dialog-card { border-radius: var(--radius); }
+  #fit-dialog.hidden .dialog-card { transform: scale(.96); }
+}
+
+.fit-open { align-self: flex-start; margin-top: 12px; }
+.fit-status { font-size: 14px; color: var(--text-2); }
+#fit-content { display: flex; flex-direction: column; gap: 26px; }
+
+.fit-section { display: flex; flex-direction: column; gap: 4px; }
+.fit-h {
+  font-family: var(--font-display); font-weight: 400;
+  font-size: 21px; color: var(--crema);
+}
+.fit-sub {
+  font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-3); margin-bottom: 10px; line-height: 1.5;
+}
+
+.fit-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 12px 10px;
+}
+/* overflow visible: the direct labels on the series sit in the right margin. */
+.fit-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.fit-shot { cursor: pointer; }
+.fit-shot.is-read circle:last-of-type,
+.fit-shot.is-read rect,
+.fit-shot.is-read polygon { stroke: var(--crema); }
+
+.fit-probe {
+  font-size: 12.5px; line-height: 1.5; color: var(--text-2);
+  margin-top: 10px; min-height: 2.6em;
+}
+.fit-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-2);
+}
+.fit-legend span { display: inline-flex; align-items: center; gap: 7px; }
+
+/* The prose that reads the chart out loud. Keyed to the warn hue because it
+   is nearly always reporting a guardrail. */
+.fit-callout {
+  border-left: 2px solid var(--bad);
+  background: var(--bg-card);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 14px 16px; margin-top: 14px;
+}
+.fit-callout h5 {
+  font-size: 11px; letter-spacing: .11em; text-transform: uppercase;
+  color: var(--bad); font-weight: 600; margin-bottom: 8px;
+}
+.fit-callout p { font-size: 13.5px; line-height: 1.6; color: var(--text-2); }
+.fit-callout p + p { margin-top: 9px; }
+.fit-callout b { color: var(--text-1); font-weight: 600; }
+.fit-callout .fit-why { color: var(--text-3); font-size: 13px; }
+
+.fit-empty {
+  font-size: 13.5px; line-height: 1.6; color: var(--text-2);
+  margin-bottom: 14px;
+}
+
+/* Provenance: how much of the slope is yours and how much is the textbook. */
+.fit-prov { margin-bottom: 14px; }
+.fit-prov-bar {
+  display: flex; gap: 2px; height: 26px;
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+.fit-prov-bar i { display: block; }
+.fit-prov-mine { background: var(--cat-1); }
+.fit-prov-prior { background: var(--text-3); }
+.fit-prov-key {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  margin-top: 9px; font-size: 12.5px; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.fit-prov-key span { display: inline-flex; align-items: center; gap: 6px; }
+/* Only the two keyed spans carry a swatch; the w = n/(n+k) span is arithmetic,
+   not a series. */
+.fit-prov-key .fit-key-mine::before,
+.fit-prov-key .fit-key-prior::before {
+  content: ''; width: 9px; height: 9px; border-radius: 2px;
+}
+.fit-prov-key .fit-key-mine::before { background: var(--cat-1); }
+.fit-prov-key .fit-key-prior::before { background: var(--text-3); }
+
+.fit-tiles { display: grid; gap: 8px; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 560px) { .fit-tiles { grid-template-columns: repeat(4, 1fr); } }
+.fit-tile {
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 11px 12px;
+}
+.fit-tile .k {
+  font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.fit-tile .v {
+  font-family: var(--font-display); font-size: 26px; line-height: 1.2;
+  margin-top: 3px; color: var(--text-1); font-variant-numeric: tabular-nums;
+}
+.fit-tile .n { font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
+
+/* The tier ladder: where this fit sits, and what the rung above it wants. */
+.fit-ladder { list-style: none; display: flex; flex-direction: column; gap: 2px; margin-top: 12px; }
+.fit-ladder li {
+  display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+  align-items: baseline; padding: 9px 12px;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text-2);
+}
+.fit-ladder li.on { border-color: var(--accent); color: var(--text-1); }
+.fit-ladder .t { font-family: var(--font-display); font-size: 17px; color: var(--text-3); }
+.fit-ladder li.on .t { color: var(--accent); }
+.fit-ladder .c { font-size: 11.5px; color: var(--text-3); grid-column: 2; }
+@media (min-width: 560px) {
+  .fit-ladder li { grid-template-columns: 22px 1fr auto; }
+  .fit-ladder .c { grid-column: auto; }
+}
 
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 /* The timer's own tick is information, not decoration, so it is left alone;
