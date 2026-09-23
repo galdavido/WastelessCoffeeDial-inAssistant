@@ -42,6 +42,7 @@ from .brewing import (
     beta_prior,
     cold_start_clicks,
     correct,
+    dose_term,
     normalised_time,
 )
 from .calibration import fit_setup
@@ -142,7 +143,17 @@ def direction_agreement(
 
         prior = beta_prior(method, caps)
         fit = fit_setup([before], method, caps, prior)
-        recipe = correct(before, target, fit.beta, caps, machine)
+        # Asked at the dose the next shot was actually pulled at, as the app
+        # would be when the user changes it.
+        recipe = correct(
+            before,
+            target,
+            fit.beta,
+            caps,
+            machine,
+            dose_g=after.dose_g,
+            gamma=fit.gamma,
+        )
         recipe = apply_guardrails(recipe, caps, machine, [before], target)
         if recipe.grind_clicks is None:
             continue
@@ -202,17 +213,31 @@ def held_out_time_error(
         if tr is None or held.grind_clicks is None:
             continue
 
-        fitted = fit_setup(rest, method, caps, prior)
+        fitted = fit_setup(rest, method, caps, prior, bean_id=held.bean_id)
         if fitted.beta is None or fitted.alpha is None:
             continue
-        predicted = fitted.alpha + fitted.beta * held.grind_clicks
+        # The whole law, as the engine uses it: the coffee's own offset
+        # included. Leaving delta_bean out scored the law on a question it
+        # never answers, and made any term that moves the bean offsets look
+        # worse than it is.
+        predicted = (
+            fitted.alpha
+            + fitted.delta_bean
+            + fitted.beta * held.grind_clicks
+            + dose_term(held.dose_g, held.roast_level_ord, fitted.gamma)
+        )
         errors.append(abs(predicted - math.log(tr)))
 
         # Same intercept, unfitted slope: isolates what calibration adds.
         if prior is not None:
-            prior_fit = fit_setup(rest[:1], method, caps, prior)
+            prior_fit = fit_setup(rest[:1], method, caps, prior, bean_id=held.bean_id)
             if prior_fit.alpha is not None and prior_fit.beta is not None:
-                prior_pred = prior_fit.alpha + prior_fit.beta * held.grind_clicks
+                prior_pred = (
+                    prior_fit.alpha
+                    + prior_fit.delta_bean
+                    + prior_fit.beta * held.grind_clicks
+                    + dose_term(held.dose_g, held.roast_level_ord, prior_fit.gamma)
+                )
                 prior_errors.append(abs(prior_pred - math.log(tr)))
 
     return Metric(
@@ -239,7 +264,7 @@ def guardrail_violations(
 
     for shot in measured:
         fit = fit_setup(measured, method, caps, prior)
-        recipe = correct(shot, target, fit.beta, caps, machine)
+        recipe = correct(shot, target, fit.beta, caps, machine, gamma=fit.gamma)
         recipe = apply_guardrails(recipe, caps, machine, measured, target)
         checked += 1
         clicks = recipe.grind_clicks

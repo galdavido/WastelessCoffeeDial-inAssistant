@@ -185,28 +185,23 @@ with the same number.
 all — so the dial cannot be located from history and the engine falls back to
 the cold start in [#cold-start](#cold-start).
 
-**Missing term: dose. Recorded 2026-09-13.** The law has no dose term, and it
-should. Cameron et al. state it plainly: when the coffee mass changes *"the
-only parameter that needs to be altered is the bed depth, L"*, and bed depth is
-**directly proportional to the dose**. Darcy (§2.1) then makes the pressure
-drop — and so the shot time — scale with `L`. A dose change is therefore a
-first-order effect on `T_r` that the engine currently attributes to something
-else.
+**The dose term. Recorded 2026-09-13, built 2026-09-23.** The law used to
+have no dose term, so a dose change was a first-order effect on `T_r` that the
+engine attributed to something else, mostly `δ_bean`. On the reference
+history the two were confounded: one coffee was always dosed 18 g and the
+other almost always 16 g. The law now carries `+ γ·ln(dose / 18 g)` for
+espresso; see [#dose-term](#dose-term).
 
-That something else is `δ_bean`, and on the reference history the two are
-**completely confounded**: one coffee was always dosed 18 g and the other
-always 16 g, so the fitted offsets (−0.043 and +0.142, a gap worth about two
-clicks) cannot distinguish "this bean grinds differently" from "this bean was
-dosed 2 g lighter". [#similarity](#similarity) notes that origin and process
-have no published effect on how a coffee grinds, which makes the dose reading
-the more likely one. The fix is to put `+ γ·ln(dose)` in the law and re-fit,
-leaving `δ_bean` to carry only what is genuinely the coffee — until then,
-`δ_bean` should be read as "this bag, at the dose you use for it".
-
-Until that term exists, a dose the user asks for is honoured (and the yield or
-water scaled to keep the ratio), but the grind is still solved from the last
-shot's dose — so the recipe says so, and tells the user which way the time
-will move.
+An earlier version of this note guessed that the gap between the two offsets
+was mostly dose. **It isn't, and the owner explained why (2026-09-23).** The
+darker coffee is dosed lighter *because* a dark roast is less dense and takes
+more room in the basket. The two coffees fill the basket to about the same
+height, so their beds are equally deep and dose explains none of the gap. The
+darker coffee also runs slower at a given setting because a dark roast is
+easier to extract and brews differently. That is a real property of the coffee,
+which is what `δ_bean` is for. This is why the dose term measures **bed
+depth**, not grams (§2.6). A draft that used grams read the dark coffee's
+lighter dose as a shallower bed, and credited that to the coffee instead.
 
 ### 2.5 Extraction yield {#ey-formula}
 
@@ -216,6 +211,92 @@ EY% = (beverage_g × TDS%) / dose_g
 
 Documented for completeness and for the day a refractometer appears. **Not
 computable here** — see [#limits](#limits).
+
+### 2.6 The dose term {#dose-term}
+
+For espresso the law is
+
+```
+ln T_r = α_setup + δ_bean + β_setup · c + γ · ln D + ln fill(roast)
+D = dose / (18 g × fill(roast))
+```
+
+`D` is the **bed depth** relative to a full reference basket. Darcy's `L` is a
+depth, and grams are only a proxy for it: a darker roast has expanded more in
+the roaster and is less dense, so the same depth weighs less. `fill(roast)`
+is the same table the starting dose uses ([#starting-dose](#starting-dose)):
+1.03 for light, 0.97 medium, 0.94 medium-dark, 0.92 dark, and 1 when the roast
+is unknown. A light coffee at 18.5 g and a dark one at 16.5 g are therefore
+the same bed. Within one coffee the roast is constant and `D` is simply
+proportional to grams, so the fit of `γ` (below) is unaffected. The roast
+correction matters wherever coffees are compared: the bean offsets, the solve
+for a new coffee, and the fit chart.
+
+**Why `ln fill(roast)` too.** Dose enters `T_r` twice. `T_r = t / R`, and
+`t = beverage / Q`, so `T_r = dose / Q`. At a fixed ratio a smaller dose makes
+a smaller drink, which takes less time *even at the same depth*. That factor
+is kinematics, exact, with exponent 1. The depth enters through Darcy's `Q`.
+Within one coffee both scale with grams, which is the total `γ = 2`. Across
+roasts only the depth part is corrected for density, and the drink-size part
+leaves `ln fill(roast)`. It is a constant for any one coffee, so it cancels
+wherever two shots of the same coffee are compared.
+
+**Why a power of dose, and why γ = 2.** Cameron et al. state that when the
+coffee mass changes *"the only parameter that needs to be altered is the bed
+depth, L"*, and bed depth is directly proportional to the dose. At a fixed
+pump pressure, Darcy (§2.1) gives the flow `Q ∝ 1/L ∝ 1/dose`. The beverage
+mass at a fixed ratio is `R · dose`, so the shot time is
+`t = R · dose / Q ∝ R · dose²`, and `T_r = t / R ∝ dose²`. The physical prior
+is therefore `γ = 2`, a `PHYSICS` constant (`dose_exponent_prior`). Going from
+18 g to 19 g at the same setting and ratio should slow the shot by about 11%,
+roughly 3 s on a 28 s shot. The test simulator's bed model obeys the same
+scaling.
+
+**Why only espresso.** The derivation needs a fixed pressure drop. Pour-over
+drawdown is driven by the head of water and the pour, which the user
+controls, and moka has no grind law at all (§3.7). For both, `γ = 0`: the
+recipe still honours a requested dose, but says the grind is worked out at
+the last shot's dose.
+
+**How it is fitted.** Like `β`, the prior is shrunk toward the data:
+`γ = w·γ_fitted + (1 − w)·γ_prior` with `w = n/(n + κ_dose)`, where `n` counts
+dose pairs ([#dose-fit](#dose-fit)). A dose pair is two shots of one coffee,
+prepared the same way (the same rules as `β`'s pairs), whose doses differ by at
+least `dose_pair_min_diff_g`. Its grind difference is removed with `β` first:
+`(Δ ln T_r − β·Δc) / Δ ln dose`. `γ_fitted` is the median of those. A fit at or
+below zero is discarded, because no bed of coffee runs faster when it is
+deeper.
+
+`β`'s own pairs take the dose effect out of each rise in the same way, so
+shots at different doses remain grind evidence. The two are fitted in one
+round: `β` with the prior `γ`, then `γ` given that `β`, then `β` again with
+that `γ`. They are nearly orthogonal unless dose and grind always moved
+together, and in that case no amount of iterating could separate them.
+
+**Where it acts.** The differential correction carries the anchor shot to
+the new dose before comparing it with the target:
+`T_r' = T_r · (dose_new / dose_anchor)^γ`. A heavier dose then moves the
+grind coarser by exactly what it is expected to do to the time, rather than
+by nothing. The absolute solve for a new coffee subtracts `γ·ln D`. `α` is
+quoted at a full reference basket, so anything that reads `α` without a dose
+sees an ordinary bed rather than a 1 g one.
+
+**Measured on the reference history, 2026-09-23.** There are 15 measured
+shots and **no dose pair yet**: the one 18 g shot of the darker coffee was
+paused before the pull for 2.1 s longer than the others, beyond
+`prep_tolerance_s`. So `γ` is still the prior. The two coffees' usual doses
+come out at nearly the same depth (`ln D` −0.03 and −0.06), as the owner
+intended. Leave-one-out prediction of `ln T_r`, with the coffee's own offset
+included as the engine predicts, gives a mean absolute error of **0.260 with
+no dose term and 0.244 with γ = 2**. With the term, the darker coffee's offset
+sits 0.35 above the lighter one's in `ln T_r`: about 1.4× slower at the same
+setting and bed depth, even though its smaller drink should have made it
+quicker. That is the roast. The backtest's M3 used to leave `δ_bean` out, which
+reversed that comparison. It now includes the offset.
+
+**What it does not fix.** The channeling floor ([#cameron](#cameron))
+compares raw normalised times between shots and does not yet adjust them for
+dose.
 
 ---
 
@@ -610,8 +691,9 @@ estimate needs.
 ### 5.9 Starting dose by roast level {#starting-dose}
 
 A coffee with no shots of its own needs a first dose. Roast changes how much
-mass fits in a basket: a dark roast is denser and less expanded than a light
-one, so the same basket holds less of it by weight at the same headspace. The
+mass fits in a basket: a dark roast has expanded more in the roaster and is
+less dense than a light one, so a basket filled to the same headspace holds
+less of it by weight. The
 engine starts from a **fill of the basket** by roast level:
 
 | Roast | Fill | On an 18 g basket |
@@ -628,6 +710,20 @@ midpoints (dark ~16–17 g, light ~18–19 g in a standard 18 g basket), not
 measurements, hence `HEURISTIC`. They are only a first guess, shown with a
 hint to adjust it. The basket guardrail (`basket_fill_lo`/`hi`, [limits](#limits))
 still applies, and the user's own dose takes over from the first logged shot.
+
+### 5.10 Fitting the dose term {#dose-fit}
+
+Three choices in [#dose-term](#dose-term) are ours rather than physics:
+
+- `kappa_dose = 4` dose pairs: the same weight `κ_espresso` gives distinct
+  settings for `β`. A handful of dose pairs should move `γ` but not define
+  it.
+- `dose_pair_min_diff_g = 0.5` g: below this, two shots' doses differ by less
+  than an ordinary scale and basket repeat, so the pair measures noise.
+- `dose_reference_g = 18` g: the basket `α` is quoted at, scaled by the
+  roast's fill. This is a centring choice that changes no prediction. It keeps
+  `α` at an ordinary bed, so a reader of `α` who ignores the dose gets
+  something close to the pre-dose-term law.
 
 ---
 

@@ -86,14 +86,46 @@ def _result(bean_id: int | None = RWANDA) -> EngineResult:
     )
 
 
+class TestThePictureIsDrawnAtOneDose(unittest.TestCase):
+    """The Cerrado was brewed at 16 g and the recipe is for 18 g."""
+
+    def test_points_are_carried_to_the_recipes_dose(self) -> None:
+        payload = serialize_fit(_result(), NAMES, RWANDA)
+        gamma = payload["law"]["gamma"]
+        self.assertGreater(gamma, 0.0)
+        self.assertEqual(payload["law"]["dose_ref_g"], 18.0)
+        for shot in payload["shots"]:
+            expected = shot["tr_measured"] * (18.0 / shot["dose_g"]) ** gamma
+            self.assertAlmostEqual(shot["tr"], expected, places=2)
+
+    def test_the_intercept_drawn_is_the_fitted_one_at_that_dose(self) -> None:
+        result = _result()
+        payload = serialize_fit(result, NAMES, RWANDA)
+        law = payload["law"]
+        self.assertEqual(law["alpha_reference_dose"], result.calibration.alpha)
+        # The recipe is at the 18 g reference, so the two coincide here.
+        self.assertAlmostEqual(law["alpha"], law["alpha_reference_dose"], places=9)
+
+    def test_the_pairs_shown_used_the_gamma_beta_was_fitted_with(self) -> None:
+        result = _result()
+        shown = [p["slope"] for p in serialize_fit(result, NAMES, RWANDA)["pairs"]]
+        fitted = [
+            round(t.slope, 5)
+            for t in theil_sen_terms(HISTORY, result.calibration.pair_gamma)
+            if t.slope is not None
+        ]
+        self.assertEqual(shown, fitted)
+
+
 class TestThePictureMatchesTheEngine(unittest.TestCase):
     def test_the_pairs_shown_are_the_pairs_the_median_was_taken_of(self) -> None:
-        payload = serialize_fit(_result(), NAMES, RWANDA)
+        result = _result()
+        payload = serialize_fit(result, NAMES, RWANDA)
         slopes = [p["slope"] for p in payload["pairs"]]
         self.assertTrue(slopes)
         self.assertAlmostEqual(
             statistics.median(slopes),
-            theil_sen_comparable(HISTORY) or 0.0,
+            theil_sen_comparable(HISTORY, result.calibration.pair_gamma) or 0.0,
             places=4,
         )
 
