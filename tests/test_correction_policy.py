@@ -30,7 +30,7 @@ from core.brewing import (
     propose_dose_reduction,
     target_for,
 )
-from core.calibration import fit_setup, theil_sen_slope
+from core.calibration import fit_setup, theil_sen_comparable
 from core.sim import BedParams, simulate_shot
 
 K6 = GrinderCaps(
@@ -311,10 +311,26 @@ class TestCalibration(unittest.TestCase):
         self.assertLess(abs(fit.beta), 0.5)
 
     def test_theil_sen_tolerates_one_bad_measurement(self) -> None:
-        clean = [(float(c), -0.1 * c) for c in range(30, 40)]
-        slope_clean = theil_sen_slope(clean)
-        corrupted = [*clean, (35.0, 99.0)]  # a mis-logged shot
-        slope_corrupted = theil_sen_slope(corrupted)
+        clean = [
+            ShotRecord(
+                method="espresso",
+                dose_g=18.0,
+                grind_clicks=float(c),
+                yield_g=36.0,
+                time_s=60.0 * 2.718281828 ** (-0.1 * c),
+            )
+            for c in range(30, 40)
+        ]
+        slope_clean = theil_sen_comparable(clean)
+        # A mis-logged shot: the timer left running.
+        bad = ShotRecord(
+            method="espresso",
+            dose_g=18.0,
+            grind_clicks=35.0,
+            yield_g=36.0,
+            time_s=900.0,
+        )
+        slope_corrupted = theil_sen_comparable([*clean, bad])
         assert slope_clean is not None and slope_corrupted is not None
         self.assertAlmostEqual(slope_clean, slope_corrupted, places=2)
 

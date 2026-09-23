@@ -229,6 +229,17 @@ class TestSlopeIsFittedWithinCoffees(unittest.TestCase):
         assert calibration.beta is not None
         self.assertLess(calibration.beta, -0.08)
 
+    def test_one_shot_per_coffee_is_no_evidence_about_the_grinder(self) -> None:
+        """Regression: with no same-coffee pair, fit_setup fell back to pooling
+        every pair -- the cross-bean comparison the fit exists to avoid."""
+        # Three coffees, one setting each. Read as one curve the slope even has
+        # the physical sign, but its size is the gap between the bags.
+        one_each = [_shot(1, 28.0, 40.0), _shot(2, 32.0, 36.0), _shot(3, 36.0, 20.0)]
+        self.assertIsNone(theil_sen_comparable(one_each))
+        calibration = fit_setup(one_each, "espresso", K6, beta_prior("espresso", K6))
+        self.assertEqual(calibration.beta_source, "prior")
+        self.assertEqual(calibration.beta, beta_prior("espresso", K6))
+
     def test_shots_with_no_bean_recorded_still_pair_together(self) -> None:
         """Bean-less records are one pool -- the simulator tests rely on it."""
         anonymous = [

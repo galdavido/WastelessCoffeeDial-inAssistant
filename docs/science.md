@@ -162,6 +162,12 @@ cap — itself `0.25·|1/β|` — widening in step instead of catching it. Being
 saved by a covariate filter aimed at something else is not a safeguard, and
 it disappears as soon as two bags are brewed at the same temperature.
 
+The fit used to fall back to pooling *every* pair whenever no comparable pair
+existed. That fallback fired in exactly the cases this section forbids — one
+shot per coffee, or every same-coffee pair prepared differently — so it was
+removed (2026-09-23). No comparable pair now means no fit: `β` stays at the
+prior until a coffee has been measured at two settings.
+
 *No shots on this coffee.* Nothing to correct from, so the law is used in
 **absolute** form and solved for the dial:
 
