@@ -194,6 +194,21 @@ CONSTANTS: dict[str, Constant] = {
     ),
     "dose_min_g": Constant(12.0, "g", "HEURISTIC", "#limits"),
     "dose_max_g": Constant(22.0, "g", "HEURISTIC", "#limits"),
+    # First-shot dose for a coffee with no shots, as a fill of the basket by
+    # roast: a dense dark roast packs more mass per ml than a fluffy light one.
+    "starting_fill_light": Constant(1.03, "fraction", "HEURISTIC", "#starting-dose"),
+    "starting_fill_medium": Constant(0.97, "fraction", "HEURISTIC", "#starting-dose"),
+    "starting_fill_medium_dark": Constant(
+        0.94, "fraction", "HEURISTIC", "#starting-dose"
+    ),
+    "starting_fill_dark": Constant(0.92, "fraction", "HEURISTIC", "#starting-dose"),
+    "starting_reference_basket_g": Constant(
+        18.0,
+        "g",
+        "HEURISTIC",
+        "#starting-dose",
+        "the basket the fills are applied to when the brewer's is not recorded",
+    ),
     "basket_fill_lo": Constant(0.75, "fraction", "HEURISTIC", "#limits"),
     "basket_fill_hi": Constant(1.05, "fraction", "HEURISTIC", "#limits"),
     "confidence_cap_pourover": Constant(0.6, "fraction", "HEURISTIC", "#method-levers"),

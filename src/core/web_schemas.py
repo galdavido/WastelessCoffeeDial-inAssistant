@@ -46,6 +46,12 @@ class RecommendationRequest(BaseModel):
     coffee_data: dict[str, Any] | None = None
     bean_id: int | None = None
     dose_g: PositiveGrams | None = None
+    # Gemini writes the prose only for the first recipe on a coffee (a scan,
+    # or opening it from the library). Dose changes, setup switches and the
+    # refresh after a shot send False and get the deterministic template:
+    # every number is the same either way, and those are the waits that
+    # matter most. Defaults to True so an older cached client keeps working.
+    explain: bool = True
 
     @model_validator(mode="after")
     def _needs_a_subject(self) -> RecommendationRequest:

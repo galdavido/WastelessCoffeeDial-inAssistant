@@ -79,7 +79,6 @@ class Equipment(Base):
     )
     finer_direction: Mapped[str | None] = mapped_column(String, nullable=True)
     burr_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    burr_size_mm: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
     basket_size_g: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     temp_min_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
     temp_max_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
@@ -186,9 +185,6 @@ class DialInLog(Base):
     data_quality: Mapped[str] = mapped_column(
         String, nullable=False, server_default="partial", default="partial"
     )
-    # Legacy: the LLM prose each shot was logged with, no longer written. The
-    # explanation now lives on the linked recommendations.rationale_text.
-    llm_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommendation_id: Mapped[int | None] = mapped_column(
         ForeignKey("recommendations.id"), nullable=True
     )
@@ -203,8 +199,7 @@ class DialInLog(Base):
 # 4. Simple key-value settings table for app preferences.
 # Settings are per-owner: active_setup_id and default_dose_g were global
 # singletons before multi-user, so the unique key is (owner, key), not key
-# alone. (Old rows may still hold default_grind_offset_clicks, a setting the
-# engine never read; it was removed and nothing reads the rows.)
+# alone.
 class AppSetting(Base):
     __tablename__ = "app_settings"
     __table_args__ = (

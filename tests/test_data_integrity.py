@@ -83,6 +83,21 @@ class TestStartingDose(unittest.TestCase):
         self.assertEqual(doses, sorted(doses, reverse=True))
         self.assertIsNone(starting_dose_for_roast(None))
 
+    def test_without_a_basket_it_is_the_old_18_g_table(self) -> None:
+        from core.web_helpers import starting_dose_for_roast
+
+        doses = [starting_dose_for_roast(o) for o in (1, 2, 3, 4, 5)]
+        self.assertEqual(doses, [18.5, 18.5, 17.5, 17.0, 16.5])
+
+    def test_it_scales_with_the_brewers_basket(self) -> None:
+        from core.web_helpers import starting_dose_for_roast
+
+        # A 14 g basket: light 14.42 -> 14.5, dark 12.88 -> 13.0.
+        self.assertEqual(starting_dose_for_roast(1, 14.0), 14.5)
+        self.assertEqual(starting_dose_for_roast(5, 14.0), 13.0)
+        # A 22 g basket: light 22.66 -> 22.5.
+        self.assertEqual(starting_dose_for_roast(1, 22.0), 22.5)
+
 
 class TestClassifyDataQuality(unittest.TestCase):
     def test_complete_shot_is_measured(self) -> None:

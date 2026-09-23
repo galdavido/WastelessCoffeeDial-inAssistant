@@ -223,12 +223,14 @@ function renderCoffeeCard(profile) {
 
 /* The single path every recompute goes through: dose change, setup switch,
    and refreshing after a shot. Sends bean_id when the coffee is in the
-   library so the engine works from the real row. */
-async function refreshRecommendation({ dose, silent = false } = {}) {
+   library so the engine works from the real row. Only opening a coffee asks
+   for Gemini's prose (explain); a recompute gets the template, because the
+   numbers are the same either way and the wait is what the user notices. */
+async function refreshRecommendation({ dose, silent = false, explain = false } = {}) {
   if (!currentBeanId && !currentCoffeeData) return false;
   const body = currentBeanId
-    ? { bean_id: currentBeanId, dose_g: dose ?? null }
-    : { coffee_data: currentCoffeeData, dose_g: dose ?? null };
+    ? { bean_id: currentBeanId, dose_g: dose ?? null, explain }
+    : { coffee_data: currentCoffeeData, dose_g: dose ?? null, explain };
 
   try {
     const res = await fetch('/api/recommendation', {
@@ -366,7 +368,7 @@ async function openBean(entry) {
   setLoadingCopy('Working out your recipe…', 'Using your shots on this bag');
   showPanel('scan-loading');
 
-  const ok = await refreshRecommendation({ dose: null });
+  const ok = await refreshRecommendation({ dose: null, explain: true });
   if (!ok) {
     clearCoffee();
     showPanel('recipe-empty');

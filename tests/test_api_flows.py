@@ -151,6 +151,47 @@ class TestScanAndPull(FlowTestCase):
         self.assertEqual(body["recipe"]["dose_g"], 18.5)
         self.assertEqual(body["recipe"]["yield_g"], 37.0)
 
+    def test_the_starting_dose_is_a_fill_of_the_brewers_basket(self) -> None:
+        setup = self.make_setup()
+        machine_id = setup["machine"]["id"]
+        self.ok(
+            self.api.put(
+                f"/api/equipment/library/{machine_id}",
+                json={
+                    "type": "espresso_machine",
+                    "brand": "Test",
+                    "model": "Brewer",
+                    "basket_size_g": 14,
+                },
+            )
+        )
+        body = self.scan()
+        # Light roast in a 14 g basket, not the 18 g table's 18.5.
+        self.assertEqual(body["coffee_data"]["preferred_dose_g"], 14.5)
+        self.assertEqual(body["recipe"]["dose_g"], 14.5)
+
+    def test_only_the_first_recipe_on_a_coffee_asks_gemini(self) -> None:
+        self.make_setup()
+        with patch(
+            "core.engine.write_rationale", side_effect=_template_rationale
+        ) as writer:
+            scan = self.scan()
+            self.assertEqual(writer.call_count, 1, "a scan is explained")
+            self.log_shot(scan["coffee_data"])
+            bean_id = self.only_coffee()["bean_id"]
+
+            self.ok(
+                self.api.post(
+                    "/api/recommendation",
+                    json={"bean_id": bean_id, "dose_g": 19, "explain": False},
+                )
+            )
+            self.assertEqual(writer.call_count, 1, "a dose change is not")
+
+            # Opening the coffee, and an older client that sends no flag, are.
+            self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+            self.assertEqual(writer.call_count, 2)
+
     def test_a_shot_logged_after_a_scan_lands_in_the_library(self) -> None:
         self.make_setup()
         scan = self.scan()
