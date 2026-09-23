@@ -24,8 +24,9 @@ from .database import Base
 # The friends instance is multi-user: `owner` is the Tailscale login the row
 # belongs to (see core.auth). The single-user dev instance puts every row under
 # one owner ("owner" by default), which is also what migration 0005 backfills
-# onto pre-multi-user data. Equipment is deliberately not owned -- it is a
-# shared hardware-spec catalogue.
+# onto pre-multi-user data. Equipment is the exception: a shared hardware-spec
+# catalogue everyone can pick from, where `owner` only records who may edit an
+# entry (NULL = shared and read-only; see migration 0007).
 
 
 # 1. Beans table
@@ -52,6 +53,9 @@ class Equipment(Base):
     __tablename__ = "equipment"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # Who added it, and so the only person who may change it. NULL is a shared
+    # entry (the seeded hardware), read-only for everyone.
+    owner: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     type: Mapped[str] = mapped_column(String)
     brand: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String)

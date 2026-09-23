@@ -186,8 +186,15 @@ def find_existing_bean(
 
 
 def ensure_default_equipment(db: Any) -> tuple[Any, Any]:
-    grinder = db.query(Equipment).filter(Equipment.type == "grinder").first()
-    machine = db.query(Equipment).filter(Equipment.type != "grinder").first()
+    # Shared entries only: a new user's default setup points at the seeded
+    # baseline hardware, never at something another friend added.
+    shared = db.query(Equipment).filter(Equipment.owner.is_(None))
+    grinder = (
+        shared.filter(Equipment.type == "grinder").order_by(Equipment.id).first()
+    )
+    machine = (
+        shared.filter(Equipment.type != "grinder").order_by(Equipment.id).first()
+    )
     if not grinder:
         grinder = Equipment(type="grinder", brand="Unknown", model="Unknown")
         db.add(grinder)
@@ -255,12 +262,15 @@ def _as_float(value: Any) -> float | None:
     return None if value is None else float(value)
 
 
-def serialize_equipment(item: Equipment) -> dict[str, Any]:
+def serialize_equipment(item: Equipment, owner: str | None = None) -> dict[str, Any]:
     return {
         "id": item.id,
         "type": item.type,
         "brand": item.brand,
         "model": item.model,
+        # Only whoever added an entry may change it; shared ones are read-only.
+        "shared": item.owner is None,
+        "editable": owner is not None and item.owner == owner,
         # Capability data. Nulls are meaningful: where these are unknown the
         # engine abstains rather than guessing, so the UI shows them as gaps
         # worth filling rather than hiding them.

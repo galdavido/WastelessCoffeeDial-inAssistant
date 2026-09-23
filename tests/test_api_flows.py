@@ -312,3 +312,146 @@ class TestSetupsAndSettings(FlowTestCase):
         self.assertEqual(
             self.ok(self.another_user().get("/api/settings"))["dose_g"], 16.0
         )
+
+
+class TestEquipmentOwnership(FlowTestCase):
+    """Anyone may pick any entry; only whoever added it may change it."""
+
+    def _grinder(self, api: Any) -> dict[str, Any]:
+        return self.ok(
+            api.post(
+                "/api/equipment/library",
+                json={"type": "grinder", "brand": "Mine", "model": "G1"},
+            )
+        )["equipment"]
+
+    def _edit(self, api: Any, item: dict[str, Any]) -> Any:
+        return api.put(
+            f"/api/equipment/library/{item['id']}",
+            json={
+                "type": "grinder",
+                "brand": "Mine",
+                "model": "G1",
+                "grind_um_per_click": 20,
+            },
+        )
+
+    def test_the_creator_can_edit_and_delete_their_own_entry(self) -> None:
+        item = self._grinder(self.api)
+        self.assertTrue(item["editable"])
+        self.assertFalse(item["shared"])
+        edited = self.ok(self._edit(self.api, item))["equipment"]
+        self.assertEqual(edited["grind_um_per_click"], 20.0)
+        self.ok(self.api.delete(f"/api/equipment/library/{item['id']}"))
+
+    def test_nobody_else_can_change_it(self) -> None:
+        """Regression: any friend could rewrite a grinder another one relied on."""
+        item = self._grinder(self.api)
+        stranger = self.another_user()
+
+        listed = self.ok(stranger.get("/api/equipment/library"))["grinders"]
+        mine = next(g for g in listed if g["id"] == item["id"])
+        self.assertFalse(mine["editable"], "others can see and pick it, not edit it")
+
+        self.assertEqual(self._edit(stranger, item).status_code, 403)
+        self.assertEqual(
+            stranger.delete(f"/api/equipment/library/{item['id']}").status_code, 403
+        )
+        # ...but they can still build a setup on it.
+        machine = self.ok(
+            stranger.post(
+                "/api/equipment/library",
+                json={"type": "espresso_machine", "brand": "Their", "model": "M"},
+            )
+        )["equipment"]
+        self.ok(
+            stranger.post(
+                "/api/setups",
+                json={
+                    "name": "Theirs",
+                    "grinder_id": item["id"],
+                    "machine_id": machine["id"],
+                },
+            )
+        )
+
+    def test_shared_entries_are_read_only_and_back_every_default_setup(self) -> None:
+        default = self.ok(self.api.get("/api/setups"))["setups"][0]
+        grinder = default["grinder"]
+        self.assertTrue(grinder["shared"])
+        self.assertEqual(self._edit(self.api, grinder).status_code, 403)
+        self.assertEqual(
+            self.api.delete(f"/api/equipment/library/{grinder['id']}").status_code, 403
+        )
+        # A second user's default setup reuses the shared entry, not a copy.
+        theirs = self.ok(self.another_user().get("/api/setups"))["setups"][0]
+        self.assertEqual(theirs["grinder"]["id"], grinder["id"])
+
+    def test_the_old_whole_setup_rename_routes_are_gone(self) -> None:
+        for path in ("/api/equipment/grinder", "/api/equipment/machine"):
+            response = self.api.put(path, json={"brand": "x", "model": "y"})
+            self.assertIn(response.status_code, (404, 405), path)
+
+
+class TestEquipmentOwnerBackfill(DatabaseTestCase):
+    """Migration 0007: who gets an existing, pre-ownership equipment row."""
+
+    def test_a_row_used_by_one_owner_is_theirs_and_a_shared_one_stays_shared(
+        self,
+    ) -> None:
+        import importlib.util
+        from pathlib import Path
+
+        from sqlalchemy import text
+
+        from database.database import engine
+
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "migrations/versions/0007_equipment_owner.py"
+        )
+        spec = importlib.util.spec_from_file_location("m0007", path)
+        assert spec and spec.loader
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        def new_equipment(conn: Any, kind: str) -> int:
+            return conn.execute(
+                text(
+                    "INSERT INTO equipment (type, brand, model, temp_controllable) "
+                    "VALUES (:t, 'Legacy', 'Row', false) RETURNING id"
+                ),
+                {"t": kind},
+            ).scalar_one()
+
+        def setup_for(conn: Any, owner: str, grinder: int, machine: int) -> None:
+            conn.execute(
+                text(
+                    "INSERT INTO brew_setups (owner, name, grinder_id, machine_id) "
+                    "VALUES (:o, 'Legacy', :g, :m)"
+                ),
+                {"o": owner, "g": grinder, "m": machine},
+            )
+
+        with engine.connect() as conn, conn.begin() as tx:
+            solo_g = new_equipment(conn, "grinder")
+            both_m = new_equipment(conn, "espresso_machine")
+            unused = new_equipment(conn, "grinder")
+            other_g = new_equipment(conn, "grinder")
+            setup_for(conn, "alice", solo_g, both_m)
+            setup_for(conn, "bob", other_g, both_m)
+
+            conn.execute(text(migration.BACKFILL_SQL))
+
+            owners = dict(
+                conn.execute(
+                    text("SELECT id, owner FROM equipment WHERE id = ANY(:ids)"),
+                    {"ids": [solo_g, both_m, unused, other_g]},
+                ).all()
+            )
+            tx.rollback()
+
+        self.assertEqual(owners[solo_g], "alice")
+        self.assertEqual(owners[other_g], "bob")
+        self.assertIsNone(owners[both_m], "used by two people: shared")
+        self.assertIsNone(owners[unused], "used by nobody: shared")

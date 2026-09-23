@@ -50,11 +50,6 @@ class RecommendationRequest(BaseModel):
         return self
 
 
-class EquipmentUpdate(BaseModel):
-    brand: str
-    model: str
-
-
 class DoseUpdate(BaseModel):
     dose_g: float
 

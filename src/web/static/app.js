@@ -1493,8 +1493,10 @@ function renderEquipmentList() {
         <div class="setup-item-meta">${escapeHtml(labelForType(item.type))}</div>
       </div>
       <div class="setup-item-actions">
-        <button class="btn btn-sm btn-ghost js-equipment-edit">Edit</button>
-        <button class="btn btn-sm btn-ghost js-equipment-delete">Delete</button>
+        ${item.editable
+          ? `<button class="btn btn-sm btn-ghost js-equipment-edit">Edit</button>
+             <button class="btn btn-sm btn-ghost js-equipment-delete">Delete</button>`
+          : `<span class="setup-item-meta" title="Only whoever added this can change it. Add your own entry to use different details.">${item.shared ? 'Shared' : 'Added by someone else'}</span>`}
       </div>
     `;
     row.querySelector('.js-equipment-edit')?.addEventListener('click', () => populateEquipmentForm(item));

@@ -245,6 +245,7 @@ UPDATE dial_in_logs    SET owner = '<login>' WHERE owner = 'owner';
 UPDATE brew_setups     SET owner = '<login>' WHERE owner = 'owner';
 UPDATE recommendations SET owner = '<login>' WHERE owner = 'owner';
 UPDATE app_settings    SET owner = '<login>' WHERE owner = 'owner';
+UPDATE equipment       SET owner = '<login>' WHERE owner = 'owner';
 COMMIT;
 SQL
 ```
@@ -252,6 +253,19 @@ SQL
 Safe as a plain `UPDATE` only while no rows exist under `<login>` yet — otherwise
 `uq_app_settings_owner_key` will collide on `app_settings`. Check first with
 `SELECT owner, count(*) FROM app_settings GROUP BY owner;`.
+
+### Equipment is shared, but only its creator can edit it
+
+Everyone picks from one equipment list, but an entry's click range and microns per
+click bound every recommendation made on it, so only the login in `equipment.owner`
+may edit or delete it. Rows with no owner — the seeded baseline hardware, and any
+pre-`0007` row several people used — are read-only in the app. To correct one, edit
+it in SQL, or hand it to someone so they can edit it in the app:
+
+```sql
+SELECT id, owner, type, brand, model FROM equipment ORDER BY id;
+UPDATE equipment SET owner = '<login>' WHERE id = <id>;
+```
 
 ## 7. Invite a friend
 

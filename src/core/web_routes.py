@@ -50,7 +50,6 @@ from .web_schemas import (
     DoseUpdate,
     EquipmentLibraryCreateInput,
     EquipmentLibraryUpdateInput,
-    EquipmentUpdate,
     FeedbackRequest,
     GrindOffsetUpdate,
     RecommendationRequest,
@@ -128,6 +127,30 @@ def _apply_capabilities(item: Equipment, body: Any) -> None:
         value = getattr(body, field_name, None)
         if value is not None:
             setattr(item, field_name, value)
+
+
+def _editable_equipment(db: Session, equipment_id: int, owner: str) -> Equipment:
+    """An equipment row this user may change, or the reason they may not.
+
+    Everyone can pick any entry for a setup, but an entry's capability data
+    bounds every recommendation made on it -- so only whoever added it may
+    change it, and the shared baseline entries (no owner) are read-only.
+    """
+    item = db.get(Equipment, equipment_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+    if item.owner is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Shared equipment can't be changed. Add your own entry instead.",
+        )
+    if item.owner != owner:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who added this can change it. "
+            "Add your own entry instead.",
+        )
+    return item
 
 
 def _bean_for(db: Session, owner: str, coffee_data: dict[str, Any]) -> Bean | None:
@@ -446,38 +469,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             else None,
         }
 
-    @app.put("/api/equipment/grinder")
-    def update_grinder(
-        body: EquipmentUpdate,
-        db: Session = Depends(get_db),
-        owner: str = Depends(get_owner),
-    ) -> dict[str, str]:
-        try:
-            setup = get_active_setup(db, owner)
-            setup.grinder.brand = body.brand
-            setup.grinder.model = body.model
-            db.commit()
-        except Exception as exc:
-            db.rollback()
-            raise _server_error(exc, "update grinder") from exc
-        return {"status": "updated"}
-
-    @app.put("/api/equipment/machine")
-    def update_machine(
-        body: EquipmentUpdate,
-        db: Session = Depends(get_db),
-        owner: str = Depends(get_owner),
-    ) -> dict[str, str]:
-        try:
-            setup = get_active_setup(db, owner)
-            setup.machine.brand = body.brand
-            setup.machine.model = body.model
-            db.commit()
-        except Exception as exc:
-            db.rollback()
-            raise _server_error(exc, "update machine") from exc
-        return {"status": "updated"}
-
     @app.get("/api/settings")
     def get_settings(
         db: Session = Depends(get_db), owner: str = Depends(get_owner)
@@ -683,6 +674,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
     @app.get("/api/equipment/library")
     def get_equipment_library(
         db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, list[dict[str, Any]]]:
         items = (
             db.query(Equipment)
@@ -692,16 +684,18 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             .all()
         )
         grinders = [
-            serialize_equipment(item) for item in items if item.type == "grinder"
+            serialize_equipment(item, owner) for item in items if item.type == "grinder"
         ]
         machines = [
-            serialize_equipment(item) for item in items if item.type != "grinder"
+            serialize_equipment(item, owner) for item in items if item.type != "grinder"
         ]
         return {"grinders": grinders, "machines": machines}
 
     @app.post("/api/equipment/library")
     def create_equipment_library_item(
-        body: EquipmentLibraryCreateInput, db: Session = Depends(get_db)
+        body: EquipmentLibraryCreateInput,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
         eq_type = as_non_empty_text(body.type).lower()
         if eq_type not in _EQUIPMENT_TYPES:
@@ -709,6 +703,7 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
 
         try:
             item = Equipment(
+                owner=owner,
                 type=eq_type,
                 brand=as_non_empty_text(body.brand),
                 model=as_non_empty_text(body.model),
@@ -720,17 +715,16 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         except Exception as exc:
             db.rollback()
             raise _server_error(exc, "create equipment") from exc
-        return {"status": "created", "equipment": serialize_equipment(item)}
+        return {"status": "created", "equipment": serialize_equipment(item, owner)}
 
     @app.put("/api/equipment/library/{equipment_id}")
     def update_equipment_library_item(
         equipment_id: int,
         body: EquipmentLibraryUpdateInput,
         db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, Any]:
-        item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
-        if not item:
-            raise HTTPException(status_code=404, detail="Equipment not found")
+        item = _editable_equipment(db, equipment_id, owner)
 
         eq_type = as_non_empty_text(body.type).lower()
         if eq_type not in _EQUIPMENT_TYPES:
@@ -767,15 +761,15 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
         except Exception as exc:
             db.rollback()
             raise _server_error(exc, "update equipment") from exc
-        return {"status": "updated", "equipment": serialize_equipment(item)}
+        return {"status": "updated", "equipment": serialize_equipment(item, owner)}
 
     @app.delete("/api/equipment/library/{equipment_id}")
     def delete_equipment_library_item(
-        equipment_id: int, db: Session = Depends(get_db)
+        equipment_id: int,
+        db: Session = Depends(get_db),
+        owner: str = Depends(get_owner),
     ) -> dict[str, str]:
-        item = db.query(Equipment).filter(Equipment.id == equipment_id).first()
-        if not item:
-            raise HTTPException(status_code=404, detail="Equipment not found")
+        item = _editable_equipment(db, equipment_id, owner)
 
         setup_refs = (
             db.query(BrewSetup)
