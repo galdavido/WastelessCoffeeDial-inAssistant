@@ -26,6 +26,7 @@ from database.models import Bean, BrewSetup, Equipment, Recommendation, as_float
 
 from .brewing import (
     Basis,
+    DoseReduction,
     GrinderCaps,
     MachineCaps,
     Method,
@@ -37,6 +38,7 @@ from .brewing import (
     clicks_for_target,
     cold_start_clicks,
     correct,
+    dose_reduction,
     dose_term,
     finest_useful_clicks,
     normalised_time,
@@ -82,6 +84,9 @@ class EngineResult:
     bean_history: tuple[ShotRecord, ...] = ()
     target: Target | None = None
     caps: GrinderCaps | None = None
+    # Cameron's use-less-coffee move, when channeling keeps coming back. Kept
+    # beside the recipe, never in it -- see brewing.DoseReduction.
+    suggestion: DoseReduction | None = None
     # The coffee in the basket's roast, so a view can put the recipe's dose
     # on the same bed-depth scale as the shots.
     roast_level_ord: int | None = None
@@ -326,6 +331,18 @@ def recommend(
         notes=recipe.notes + tuple(prep_notes),
     )
 
+    # One lever at a time: while the pre-infusion experiment is running, its
+    # shots are the ones to learn from, so the dose suggestion waits.
+    suggestion = (
+        dose_reduction(bean_history, recipe, caps, machine_spec, target)
+        if experiment is None
+        else None
+    )
+    if suggestion is not None:
+        # In the notes too, so the explanation can speak to it and its numbers
+        # count as the engine's own.
+        recipe = replace(recipe, notes=recipe.notes + (suggestion.note,))
+
     context_lines = [
         f"Tier {tier} ({len(history)} measured shots on this setup, "
         f"{len(bean_history)} of them on this coffee)."
@@ -349,6 +366,7 @@ def recommend(
         bean_history=tuple(bean_history),
         target=target,
         caps=caps,
+        suggestion=suggestion,
         roast_level_ord=roast_ord,
     )
 
@@ -418,6 +436,18 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
         "confidence_label": confidence_label(result.calibration),
         "tier": result.tier,
         "protocol": result.protocol,
+        "suggestion": (
+            {
+                "kind": "use_less_coffee",
+                "dose_g": result.suggestion.dose_g,
+                "yield_g": result.suggestion.yield_g,
+                "grind_clicks": result.suggestion.grind_clicks,
+                "channeled_shots": result.suggestion.channeled_shots,
+                "note": result.suggestion.note,
+            }
+            if result.suggestion is not None
+            else None
+        ),
     }
 
 

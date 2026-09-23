@@ -223,6 +223,22 @@ CONSTANTS: dict[str, Constant] = {
         "shots to gather at the longer pre-infusion before comparing it "
         "against the old duration",
     ),
+    "cameron_dose_reduction": Constant(
+        0.20,
+        "fraction",
+        "HEURISTIC",
+        "#dose-reduction",
+        "how much less coffee the use-less-coffee suggestion proposes; Cameron "
+        "et al. went to 25%",
+    ),
+    "cameron_min_channeled_shots": Constant(
+        2.0,
+        "shots",
+        "HEURISTIC",
+        "#dose-reduction",
+        "shots of one coffee at one dose showing a channeling sign before the "
+        "suggestion is made -- once can be a bad puck",
+    ),
     "dose_min_g": Constant(12.0, "g", "HEURISTIC", "#limits"),
     "dose_max_g": Constant(22.0, "g", "HEURISTIC", "#limits"),
     # How many grams of each roast fill a basket to the same depth, as a
@@ -1123,6 +1139,131 @@ def resistance_disagreement(
             "than through its depth"
         )
     return None
+
+
+@dataclass(frozen=True)
+class DoseReduction:
+    """Cameron et al.'s move, offered alongside the recipe rather than in it.
+
+    Less coffee, a coarser grind, the same drink (docs/science.md#dose-reduction).
+    It is deliberately *not* folded into the recipe: the shot it describes
+    runs faster and at a longer ratio than the engine's bands aim for, because
+    the point is better extraction, not the clock, and the guardrails would
+    otherwise undo it. Every number is still the engine's.
+    """
+
+    dose_g: float
+    yield_g: float | None
+    grind_clicks: float | None
+    channeled_shots: int
+    note: str
+
+
+def channeled_shots(
+    shots: Sequence[ShotRecord], caps: GrinderCaps, target: Target | None
+) -> list[ShotRecord]:
+    """The shots that show a channeling sign, by the floor's own triggers.
+
+    Two of finest_useful_clicks()'s triggers mark an individual shot: a finer
+    shot that ran no slower than a coarser one prepared the same way, and a
+    long shot that still tasted sour. Callers pass shots at one dose, so the
+    comparison needs no dose correction.
+    """
+    measured = [s for s in shots if s.grind_clicks is not None and normalised_time(s)]
+    flagged: list[ShotRecord] = []
+    for a in measured:
+        tr_a = normalised_time(a)
+        assert tr_a is not None and a.grind_clicks is not None
+        long_and_sour = (
+            target is not None
+            and target.tr_hi is not None
+            and tr_a > target.tr_hi
+            and a.taste_axis in ("sour", "very_sour")
+        )
+        ran_no_slower = any(
+            b.grind_clicks is not None
+            and is_finer(a.grind_clicks, b.grind_clicks, caps)
+            and prep_comparable(a, b)
+            and (normalised_time(b) or 0) >= tr_a
+            for b in measured
+            if b is not a
+        )
+        if long_and_sour or ran_no_slower:
+            flagged.append(a)
+    return flagged
+
+
+def dose_reduction(
+    bean_history: Sequence[ShotRecord],
+    recipe: Recipe,
+    caps: GrinderCaps,
+    machine: MachineCaps,
+    target: Target | None,
+) -> DoseReduction | None:
+    """Suggest using less coffee when channeling keeps coming back at this dose.
+
+    Only once the channeling floor has taken the grind lever away -- before
+    that, grinding is still the simpler fix -- and only when this coffee has
+    channeled repeatedly at the dose the recipe is for. Not offered again once
+    a markedly lighter dose has been tried on this coffee: from then on its
+    shots are the evidence, and the dose term lets the law learn from them.
+    """
+    if recipe.method != "espresso" or not bean_history:
+        return None
+    if "grind_channeling_floor" not in recipe.guardrails_hit:
+        return None
+
+    dose = recipe.dose_g
+    fraction = value_of("cameron_dose_reduction")
+    if any(s.dose_g <= dose * (1.0 - fraction / 2.0) for s in bean_history):
+        return None
+
+    tolerance = value_of("dose_pair_min_diff_g")
+    at_dose = [s for s in bean_history if abs(s.dose_g - dose) < tolerance]
+    flagged = channeled_shots(at_dose, caps, target)
+    if len(flagged) < value_of("cameron_min_channeled_shots"):
+        return None
+
+    floor = (
+        machine.basket_size_g * value_of("basket_fill_lo")
+        if machine.basket_size_g is not None
+        else value_of("dose_min_g")
+    )
+    lighter = max(round(dose * (1.0 - fraction) * 2.0) / 2.0, math.ceil(floor * 2) / 2)
+    if lighter > dose - tolerance:
+        # The basket cannot take a meaningfully smaller dose.
+        return None
+
+    grind = recipe.grind_clicks
+    if grind is not None:
+        grind = snap_to_step(finer_by(grind, -1.0, caps), caps)
+        if caps.min_clicks is not None:
+            grind = max(grind, caps.min_clicks)
+        if caps.max_clicks is not None:
+            grind = min(grind, caps.max_clicks)
+
+    drink = recipe.yield_g
+    parts = [
+        f"channeling has come back in {len(flagged)} of your shots of this coffee "
+        f"at {dose:g} g, and the grind cannot go any finer",
+        f"the fix measured by Cameron et al. is less coffee and a coarser grind: "
+        f"try {lighter:g} g",
+    ]
+    if drink is not None:
+        parts[-1] += f", still to about {drink:g} g out"
+    if grind is not None:
+        parts[-1] += f", at {grind:g}"
+    parts.append(
+        "expect a faster, longer-ratio shot, and judge it by taste rather than "
+        "the clock"
+    )
+    return DoseReduction(
+        dose_g=lighter,
+        yield_g=drink,
+        grind_clicks=grind,
+        channeled_shots=len(flagged),
+        note="; ".join(parts),
+    )
 
 
 @dataclass(frozen=True)

@@ -19,7 +19,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=42" />
+  <link rel="stylesheet" href="/static/style.css?v=43" />
 </head>
 <body>
   <div id="app">
@@ -183,6 +183,13 @@
             </div>
             <div class="recipe-grid" id="recipe-grid"></div>
             <div class="recipe-flags" id="recipe-flags"></div>
+            <!-- Cameron's move, offered beside the recipe rather than in it:
+                 the shot it describes deliberately runs faster and longer
+                 than the recipe's bands. Every number in it is the engine's. -->
+            <div class="rec-suggestion" id="recipe-suggestion" hidden>
+              <h5>Try using less coffee</h5>
+              <p id="recipe-suggestion-text"></p>
+            </div>
             <div class="rec-body" id="recommendation-text">—</div>
             <p class="recipe-confidence" id="recipe-confidence"></p>
             <!-- The confidence label is a claim; this is the evidence for it. -->
@@ -680,6 +687,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=42"></script>
+  <script src="/static/app.js?v=43"></script>
 </body>
 </html>
