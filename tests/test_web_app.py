@@ -70,6 +70,18 @@ class TestWebAppWiring(unittest.TestCase):
             self.assertEqual(response.status_code, 200, path)
             self.assertEqual(response.headers.get("Cache-Control"), "no-cache", path)
 
+    def test_pages_carry_no_inline_styles(self) -> None:
+        """The CSP is default-src 'self', so inline styles are silently dropped.
+
+        One did exist -- style="margin-top:16px" in the equipment form -- and
+        the browser has been refusing it, and logging a CSP error, all along.
+        """
+        static = Path(__file__).resolve().parents[1] / "src" / "web" / "static"
+        for name in ("index.html", "admin.html"):
+            html = (static / name).read_text(encoding="utf-8")
+            self.assertNotIn(" style=", html, name)
+            self.assertNotIn("<style", html, name)
+
     def test_static_assets_are_version_pinned(self) -> None:
         # The ?v= query must be present so a redeploy cannot reuse a cached URL.
         body = client.get("/").text

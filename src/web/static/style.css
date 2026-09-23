@@ -690,6 +690,7 @@ select.input { background-image: none; }
 .form-section-title {
   font-size: 12px; font-weight: 600; color: var(--text-2);
 }
+.form-section-title-spaced { margin-top: 16px; }
 .form-grid { display: grid; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-label {
