@@ -4,20 +4,16 @@ import io
 import json
 from typing import Any
 
+from google import genai
+from google.genai import types
+from PIL import Image
 from pydantic import BaseModel
 
 from ai.model_selection import (
     GEMINI_MODEL_CANDIDATES,
-    thinking_level_for,
+    json_config,
     try_model_candidates,
 )
-from core.optional_deps import (
-    load_dotenv_if_available,
-    require_genai,
-    require_pillow_image,
-)
-
-load_dotenv_if_available()
 
 
 class VisionError(Exception):
@@ -64,34 +60,30 @@ def analyze_coffee_bag(image: bytes) -> dict[str, Any]:
     than through module state: routes run on a thread pool, so a shared
     "last error" could hand one user's failure to another's scan.
     """
-    image_module = require_pillow_image()
-    genai, types = require_genai()
-
+    # Decoding locally is the validation: a file Pillow cannot open never
+    # costs a Gemini call.
     try:
-        img = image_module.open(io.BytesIO(image)).convert("RGB")
+        photo = Image.open(io.BytesIO(image)).convert("RGB")
     except Exception as exc:
         raise VisionError(f"Failed to read image: {exc}") from exc
 
-    client = genai.Client()
+    try:
+        client = genai.Client()
+    except Exception as exc:  # no API key, most likely
+        raise VisionError(f"The bag reader is not available: {exc}") from exc
 
     prompt = _build_prompt()
 
     try:
         parsed_payload: dict[str, Any] | None = None
 
+        contents: list[types.PartUnionDict] = [prompt, photo]
+
         def call_model(model_name: str) -> Any:
-            config: dict[str, Any] = {
-                "response_mime_type": "application/json",
-                "response_schema": CoffeeData,
-                "temperature": 0.1,
-            }
-            level = thinking_level_for(model_name)
-            if level:
-                config["thinking_config"] = types.ThinkingConfig(thinking_level=level)
             return client.models.generate_content(
                 model=model_name,
-                contents=[prompt, img],
-                config=types.GenerateContentConfig(**config),
+                contents=contents,
+                config=json_config(model_name, CoffeeData, temperature=0.1),
             )
 
         def evaluate_response(response: Any) -> tuple[bool, str | None]:

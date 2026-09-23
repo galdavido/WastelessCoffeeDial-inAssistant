@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Iterable
 
+from google.genai import types
+from pydantic import BaseModel
+
 # Newest first; every entry was confirmed present in models.list on 2026-09-14.
 # try_model_candidates stops the chain on a non-transient error rather than
 # falling through, so a name that 404s here takes the whole call down with it.
@@ -42,6 +45,27 @@ def thinking_level_for(model_name: str, *, default: str = "low") -> str | None:
     if level in ("", "off", "none", "disabled", "false"):
         return None
     return level if level in ("low", "high") else default
+
+
+def json_config(
+    model_name: str, schema: type[BaseModel], temperature: float
+) -> types.GenerateContentConfig:
+    """Structured-output config for one candidate model.
+
+    Both Gemini calls want the same thing: JSON matching a schema, at a low
+    temperature, with thinking_level only where the model accepts it.
+    """
+    level = thinking_level_for(model_name)
+    return types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=schema,
+        temperature=temperature,
+        thinking_config=(
+            types.ThinkingConfig(thinking_level=types.ThinkingLevel(level.upper()))
+            if level
+            else None
+        ),
+    )
 
 
 def is_transient_model_error(error: Exception) -> bool:

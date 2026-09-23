@@ -13,11 +13,8 @@ from core.admin_db import admin_enabled, warn_if_half_configured
 from core.admin_routes import register_admin_routes
 from core.auth import warn_if_misconfigured
 from core.db_bootstrap import run_migrations, seed_baseline_equipment
-from core.optional_deps import load_dotenv_if_available
 from core.web_routes import register_routes
 from database.database import engine
-
-load_dotenv_if_available()
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),

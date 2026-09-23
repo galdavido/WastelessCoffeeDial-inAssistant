@@ -129,6 +129,20 @@ class TestThinkingLevel(unittest.TestCase):
         for model in GEMINI_MODEL_CANDIDATES:
             self.assertIn(thinking_level_for(model), (None, "low", "high"), model)
 
+    def test_the_shared_config_only_sends_thinking_where_accepted(self) -> None:
+        from google.genai import types
+
+        from ai.model_selection import json_config
+        from ai.rationale import Rationale
+
+        new = json_config("gemini-3.8-flash", Rationale, temperature=0.2)
+        assert new.thinking_config is not None
+        self.assertEqual(new.thinking_config.thinking_level, types.ThinkingLevel.LOW)
+        self.assertEqual(new.response_mime_type, "application/json")
+
+        old = json_config("gemini-2.5-flash", Rationale, temperature=0.2)
+        self.assertIsNone(old.thinking_config)
+
 
 if __name__ == "__main__":
     unittest.main()

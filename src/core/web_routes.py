@@ -338,9 +338,6 @@ def register_routes(app: FastAPI, static_dir: str) -> None:
             coffee_data = analyze_coffee_bag(content)
         except VisionError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            # A missing AI dependency: not the user's fault, and not their photo.
-            raise _server_error(exc, "read the bag") from exc
 
         image_name: str | None = None
         if uploads_dir:
