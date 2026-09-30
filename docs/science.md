@@ -285,7 +285,10 @@ partially clogged settings, and their own reproducibility route
 over 80% of the maximum, while the best sensory scores sat near 30 s at 19–20%.
 So a fast shot that tastes balanced is a valid operating point, and an engine
 that treats 25 s as a hard target will drive every coffee finer into the
-clogged regime ([#target-reachability](#target-reachability)).
+clogged regime ([#target-reachability](#target-reachability)). **The engine
+acts on this:** a shot outside the time band that the user marked balanced —
+or rated 4+ without a taste, and not drying — keeps its grind, and its own time
+becomes the target shown.
 
 On temperature, Andueza 2003 found **92 °C optimal for arabica** espresso (of
 88/92/96/98 °C), with 88 °C preferred for a dark torrefacto robusta blend.
@@ -415,7 +418,12 @@ drip, Batali 2020 held TDS and EY fixed and found 87, 90 and 93 °C sensorially
 indistinguishable (one attribute moved by one point on a 100-point scale).
 Temperature matters mostly *through* extraction, and grind and ratio move
 extraction far more. Hence the engine treats temperature as a covariate and a
-last-resort lever ([#temp-covariate](#temp-covariate)).
+last-resort lever ([#temp-covariate](#temp-covariate)). On a machine that can
+set it, a taste correction reaches temperature only after the ratio and grind:
+sour lengthens the ratio, then raises 1 °C, then goes one step finer; bitter
+and drying goes one step coarser, then shortens the ratio, then lowers 1 °C.
+The band edges keep their `LITERATURE` kind — they are published convention —
+but they are a starting point, not a lever the engine reaches for first.
 
 ### 3.12 Sour/bitter is not a reliable extraction readout {#taste-mapping}
 
@@ -572,31 +580,47 @@ temperature-controllable; advising a change the user cannot make is noise.
 
 ### 5.7 Channeling detection thresholds {#channeling-detection}
 
-Variance ratio 2.0 between fine and coarse subsets (n ≥ 6 before it may fire);
-never more than 2 steps finer than the finest historically acceptable setting;
-maximum single move 25% of |1/β|. Tuned to fail safe: refusing to go finer costs
-one extra iteration, chasing the channeling regime costs coffee and an
-undiagnosable shot.
+Shot time stays monotonic in grind through the clogged regime (Cameron 2020),
+and uneven flow is present at every grind, turning over only in EY (Lee 2023),
+which we cannot see. So no single time-based sign is proof, and one shot carries
+several clicks of noise: on the reference history (10 shots) the pooled
+within-setting spread of `ln T_r` was **0.395** against **0.084–0.168 per
+click**, i.e. **2.4–4.7 clicks** per shot. The old detector — "a finer setting
+ran no slower" — had no noise model, fired on both beans and pinned the
+recommendation while the prose said "go finer". It was replaced (2026-09-30)
+by four signs, each judged against the noise
+([#deadband](#deadband) estimates it):
 
-**Known weakness.** The trigger "a finer setting ran no slower, so water is
-channeling" is *our* inference. The literature points the other way: shot time
-stays monotonic in grind through the clogged regime (Cameron 2020), and uneven
-flow is present at every grind, turning over only in EY (Lee 2023) — which we
-cannot see.
+1. **Ran fast when finer.** A finer shot, prepared the same way, that fell
+   short of the slowdown the law predicts — `β` per click plus `γ·ln` of the
+   dose ratio ([#dose-term](#dose-term)) — by more than
+   `channeling_noise_z = 2` noise widths of a two-shot difference (`σ·√2`).
+2. **Spread.** Variance of `ln T_r` on the fine side more than
+   `channeling_variance_ratio = 2.0` times the coarse side, once there are
+   `channeling_min_shots = 6`.
+3. **Long and sour** — water spent a long time in the basket and still
+   under-extracted.
+4. **Sour and drying at once** — under- and over-extracted coffee in one cup,
+   the uneven-extraction signature (Lee 2023; [#taste-mapping](#taste-mapping)).
 
-At realistic sample sizes it also cannot tell a plateau from noise. On the
-reference history (10 shots) the pooled within-setting spread of `ln T_r` was
-**0.395** — one bean gave `T_r` 4.17 and 10.11 at the same setting — against
-**0.084–0.168 per click**, so one shot carries **2.4–4.7 clicks** of noise. The
-floor fired on both beans and pinned the recommendation, while the prose said
-"go finer". A detector with no noise model fails safe *always*. Treat the floor
-as a soft warning, and see [#deadband](#deadband).
+**One sign warns; two stop the grinder.** A single sign is shown as a warning
+(`grind_channeling_warning`) and the grind goes through. The floor becomes a
+hard limit (`grind_channeling_floor`) only once
+`channeling_confirming_signs = 2` independent pieces of evidence agree —
+different shots, or different kinds of sign; two comparisons built on one freak
+shot count once. The use-less-coffee suggestion ([#dose-reduction](#dose-reduction))
+counts shots by the same signs and needs the hard floor.
+
+Two limits always hold, because they are about guessing, not channeling: never
+more than `max_steps_finer_than_best = 2` steps finer than the finest setting
+that has tasted right, and no single move above `max_move_fraction = 25%` of
+`|1/β|`. All of these numbers are judgement calls.
 
 ### 5.8 The deadband: when not to change anything {#deadband}
 
-There is currently **no deadband**: the engine will name a new click for a
-difference far below what one shot resolves. No study we found reports a
-shot-time standard deviation directly; four anchors bound it:
+The engine does not name a new click number for a gap one shot cannot
+resolve. No study we found reports a shot-time standard deviation directly;
+four anchors bound it:
 
 - Cameron 2020 needed **pentaplicate** points (n = 5; n = 20 for calibration)
   under tight control — ±0.5 g dose, ±1 g beverage, fixed 92 °C, automated
@@ -608,9 +632,19 @@ shot-time standard deviation directly; four anchors bound it:
 - Practitioners report ±3–5 s at a fixed setting; our reference history gives
   2.4–4.7 clicks (above).
 
-Any threshold built on these is `HEURISTIC`. The defensible shape: require the
-solved move to exceed the observed within-setting spread, otherwise say "pull
-the same shot again" — which also buys the replicate the estimate needs.
+From these, `shot_noise_prior = 0.12` in `ln T_r` — about ±3.5 s on a 28 s
+shot, the Espresso Protocol's tolerance. The per-shot noise `σ` is pooled from
+repeat shots (same grind and dose, prepared the same way) and shrunk toward that
+prior with `shot_noise_prior_weight = 2` degrees of freedom. Both are
+`HEURISTIC`.
+
+**How it acts.** The last shot is averaged (in `ln T_r`) with this coffee's
+other shots at the same setting and dose, prepared the same way. If that mean
+sits outside the time band by less than `σ/√n` — measured to the nearer edge,
+since the question is whether the shot is out of the band at all — the advice is
+"pull the same shot again" instead of a new setting. Each repeat narrows `σ/√n`,
+so the replicate is exactly what the estimate needs. The same `σ` sets the
+threshold for the channeling signs ([#channeling-detection](#channeling-detection)).
 
 ### 5.9 Starting dose by roast level {#starting-dose}
 
@@ -707,17 +741,18 @@ fixture only**; its taste mapping is crude, which is why it lives under
 
 ## 8. Where the literature disagrees with the engine {#open-conflicts}
 
-Findings above that argue for a change we have not made. The `#` column is the
-entry in `docs/open-decisions.md`.
+Findings above that argued for a change to the engine, and what became of
+each. The `#` column is the entry in `docs/open-decisions.md`.
 
 | Finding | Engine today | Implication | # |
 | --- | --- | --- | --- |
-| Brew temperature has little direct effect at fixed extraction (Schmieder 2023; Batali 2020) | Roast-level temperature split (`temp_*`) as a `LITERATURE` recommendation | Keep as a starting point, but relabel its authority and prefer grind/ratio corrections before ever moving temperature | 11 |
+| Brew temperature has little direct effect at fixed extraction (Schmieder 2023; Batali 2020) | Temperature is the last taste lever; the roast split stays `LITERATURE` | Resolved ([#temp-by-roast](#temp-by-roast)) | 11 |
+| The time band is a convention; balanced fast shots are valid (Cameron 2020; Smrke 2024) | A liked shot keeps its grind | Resolved ([#ratio-espresso](#ratio-espresso)) | — |
 | Flow saturates with pressure above ~5 bar (Waszkiewicz 2026) | Doc previously said time falls inversely with pressure | Doc corrected; never advise more pressure to shorten a shot | — |
-| Uneven flow exists at all grinds; time is not a channeling signature (Lee 2023; Cameron 2020) | Time-plateau trigger in channeling detection | Replace with a noise-aware test, or demote to a warning | 12 |
+| Uneven flow exists at all grinds; time is not a channeling signature (Lee 2023; Cameron 2020) | Noise-aware signs; one warns, two stop the grinder; a deadband | Resolved ([#channeling-detection](#channeling-detection), [#deadband](#deadband)) | 12 |
 | Dose sets bed depth and so time (Cameron 2020) | Built: `γ·ln D` ([#dose-term](#dose-term)) | Resolved | 5 |
 | Less coffee, coarser, is more reproducible (Cameron 2020; Khamitova 2020) | Built: a suggestion ([#dose-reduction](#dose-reduction)) | Resolved | 6 |
-| Moka extract averages ~80 °C; the final phase extracts harsh compounds (Navarini 2009) | `moka_temp` 90–96 °C | Describe as water temperature; advise cutting the heat before sputtering | 13 |
+| Moka extract averages ~80 °C; the final phase extracts harsh compounds (Navarini 2009) | `moka_temp` 90–96 °C | Not acted on: moka is out of scope for now | 13 |
 
 ---
 

@@ -885,6 +885,7 @@ function parseNullableInt(value) {
    than silently changing what was asked for. */
 const GUARDRAIL_LABELS = {
   grind_channeling_floor: 'Held back from finer — channeling',
+  grind_channeling_warning: 'Possible channeling — watch it',
   grind_hardware_min: 'At your grinder’s finest',
   grind_hardware_max: 'At your grinder’s coarsest',
   grind_snapped_to_step: 'Rounded to a real click',
@@ -1074,6 +1075,7 @@ function renderFit(data) {
 function fitDrawChart(data, meta, narrow) {
   const law = data.law, beans = data.beans || [], shots = data.shots || [];
   const target = data.target || {}, floor = data.floor || {}, recipe = data.recipe || {};
+  const warning = data.warning || {};
   const finerIsLower = (data.grinder?.finer_direction || 'lower_is_finer') === 'lower_is_finer';
 
   // The bottom band is deep because four things stack under the axis: the
@@ -1093,7 +1095,7 @@ function fitDrawChart(data, meta, narrow) {
 
   const drawn = shots.filter((s) => s.tr && s.clicks !== null);
   const xs = drawn.map((s) => s.clicks)
-    .concat([floor.clicks, recipe.grind_clicks, wants].filter((v) => v !== null && v !== undefined));
+    .concat([floor.clicks, warning.clicks, recipe.grind_clicks, wants].filter((v) => v !== null && v !== undefined));
   const x0 = Math.floor(Math.min(...xs) - 2), x1 = Math.ceil(Math.max(...xs) + 2);
   const trs = drawn.map((s) => s.tr)
     .concat([target.tr_lo, target.tr_hi].filter((v) => v != null));
@@ -1124,6 +1126,13 @@ function fitDrawChart(data, meta, narrow) {
     p.push(`<rect x="${from}" y="${G.T}" width="${Math.max(0, w)}" height="${ph}" fill="url(#fit-hatch)"/>`);
     p.push(`<line x1="${fx}" y1="${G.T}" x2="${fx}" y2="${G.T + ph}" stroke="var(--bad)" stroke-width="1.5" stroke-dasharray="5 4"/>`);
     p.push(`<text x="${fx + (finerIsLower ? -6 : 6)}" y="${G.T + 14}" text-anchor="${finerIsLower ? 'end' : 'start'}" font-size="${G.f}" fill="var(--bad)">⚠ no finer</text>`);
+  }
+  // A single channeling sign only warns, so it is a line, not a struck-out
+  // region: the engine still lets the grind through.
+  if (warning.clicks != null) {
+    const wx = X(warning.clicks);
+    p.push(`<line x1="${wx}" y1="${G.T}" x2="${wx}" y2="${G.T + ph}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="2 4"/>`);
+    p.push(`<text x="${wx + (finerIsLower ? -6 : 6)}" y="${G.T + 30}" text-anchor="${finerIsLower ? 'end' : 'start'}" font-size="${G.f}" fill="var(--warn)">watch</text>`);
   }
 
   const step = [1, 2, 5, 10, 20, 50].find((s) => (x1 - x0) / s <= 7) || 100;
@@ -1182,6 +1191,8 @@ function fitDrawChart(data, meta, narrow) {
     return `<span><svg width="13" height="13" aria-hidden="true">${fitMark(m.shape, 6.5, 6.5, m.hue)}</svg>${escapeHtml(bean.name)}${bean.is_current ? ' (in the basket)' : ''} · δ ${bean.delta_bean > 0 ? '+' : ''}${fitN(bean.delta_bean, 3)}</span>`;
   }).join('') + (floor.clicks != null
     ? `<span><svg width="22" height="13" aria-hidden="true"><line x1="0" y1="6.5" x2="22" y2="6.5" stroke="var(--bad)" stroke-width="2" stroke-dasharray="5 4"/></svg>channeling floor</span>`
+    : '') + (warning.clicks != null
+    ? `<span><svg width="22" height="13" aria-hidden="true"><line x1="0" y1="6.5" x2="22" y2="6.5" stroke="var(--warn)" stroke-width="2" stroke-dasharray="2 4"/></svg>one channeling sign</span>`
     : '');
 
   fitSetProbe(law.gamma > 0 && law.dose_ref_g
@@ -1207,6 +1218,12 @@ function fitDrawChart(data, meta, narrow) {
          <p>Your law crosses the target band at about <b>${fitN(wants, 1)} clicks</b>,
          and nothing is blocking it, so you were told
          <b>${fitN(recipe.grind_clicks, 0)}</b>.</p>`;
+  } else if (wants !== null && recipe.grind_clicks != null) {
+    gap.hidden = false;
+    gap.innerHTML = `<h5>Where the number comes from</h5>
+      <p>Your law crosses the target band at about <b>${fitN(wants, 1)} clicks</b>,
+      so you were told <b>${fitN(recipe.grind_clicks, 0)}</b>.</p>
+      ${warning.reason ? `<p class="fit-why">One possible sign of channeling was seen — ${escapeHtml(warning.reason)}. A single shot varies too much to act on it alone, so the engine lets the grind through; a second sign would stop it.</p>` : ''}`;
   } else {
     gap.hidden = true;
   }

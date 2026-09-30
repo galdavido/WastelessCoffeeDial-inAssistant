@@ -173,6 +173,38 @@ CONSTANTS: dict[str, Constant] = {
     "max_move_fraction": Constant(
         0.25, "fraction", "HEURISTIC", "#channeling-detection"
     ),
+    "channeling_noise_z": Constant(
+        2.0,
+        "sigmas",
+        "HEURISTIC",
+        "#channeling-detection",
+        "how far past the shot-to-shot noise a finer shot must fall short of "
+        "its expected slowdown before it counts as a channeling sign",
+    ),
+    "channeling_confirming_signs": Constant(
+        2.0,
+        "signs",
+        "HEURISTIC",
+        "#channeling-detection",
+        "independent channeling signs (different shots or kinds) needed before "
+        "the floor stops the grinder rather than warning",
+    ),
+    "shot_noise_prior": Constant(
+        0.12,
+        "ln T_r",
+        "HEURISTIC",
+        "#deadband",
+        "per-shot scatter of ln T_r at one setting before any replicates: about "
+        "+-3.5 s on a 28 s shot, the Espresso Protocol's tolerance",
+    ),
+    "shot_noise_prior_weight": Constant(
+        2.0,
+        "df",
+        "HEURISTIC",
+        "#deadband",
+        "replicate degrees of freedom at which the measured scatter and the "
+        "prior weigh equally",
+    ),
     "temp_tolerance_c": Constant(
         1.0,
         "C",
@@ -683,41 +715,85 @@ def finer_by(clicks: float, steps: float, caps: GrinderCaps) -> float:
 # --------------------------------------------------------------------------
 
 
+def shot_noise(history: Sequence[ShotRecord]) -> tuple[float, int]:
+    """Per-shot scatter of ln(T_r) at one setting, and its degrees of freedom.
+
+    Pooled from repeat shots -- the same grind and dose, prepared the same
+    way -- and shrunk toward a prior, because a home history rarely has enough
+    replicates to stand alone (docs/science.md#deadband). Returns the standard
+    deviation and how many degrees of freedom the history contributed.
+    """
+    groups: list[list[ShotRecord]] = []
+    for s in history:
+        if s.grind_clicks is None or not normalised_time(s):
+            continue
+        for g in groups:
+            ref = g[0]
+            if (
+                ref.grind_clicks == s.grind_clicks
+                and abs(ref.dose_g - s.dose_g) < value_of("dose_pair_min_diff_g")
+                and prep_comparable(ref, s)
+            ):
+                g.append(s)
+                break
+        else:
+            groups.append([s])
+    ss, df = 0.0, 0
+    for g in groups:
+        if len(g) < 2:
+            continue
+        logs = [math.log(normalised_time(s) or 1.0) for s in g]
+        mean = statistics.fmean(logs)
+        ss += sum((x - mean) ** 2 for x in logs)
+        df += len(g) - 1
+    prior = value_of("shot_noise_prior")
+    weight = value_of("shot_noise_prior_weight")
+    return math.sqrt((ss + weight * prior**2) / (df + weight)), df
+
+
 @dataclass(frozen=True)
-class FinenessLimit:
-    """The finest setting the engine is willing to recommend, and why."""
+class ChannelingSign:
+    """One piece of evidence that flow has gone inhomogeneous.
 
-    clicks: float | None
-    reason: str | None
+    ``clicks`` is the floor the sign implies; ``shot`` the shot it marks, or
+    None for the spread trigger, which is a property of a group of shots.
+    """
+
+    clicks: float
+    kind: str
+    reason: str
+    shot: ShotRecord | None = None
 
 
-def finest_useful_clicks(
+def channeling_signs(
     history: Sequence[ShotRecord],
     caps: GrinderCaps,
     target: Target | None = None,
-) -> FinenessLimit:
-    """Where to stop grinding finer.
+    beta: float | None = None,
+    gamma: float = 0.0,
+) -> list[ChannelingSign]:
+    """Every channeling sign in this history -- docs/science.md#cameron.
 
-    Extraction yield peaks and then *declines* at fine settings, because flow
-    goes inhomogeneous (docs/science.md#cameron). Past that peak, "the shot
-    ran long, grind finer" makes extraction worse and less repeatable -- and
-    that reflex was hardcoded into this app's previous prompt.
-
-    Five independent triggers, all deterministic and all derived from the
-    user's own shots or their hardware. The finest of the resulting limits
-    wins, i.e. the most permissive bound that every trigger agrees on.
+    None of these is proof on its own: shot time stays monotonic in grind
+    through the clogged regime (Cameron 2020), and a single shot carries
+    several clicks of noise. So each comparison is made against that noise,
+    and finest_useful_clicks() only lets the signs stop the grinder when two
+    independent ones agree.
     """
-    candidates: list[tuple[float, str]] = []
-
+    signs: list[ChannelingSign] = []
     measured = [
         s
         for s in history
         if s.grind_clicks is not None and normalised_time(s) is not None
     ]
+    sigma, _ = shot_noise(measured)
+    # Two shots each carry sigma, so their difference carries sigma * sqrt 2.
+    threshold = value_of("channeling_noise_z") * sigma * math.sqrt(2.0)
 
-    # 1. Empirical peak. Under homogeneous flow a finer grind is always
-    #    slower. A finer setting that ran *faster* means flow bypassed the
-    #    bed. Two shots are enough to catch it.
+    # 1. A finer shot that ran faster than the law says it should. Under
+    #    homogeneous flow a finer grind is slower by beta per click, and a
+    #    heavier dose by gamma * ln(dose); a shot that fell short of that by
+    #    more than the noise bypassed the bed.
     for a in measured:
         for b in measured:
             if a is b or a.grind_clicks is None or b.grind_clicks is None:
@@ -730,15 +806,21 @@ def finest_useful_clicks(
             if not prep_comparable(a, b):
                 continue
             tr_a, tr_b = normalised_time(a), normalised_time(b)
-            if tr_a is None or tr_b is None:
+            if not tr_a or not tr_b:
                 continue
-            if tr_a <= tr_b:
-                candidates.append(
-                    (
+            expected = (beta or 0.0) * (a.grind_clicks - b.grind_clicks)
+            if gamma and a.dose_g > 0 and b.dose_g > 0:
+                expected += gamma * math.log(a.dose_g / b.dose_g)
+            observed = math.log(tr_a) - math.log(tr_b)
+            if expected - observed > threshold:
+                signs.append(
+                    ChannelingSign(
                         b.grind_clicks,
-                        f"at {a.grind_clicks:g} the shot ran no slower than at "
-                        f"{b.grind_clicks:g}, which means the water is finding "
-                        f"a channel rather than soaking the puck evenly",
+                        "ran_fast_when_finer",
+                        f"at {a.grind_clicks:g} the shot ran faster than a finer "
+                        f"grind should, by more than shots normally vary -- the "
+                        f"water may be finding a channel",
+                        a,
                     )
                 )
 
@@ -752,10 +834,8 @@ def finest_useful_clicks(
             fine: list[float] = []
             coarse: list[float] = []
             for s in measured:
-                if s.grind_clicks is None:
-                    continue
                 tr = normalised_time(s)
-                if tr is None or tr <= 0:
+                if s.grind_clicks is None or not tr:
                     continue
                 bucket = (
                     fine
@@ -767,39 +847,116 @@ def finest_useful_clicks(
                 var_fine = statistics.pvariance(fine)
                 var_coarse = statistics.pvariance(coarse)
                 if var_coarse > 0 and var_fine / var_coarse > ratio_limit:
-                    candidates.append(
-                        (
+                    signs.append(
+                        ChannelingSign(
                             pivot.grind_clicks,
+                            "spread",
                             "shots at and below this setting vary far more than "
                             "the coarser ones, which is what channeling looks "
                             "like in the data",
                         )
                     )
 
-    # 3. Long *and* sour: the bypass signature. Water spent a long time in the
-    #    basket and still under-extracted, so it was not passing through the
-    #    coffee. Going finer here makes it worse.
-    if target is not None and target.tr_hi is not None:
-        for s in measured:
-            tr = normalised_time(s)
-            if s.grind_clicks is None or tr is None:
-                continue
-            if tr > target.tr_hi and s.taste_axis in ("sour", "very_sour"):
-                candidates.append(
-                    (
-                        s.grind_clicks,
-                        f"{s.grind_clicks:g} produced a long shot that still "
-                        f"tasted sour -- the water is channeling, so finer "
-                        f"would make it worse",
-                    )
+    for s in measured:
+        tr = normalised_time(s)
+        if s.grind_clicks is None or tr is None:
+            continue
+        sour = s.taste_axis in ("sour", "very_sour")
+        # 3. Long *and* sour: water spent a long time in the basket and still
+        #    under-extracted, so it was not passing through the coffee.
+        if (
+            sour
+            and target is not None
+            and target.tr_hi is not None
+            and tr > target.tr_hi
+        ):
+            signs.append(
+                ChannelingSign(
+                    s.grind_clicks,
+                    "long_and_sour",
+                    f"{s.grind_clicks:g} produced a long shot that still "
+                    f"tasted sour -- the water is channeling, so finer "
+                    f"would make it worse",
+                    s,
                 )
+            )
+            continue
+        # 4. Sour *and* drying: under- and over-extracted coffee in one cup,
+        #    the signature of a bed extracted unevenly (Lee 2023).
+        if sour and s.astringent:
+            signs.append(
+                ChannelingSign(
+                    s.grind_clicks,
+                    "sour_and_drying",
+                    f"{s.grind_clicks:g} tasted sour and drying at once, which "
+                    f"is part of the puck over-extracting while water rushes "
+                    f"past the rest",
+                    s,
+                )
+            )
+    return signs
+
+
+def _confirmed(signs: Sequence[ChannelingSign]) -> bool:
+    """Whether the signs are independent enough to stop the grinder.
+
+    Independent means different shots, or different kinds of sign: two
+    comparisons both built on one freak shot are one piece of evidence.
+    """
+    shots = {id(s.shot) for s in signs if s.shot is not None}
+    kinds = {s.kind for s in signs}
+    evidence = max(len(shots) + (1 if "spread" in kinds else 0), len(kinds))
+    return evidence >= value_of("channeling_confirming_signs")
+
+
+@dataclass(frozen=True)
+class FinenessLimit:
+    """The finest setting the engine will recommend, and why.
+
+    ``clicks``/``reason`` is the finest setting any sign or limit implies --
+    what the fit chart draws and the warning names. ``hard_clicks`` is the
+    part that actually stops the grinder: the leap limit, plus the channeling
+    signs once two independent ones agree. A single sign only warns
+    (docs/science.md#channeling-detection).
+    """
+
+    clicks: float | None
+    reason: str | None
+    hard_clicks: float | None = None
+    hard_reason: str | None = None
+
+
+def finest_useful_clicks(
+    history: Sequence[ShotRecord],
+    caps: GrinderCaps,
+    target: Target | None = None,
+    beta: float | None = None,
+    gamma: float = 0.0,
+) -> FinenessLimit:
+    """Where to stop grinding finer.
+
+    Extraction yield peaks and then *declines* at fine settings, because flow
+    goes inhomogeneous (docs/science.md#cameron). Past that peak, "the shot
+    ran long, grind finer" makes extraction worse and less repeatable.
+    """
+    measured = [
+        s
+        for s in history
+        if s.grind_clicks is not None and normalised_time(s) is not None
+    ]
+    signs = channeling_signs(history, caps, target, beta, gamma)
+    confirmed = _confirmed(signs)
+    candidates: list[tuple[float, str, bool]] = [
+        (s.clicks, s.reason, confirmed) for s in signs
+    ]
 
     # (The hardware end-stop is deliberately *not* a trigger here. It is a
     # different kind of limit and apply_guardrails applies it separately, so
     # that "your grinder won't go finer" is never mislabelled to the user as
     # "your shots are channeling".)
 
-    # 4. Never leap far below the finest setting that has actually worked.
+    # Never leap far below the finest setting that has actually worked. Not a
+    # channeling sign but a limit on guessing, so it always holds.
     acceptable = [
         s.grind_clicks
         for s in history
@@ -813,33 +970,48 @@ def finest_useful_clicks(
                 finer_by(finest_good, value_of("max_steps_finer_than_best"), caps),
                 "more than a couple of steps finer than anything that has "
                 "worked before is a guess, not a correction",
+                True,
             )
         )
 
     if not candidates:
         return FinenessLimit(None, None)
 
-    # The binding limit is the coarsest of the candidate floors.
-    coarsest = candidates[0]
-    for candidate in candidates[1:]:
-        if is_finer(coarsest[0], candidate[0], caps):
-            coarsest = candidate
+    def coarsest(pool: list[tuple[float, str, bool]]) -> tuple[float, str] | None:
+        if not pool:
+            return None
+        best = pool[0]
+        for candidate in pool[1:]:
+            if is_finer(best[0], candidate[0], caps):
+                best = candidate
+        return best[0], best[1]
 
-    limit, reason = coarsest
+    soft = coarsest(candidates)
+    hard = coarsest([c for c in candidates if c[2]])
+    assert soft is not None
 
     # A consistently pre-infused, rested puck saturates evenly before full
     # pressure arrives, which is the standard channeling mitigation. Where the
     # user does that every time, the floor genuinely sits finer than it would
     # otherwise -- so give back a step rather than holding them at a limit
     # measured under worse conditions.
-    if _preinfuses_consistently(measured):
-        limit = finer_by(limit, value_of("preinfusion_channeling_relief"), caps)
-        reason = (
-            f"{reason}. Your pre-infusion is consistent, which lets the puck "
-            f"take a slightly finer grind than it otherwise would"
-        )
+    relief = _preinfuses_consistently(measured)
 
-    return FinenessLimit(limit, reason)
+    def relieved(limit: tuple[float, str] | None) -> tuple[float | None, str | None]:
+        if limit is None:
+            return None, None
+        clicks, reason = limit
+        if relief:
+            clicks = finer_by(clicks, value_of("preinfusion_channeling_relief"), caps)
+            reason = (
+                f"{reason}. Your pre-infusion is consistent, which lets the puck "
+                f"take a slightly finer grind than it otherwise would"
+            )
+        return clicks, reason
+
+    clicks, reason = relieved(soft)
+    hard_clicks, hard_reason = relieved(hard)
+    return FinenessLimit(clicks, reason, hard_clicks, hard_reason)
 
 
 def _preinfuses_consistently(shots: Sequence[ShotRecord]) -> bool:
@@ -926,6 +1098,8 @@ def correct(
     roast_level_ord: int | None = None,
     dose_g: float | None = None,
     gamma: float = 0.0,
+    noise_ln: float | None = None,
+    replicates: Sequence[ShotRecord] = (),
 ) -> Recipe:
     """Propose the next recipe from the last measured shot.
 
@@ -940,6 +1114,12 @@ def correct(
     anchor's time is carried to the new dose with it before anything is
     compared, so a dose change moves the grind by exactly what it is expected
     to do to the shot. Zero means the law has no dose term for this method.
+
+    ``replicates`` are this coffee's other shots. Those at the last shot's
+    setting and dose, prepared the same way, are averaged with it, and a new
+    setting is only named when the gap to the target is bigger than the
+    per-shot scatter ``noise_ln`` allows for that many shots -- otherwise the
+    advice is to pull it again (docs/science.md#deadband).
     """
     notes: list[str] = []
     dose = last.dose_g if dose_g is None else dose_g
@@ -954,10 +1134,23 @@ def correct(
             "slower and a lighter one faster, so watch the time"
         )
     ratio = brew_ratio(last)
-    tr = normalised_time(last)
-    if tr is not None and gamma and dose_changed and last.dose_g > 0:
-        # What the anchor shot would have run at the new dose.
-        tr *= (dose / last.dose_g) ** gamma
+    pool = [last] + [
+        s
+        for s in replicates
+        if s is not last
+        and s.grind_clicks == last.grind_clicks
+        and abs(s.dose_g - last.dose_g) < value_of("dose_pair_min_diff_g")
+        and prep_comparable(last, s)
+        and normalised_time(s)
+    ]
+    logs = []
+    for s in pool:
+        tr_s = normalised_time(s)
+        if tr_s:
+            # What each shot would have run at the new dose.
+            carried = gamma * math.log(dose / s.dose_g) if gamma and s.dose_g else 0.0
+            logs.append(math.log(tr_s) + carried)
+    tr = math.exp(statistics.fmean(logs)) if logs else None
     grind = last.grind_clicks
     temp_lo, temp_hi = temp_band_for_roast(roast_level_ord)
     temp = (
@@ -1033,6 +1226,23 @@ def correct(
                 if last.time_s is not None
                 else target.time_hi
             )
+        if (
+            grind is not None
+            and not (tr_lo <= tr <= tr_hi)
+            and noise_ln is not None
+            # How far outside the band, measured to the nearer edge: the
+            # question is whether the shot is really out of it at all.
+            and abs(math.log(tr / (tr_hi if tr > tr_hi else tr_lo)))
+            <= noise_ln / math.sqrt(len(logs))
+        ):
+            # Inside what one shot can resolve: a new click number here would
+            # be fitting noise. Another shot at this setting narrows it.
+            notes.append(
+                f"your shot ran {'long' if tr > tr_hi else 'fast'}, but by less "
+                f"than shots at one setting normally vary -- pull the same shot "
+                f"again before changing the grind"
+            )
+            return build()
         if grind is not None and not (tr_lo <= tr <= tr_hi):
             tr_aim = (tr_lo + tr_hi) / 2
             proposed = solve_grind(grind, tr, tr_aim, beta)
@@ -1157,7 +1367,7 @@ def resistance_disagreement(
 
     When they disagree -- normal time-to-pressure but a long pull, or the
     reverse -- the bed's resistance changed after it was wetted, which points
-    at distribution, tamp or channeling rather than at the grinder. Returns a
+    at distribution, puck prep or channeling rather than at the grinder. Returns a
     plain-language note, or None when the two agree or there is nothing to
     compare against.
     """
@@ -1198,7 +1408,7 @@ def resistance_disagreement(
         return (
             "the puck took the usual time to come up to pressure but then "
             "pulled slowly, so the resistance appeared after it was wetted -- "
-            "that points at distribution or tamp rather than the grind"
+            "that points at distribution or puck prep rather than the grind"
         )
     if pressure_ratio > threshold * pull_ratio:
         return (
@@ -1228,36 +1438,22 @@ class DoseReduction:
 
 
 def channeled_shots(
-    shots: Sequence[ShotRecord], caps: GrinderCaps, target: Target | None
+    shots: Sequence[ShotRecord],
+    caps: GrinderCaps,
+    target: Target | None,
+    beta: float | None = None,
+    gamma: float = 0.0,
 ) -> list[ShotRecord]:
     """The shots that show a channeling sign, by the floor's own triggers.
 
-    Two of finest_useful_clicks()'s triggers mark an individual shot: a finer
-    shot that ran no slower than a coarser one prepared the same way, and a
-    long shot that still tasted sour. Callers pass shots at one dose, so the
-    comparison needs no dose correction.
+    The per-shot signs of channeling_signs(): a finer shot that ran faster
+    than the law allows, a long shot that still tasted sour, and a shot that
+    was sour and drying at once.
     """
-    measured = [s for s in shots if s.grind_clicks is not None and normalised_time(s)]
     flagged: list[ShotRecord] = []
-    for a in measured:
-        tr_a = normalised_time(a)
-        assert tr_a is not None and a.grind_clicks is not None
-        long_and_sour = (
-            target is not None
-            and target.tr_hi is not None
-            and tr_a > target.tr_hi
-            and a.taste_axis in ("sour", "very_sour")
-        )
-        ran_no_slower = any(
-            b.grind_clicks is not None
-            and is_finer(a.grind_clicks, b.grind_clicks, caps)
-            and prep_comparable(a, b)
-            and (normalised_time(b) or 0) >= tr_a
-            for b in measured
-            if b is not a
-        )
-        if long_and_sour or ran_no_slower:
-            flagged.append(a)
+    for sign in channeling_signs(shots, caps, target, beta, gamma):
+        if sign.shot is not None and all(sign.shot is not f for f in flagged):
+            flagged.append(sign.shot)
     return flagged
 
 
@@ -1267,6 +1463,7 @@ def dose_reduction(
     caps: GrinderCaps,
     machine: MachineCaps,
     target: Target | None,
+    beta: float | None = None,
 ) -> DoseReduction | None:
     """Suggest using less coffee when channeling keeps coming back at this dose.
 
@@ -1288,7 +1485,7 @@ def dose_reduction(
 
     tolerance = value_of("dose_pair_min_diff_g")
     at_dose = [s for s in bean_history if abs(s.dose_g - dose) < tolerance]
-    flagged = channeled_shots(at_dose, caps, target)
+    flagged = channeled_shots(at_dose, caps, target, beta)
     if len(flagged) < value_of("cameron_min_channeled_shots"):
         return None
 
@@ -1509,6 +1706,8 @@ def apply_guardrails(
     machine: MachineCaps,
     history: Sequence[ShotRecord] = (),
     target: Target | None = None,
+    beta: float | None = None,
+    gamma: float = 0.0,
 ) -> Recipe:
     """Clamp every field to what the hardware and the user's history allow.
 
@@ -1525,12 +1724,24 @@ def apply_guardrails(
 
     # --- grind ---------------------------------------------------------
     if grind is not None:
-        limit = finest_useful_clicks(history, grinder, target)
-        if limit.clicks is not None and is_finer(grind, limit.clicks, grinder):
-            grind = limit.clicks
+        limit = finest_useful_clicks(history, grinder, target, beta, gamma)
+        if limit.hard_clicks is not None and is_finer(
+            grind, limit.hard_clicks, grinder
+        ):
+            grind = limit.hard_clicks
             hits.append("grind_channeling_floor")
+            if limit.hard_reason:
+                notes.append(limit.hard_reason)
+        elif limit.clicks is not None and is_finer(grind, limit.clicks, grinder):
+            # One sign is not enough to take the grinder away -- a single shot
+            # carries several clicks of noise. Say what was seen and let the
+            # shot run (docs/science.md#channeling-detection).
+            hits.append("grind_channeling_warning")
             if limit.reason:
-                notes.append(limit.reason)
+                notes.append(
+                    f"a possible sign of channeling: {limit.reason}. Worth "
+                    f"watching, but one sign is not enough to stop going finer"
+                )
 
         if grinder.min_clicks is not None and grind < grinder.min_clicks:
             grind = grinder.min_clicks

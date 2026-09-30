@@ -46,6 +46,7 @@ from .brewing import (
     prep_advice,
     prep_incomparable_reason,
     resistance_disagreement,
+    shot_noise,
     snap_to_step,
     target_for,
     temp_band_for_roast,
@@ -193,6 +194,8 @@ def recommend(
             roast_level_ord=roast_ord,
             dose_g=dose_g,
             gamma=calibration.gamma,
+            noise_ln=shot_noise(bean_history)[0],
+            replicates=bean_history,
         )
         basis = "calibrated" if calibration.is_fitted else "history"
     else:
@@ -288,7 +291,13 @@ def recommend(
     # no reason to obey. A coffee with no shots of its own falls back to the
     # setup, which is the conservative direction: more triggers, not fewer.
     recipe = apply_guardrails(
-        recipe, caps, machine_spec, bean_history or history, target
+        recipe,
+        caps,
+        machine_spec,
+        bean_history or history,
+        target,
+        calibration.beta,
+        calibration.gamma,
     )
 
     # Pre-infusion: a second resistance reading, and advice once there is
@@ -334,7 +343,9 @@ def recommend(
     # One lever at a time: while the pre-infusion experiment is running, its
     # shots are the ones to learn from, so the dose suggestion waits.
     suggestion = (
-        dose_reduction(bean_history, recipe, caps, machine_spec, target)
+        dose_reduction(
+            bean_history, recipe, caps, machine_spec, target, calibration.beta
+        )
         if experiment is None
         else None
     )
@@ -519,7 +530,13 @@ def serialize_fit(
 
     # Same arguments apply_guardrails used, so the floor drawn is the floor
     # that actually clamped the recipe.
-    floor = finest_useful_clicks(result.bean_history or result.history, caps, target)
+    floor = finest_useful_clicks(
+        result.bean_history or result.history,
+        caps,
+        target,
+        calibration.beta,
+        calibration.gamma,
+    )
 
     # The chart draws one line per coffee in (clicks, T_r). With a dose term
     # the law is a surface, so both the lines and the points are taken at the
@@ -632,7 +649,14 @@ def serialize_fit(
             "time_hi": target.time_hi if target else None,
             "ratio_aim": target.ratio_aim if target else None,
         },
-        "floor": {"clicks": floor.clicks, "reason": floor.reason},
+        # The floor that stops the grinder, and -- when only one channeling
+        # sign has been seen -- the softer line the engine merely warns at.
+        "floor": {"clicks": floor.hard_clicks, "reason": floor.hard_reason},
+        "warning": (
+            {"clicks": floor.clicks, "reason": floor.reason}
+            if floor.clicks is not None and floor.clicks != floor.hard_clicks
+            else {"clicks": None, "reason": None}
+        ),
         "grinder": {
             "min_clicks": caps.min_clicks,
             "max_clicks": caps.max_clicks,

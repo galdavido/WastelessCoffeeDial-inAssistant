@@ -250,8 +250,8 @@ class TestScanAndPull(FlowTestCase):
     def test_channeling_that_keeps_coming_back_suggests_less_coffee(self) -> None:
         self.make_setup()
         scan = self.scan()
-        # Each finer setting ran *faster*: the water is finding a channel.
-        for grind, time_s in (("30", 26.0), ("28", 24.0), ("26", 23.0)):
+        # Each finer setting ran clearly *faster*: the water is finding a channel.
+        for grind, time_s in (("30", 26.0), ("28", 22.0), ("26", 20.0)):
             self.log_shot(scan["coffee_data"], actual_grind=grind, time_s=time_s)
         bean_id = self.only_coffee()["bean_id"]
 

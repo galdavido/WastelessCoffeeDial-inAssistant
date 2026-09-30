@@ -28,6 +28,7 @@ from core.brewing import (
     finest_useful_clicks,
     is_finer,
     normalised_time,
+    shot_noise,
     target_for,
 )
 from core.calibration import fit_setup, theil_sen_comparable
@@ -186,6 +187,56 @@ class TestCameronGuardrail(unittest.TestCase):
         limit = finest_useful_clicks([long_sour], K6, TARGET)
         self.assertEqual(limit.clicks, 28.0)
 
+    def test_one_sign_warns_but_does_not_stop_the_grinder(self) -> None:
+        """A single shot carries clicks of noise (docs/science.md#channeling-detection)."""
+        long_sour = ShotRecord(
+            method="espresso",
+            dose_g=18.0,
+            grind_clicks=28.0,
+            yield_g=36.0,
+            time_s=45.0,
+            taste_axis="sour",
+        )
+        limit = finest_useful_clicks([long_sour], K6, TARGET)
+        self.assertIsNone(limit.hard_clicks)
+        recipe = Recipe(method="espresso", dose_g=18.0, grind_clicks=25.0)
+        guarded = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, [long_sour], TARGET)
+        self.assertEqual(guarded.grind_clicks, 25.0)
+        self.assertIn("grind_channeling_warning", guarded.guardrails_hit)
+        self.assertNotIn("grind_channeling_floor", guarded.guardrails_hit)
+
+    def test_two_independent_signs_stop_the_grinder(self) -> None:
+        def shot(clicks: float, taste: str, **kw: object) -> ShotRecord:
+            return ShotRecord(
+                method="espresso",
+                dose_g=18.0,
+                grind_clicks=clicks,
+                yield_g=36.0,
+                time_s=kw.pop("time_s", 45.0),  # type: ignore[arg-type]
+                taste_axis=taste,  # type: ignore[arg-type]
+                **kw,  # type: ignore[arg-type]
+            )
+
+        history = [
+            shot(28.0, "sour"),  # long and sour
+            shot(30.0, "sour", time_s=27.0, astringent=True),  # sour and drying
+        ]
+        limit = finest_useful_clicks(history, K6, TARGET)
+        self.assertEqual(limit.hard_clicks, 30.0)
+        recipe = Recipe(method="espresso", dose_g=18.0, grind_clicks=25.0)
+        guarded = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, history, TARGET)
+        self.assertEqual(guarded.grind_clicks, 30.0)
+        self.assertIn("grind_channeling_floor", guarded.guardrails_hit)
+
+    def test_a_finer_step_inside_the_noise_is_not_a_sign(self) -> None:
+        """2 clicks finer and a little faster: within one shot's scatter."""
+        history = [
+            ShotRecord("espresso", 18.0, grind_clicks=30.0, yield_g=36.0, time_s=26.0),
+            ShotRecord("espresso", 18.0, grind_clicks=28.0, yield_g=36.0, time_s=24.0),
+        ]
+        limit = finest_useful_clicks(history, K6, TARGET, beta_prior("espresso", K6))
+        self.assertIsNone(limit.clicks)
+
     def test_hardware_floor_is_respected(self) -> None:
         tight = GrinderCaps(
             min_clicks=30.0, max_clicks=40.0, step_clicks=1.0, um_per_click=16.0
@@ -308,6 +359,80 @@ class TestTastePolicy(unittest.TestCase):
         guarded = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, [], TARGET)
         self.assertIsNone(guarded.brew_temp_c)
         self.assertIn("temp_not_controllable", guarded.guardrails_hit)
+
+
+class TestDeadband(unittest.TestCase):
+    """docs/science.md#deadband: no new click number for a gap one shot
+    cannot resolve."""
+
+    def _shot(self, time_s: float, clicks: float = 33.0) -> ShotRecord:
+        return ShotRecord(
+            method="espresso",
+            dose_g=18.0,
+            grind_clicks=clicks,
+            yield_g=36.0,
+            time_s=time_s,
+            taste_axis="sour",
+        )
+
+    def test_a_near_miss_says_pull_it_again(self) -> None:
+        last = self._shot(32.0)  # just over the 30 s top of the band
+        recipe = correct(
+            last,
+            TARGET,
+            beta_prior("espresso", K6),
+            K6,
+            FIXED_TEMP_MACHINE,
+            noise_ln=shot_noise([last])[0],
+        )
+        self.assertEqual(recipe.grind_clicks, 33.0)
+        self.assertTrue(any("pull the same shot again" in n for n in recipe.notes))
+
+    def test_a_clear_miss_still_moves_the_grind(self) -> None:
+        last = self._shot(45.0)
+        recipe = correct(
+            last,
+            TARGET,
+            beta_prior("espresso", K6),
+            K6,
+            FIXED_TEMP_MACHINE,
+            noise_ln=shot_noise([last])[0],
+        )
+        self.assertNotEqual(recipe.grind_clicks, 33.0)
+
+    def test_replicates_narrow_the_deadband(self) -> None:
+        """Three shots agreeing at 33 s are evidence one shot is not."""
+        alone = correct(
+            self._shot(33.0),
+            TARGET,
+            beta_prior("espresso", K6),
+            K6,
+            FIXED_TEMP_MACHINE,
+            noise_ln=0.12,
+        )
+        self.assertEqual(alone.grind_clicks, 33.0)
+        shots = [self._shot(33.0), self._shot(33.5), self._shot(32.5)]
+        recipe = correct(
+            shots[0],
+            TARGET,
+            beta_prior("espresso", K6),
+            K6,
+            FIXED_TEMP_MACHINE,
+            noise_ln=0.12,
+            replicates=shots,
+        )
+        self.assertNotEqual(recipe.grind_clicks, 33.0)
+
+    def test_noise_falls_back_to_the_prior_without_replicates(self) -> None:
+        sigma, df = shot_noise([self._shot(30.0), self._shot(28.0, clicks=31.0)])
+        self.assertEqual(df, 0)
+        self.assertAlmostEqual(sigma, 0.12)
+
+    def test_noise_is_measured_from_repeat_shots(self) -> None:
+        wide = [self._shot(20.0), self._shot(40.0), self._shot(30.0)]
+        sigma, df = shot_noise(wide)
+        self.assertEqual(df, 2)
+        self.assertGreater(sigma, 0.12)
 
 
 class TestGuardrailInvariants(unittest.TestCase):

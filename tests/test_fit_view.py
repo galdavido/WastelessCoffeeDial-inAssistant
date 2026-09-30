@@ -237,9 +237,19 @@ class TestThePictureMatchesTheEngine(unittest.TestCase):
 
         result = _result()
         payload = serialize_fit(result, NAMES, RWANDA)
-        expected = finest_useful_clicks(result.bean_history, K6, TARGET)
-        self.assertEqual(payload["floor"]["clicks"], expected.clicks)
-        self.assertEqual(payload["floor"]["reason"], expected.reason)
+        expected = finest_useful_clicks(
+            result.bean_history,
+            K6,
+            TARGET,
+            result.calibration.beta,
+            result.calibration.gamma,
+        )
+        self.assertEqual(payload["floor"]["clicks"], expected.hard_clicks)
+        self.assertEqual(payload["floor"]["reason"], expected.hard_reason)
+        if expected.clicks != expected.hard_clicks:
+            self.assertEqual(payload["warning"]["clicks"], expected.clicks)
+        else:
+            self.assertIsNone(payload["warning"]["clicks"])
 
 
 class TestItStaysHonestWithNothingToShow(unittest.TestCase):
