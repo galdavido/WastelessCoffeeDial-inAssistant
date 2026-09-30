@@ -90,6 +90,9 @@ class TestScienceDoc(unittest.TestCase):
             # fixing a number the engine uses today.
             "target-reachability",
             "deadband",
+            # Where peer-reviewed findings disagree with the engine; each row
+            # points at an entry in docs/open-decisions.md.
+            "open-conflicts",
         }
         cited = {c.anchor.lstrip("#") for c in CONSTANTS.values()}
         orphans = _doc_anchors() - cited - narrative

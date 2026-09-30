@@ -1,3 +1,4 @@
+<!-- markdownlint-disable-file MD041 -- GitHub puts the PR title above this. -->
 ## Description
 
 <!-- Brief description of the changes in this PR. -->
@@ -27,7 +28,9 @@ Closes #
 ## Checklist
 
 - [ ] Code follows project style guidelines (pre-commit passes)
-- [ ] Checks pass: `ruff check . && ruff format --check . && mypy src && pytest` (API-flow tests need `DATABASE_URL`)
+- [ ] Checks pass:
+      `ruff check . && ruff format --check . && mypy src && pytest`
+      (API-flow tests need `DATABASE_URL`)
 - [ ] No new warnings or errors
 - [ ] Documentation updated if needed
 - [ ] Commit messages are clear and descriptive

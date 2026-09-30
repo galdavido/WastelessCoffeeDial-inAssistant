@@ -17,7 +17,7 @@ step).
 ## Two instances
 
 | | Dev (daily driver) | Prod (friends) |
-|---|---|---|
+| --- | --- | --- |
 | Compose file | `compose.yaml` (project `wcda`) | `compose.prod.yaml` (project `wcda-prod`) |
 | Web | `0.0.0.0:8082` — on the LAN | `127.0.0.1:8081` — behind `tailscale serve` |
 | Identity | `WCDA_AUTH_MODE=single`: one implicit owner | `WCDA_AUTH_MODE=tailscale`: the `Tailscale-User-Login` header |
@@ -36,7 +36,7 @@ cp .env.example .env    # then set POSTGRES_PASSWORD and GEMINI_API_KEY
 `.env` is git-ignored and excluded from the Docker build context.
 
 | Variable | Purpose | Default |
-|---|---|---|
+| --- | --- | --- |
 | `DATABASE_URL` | SQLAlchemy/Alembic connection string (compose sets it) | — |
 | `GEMINI_API_KEY` | Google Gemini key. Without it scans fail and explanations fall back to a template | — |
 | `WCDA_AUTH_MODE` | `single` or `tailscale` (see above) | `single` |
