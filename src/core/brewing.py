@@ -902,6 +902,20 @@ class Recipe:
         return tokens
 
 
+def _liked(shot: ShotRecord) -> bool:
+    """Whether the user said this shot tasted right.
+
+    Balanced on the taste axis, or rated 4+ with no taste given, and never
+    drying: astringency is the over-extraction marker even in a cup someone
+    rated well (docs/science.md#taste-mapping).
+    """
+    if shot.astringent:
+        return False
+    if shot.taste_axis is not None:
+        return shot.taste_axis == "balanced"
+    return shot.rating is not None and shot.rating >= 4
+
+
 def correct(
     last: ShotRecord,
     target: Target,
@@ -999,6 +1013,26 @@ def correct(
             centre = (tr_lo + tr_hi) / 2
             tr_lo = centre - (centre - tr_lo) * widen
             tr_hi = centre + (tr_hi - centre) * widen
+        if (
+            grind is not None
+            and not (tr_lo <= tr <= tr_hi)
+            and not dose_changed
+            and _liked(last)
+        ):
+            # The time band is a taste convention, not a physical optimum: a
+            # fast shot that tastes balanced is a valid operating point, and
+            # chasing the clock drives every coffee finer into the clogged
+            # regime (docs/science.md#ratio-espresso). Keep what worked.
+            notes.append(
+                f"your shot ran {'long' if tr > tr_hi else 'fast'} for the usual "
+                f"range but tasted right, and the cup is the target, not the "
+                f"clock -- keep the setting and repeat it"
+            )
+            return build(
+                target_time_s=round(last.time_s)
+                if last.time_s is not None
+                else target.time_hi
+            )
         if grind is not None and not (tr_lo <= tr <= tr_hi):
             tr_aim = (tr_lo + tr_hi) / 2
             proposed = solve_grind(grind, tr, tr_aim, beta)
@@ -1031,22 +1065,44 @@ def correct(
                 f"the time range, so the grind stays"
             )
 
-    # 3. Time is fine but it does not taste right.
+    # 3. Time is fine but it does not taste right. Ratio and grind first,
+    #    temperature last: on its own, brew temperature barely moves what is
+    #    extracted (docs/science.md#temp-by-roast).
     offset = taste_offset(last.taste_axis)
     if offset:
         if offset < 0:  # sour: under-extracted
-            if machine.temp_controllable and temp is not None and temp < temp_hi:
-                notes.append("tasted sour, so extract a little harder: up 1 C")
-                return build(brew_temp_c=min(temp + 1.0, temp_hi))
             longer = min(target.ratio_aim * 1.15, target.ratio_hi)
+            if ratio is None or ratio < longer - 0.05:
+                notes.append(
+                    "tasted sour with the timing on target, so let it run a "
+                    "little longer rather than changing the grind"
+                )
+                return build(
+                    yield_g=round(longer * dose, 1)
+                    if last.method == "espresso"
+                    else None,
+                    water_g=round(longer * dose, 1)
+                    if last.method != "espresso"
+                    else None,
+                )
+            if machine.temp_controllable and temp is not None and temp < temp_hi:
+                notes.append(
+                    "still sour at the long end of the ratio range, so extract a "
+                    "little harder: up 1 C"
+                )
+                return build(brew_temp_c=min(temp + 1.0, temp_hi))
+            if grind is not None:
+                notes.append(
+                    "still sour at the long end of the ratio range: one step finer"
+                )
+                return build(
+                    grind_clicks=snap_to_step(finer_by(grind, 1, grinder), grinder)
+                )
             notes.append(
-                "tasted sour with the timing on target, so let it run a little "
-                "longer rather than changing the grind"
+                "still sour, and no lever is left that this recipe can move -- "
+                "check the puck preparation and the coffee's freshness"
             )
-            return build(
-                yield_g=round(longer * dose, 1) if last.method == "espresso" else None,
-                water_g=round(longer * dose, 1) if last.method != "espresso" else None,
-            )
+            return build()
         # bitter
         if not last.astringent:
             # Bitter without astringency is usually roast character, not
@@ -1062,9 +1118,6 @@ def correct(
                 yield_g=round(shorter * dose, 1) if last.method == "espresso" else None,
                 water_g=round(shorter * dose, 1) if last.method != "espresso" else None,
             )
-        if machine.temp_controllable and temp is not None and temp > temp_lo:
-            notes.append("drying and bitter: over-extracted, so down 1 C")
-            return build(brew_temp_c=max(temp - 1.0, temp_lo))
         if grind is not None:
             notes.append(
                 "drying and bitter with the timing on target: one step coarser"
@@ -1072,6 +1125,21 @@ def correct(
             return build(
                 grind_clicks=snap_to_step(finer_by(grind, -1, grinder), grinder)
             )
+        shorter = max(target.ratio_aim * 0.9, target.ratio_lo)
+        if ratio is None or ratio > shorter + 0.05:
+            notes.append("drying and bitter: over-extracted, so stop it a bit sooner")
+            return build(
+                yield_g=round(shorter * dose, 1) if last.method == "espresso" else None,
+                water_g=round(shorter * dose, 1) if last.method != "espresso" else None,
+            )
+        if machine.temp_controllable and temp is not None and temp > temp_lo:
+            notes.append("drying and bitter: over-extracted, so down 1 C")
+            return build(brew_temp_c=max(temp - 1.0, temp_lo))
+        notes.append(
+            "drying and bitter, and no lever is left that this recipe can move "
+            "-- check the puck preparation"
+        )
+        return build()
 
     notes.append("this one looks on target -- keep it the same and repeat it")
     return build()

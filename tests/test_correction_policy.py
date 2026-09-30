@@ -62,25 +62,31 @@ def _pull(clicks: float, dose_g: float = 18.0) -> ShotRecord:
     )
 
 
+def _dialled_in(shot: ShotRecord) -> bool:
+    """In the time band, or out of it but tasting right.
+
+    The band is a taste convention (docs/science.md#ratio-espresso), so a
+    balanced shot just outside it is a finished dial-in, not a miss.
+    """
+    tr = normalised_time(shot)
+    assert tr is not None and TARGET.tr_lo is not None and TARGET.tr_hi is not None
+    return TARGET.tr_lo <= tr <= TARGET.tr_hi or shot.taste_axis == "balanced"
+
+
 class TestConvergence(unittest.TestCase):
     def _loop(self, start: float, max_iterations: int = 8) -> tuple[bool, float]:
         clicks = start
         beta = beta_prior("espresso", K6)
         for _ in range(max_iterations):
             shot = _pull(clicks)
-            tr = normalised_time(shot)
-            assert tr is not None and TARGET.tr_lo is not None
-            if TARGET.tr_lo <= tr <= (TARGET.tr_hi or 0):
+            if _dialled_in(shot):
                 return True, clicks
             recipe = correct(shot, TARGET, beta, K6, FIXED_TEMP_MACHINE)
             recipe = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, [shot], TARGET)
             if recipe.grind_clicks is None or recipe.grind_clicks == clicks:
                 break
             clicks = recipe.grind_clicks
-        shot = _pull(clicks)
-        tr = normalised_time(shot)
-        assert tr is not None and TARGET.tr_lo is not None and TARGET.tr_hi is not None
-        return (TARGET.tr_lo <= tr <= TARGET.tr_hi), clicks
+        return _dialled_in(_pull(clicks)), clicks
 
     def test_converges_into_the_band(self) -> None:
         """From a spread of starting points, most runs land in target."""
@@ -212,11 +218,81 @@ class TestTastePolicy(unittest.TestCase):
         assert recipe.yield_g is not None
         self.assertLess(recipe.yield_g, 36.0, "expected a shorter ratio instead")
 
-    def test_bitter_and_astringent_is_treated_as_over_extraction(self) -> None:
-        shot = self._on_target_shot(taste_axis="bitter", astringent=True)
+    def test_bitter_and_astringent_goes_coarser_before_touching_temperature(
+        self,
+    ) -> None:
+        """Grind before temperature, even on a PID machine: temperature alone
+        barely moves extraction (docs/science.md#temp-by-roast)."""
+        shot = self._on_target_shot(
+            taste_axis="bitter", astringent=True, brew_temp_c=94.0
+        )
         recipe = correct(shot, TARGET, beta_prior("espresso", K6), K6, PID_MACHINE)
-        assert recipe.brew_temp_c is not None
-        self.assertLess(recipe.brew_temp_c, 94.0)
+        assert recipe.grind_clicks is not None
+        self.assertFalse(is_finer(recipe.grind_clicks, 33.0, K6))
+        self.assertNotEqual(recipe.grind_clicks, 33.0)
+        self.assertEqual(recipe.brew_temp_c, 94.0)
+
+    def test_bitter_and_astringent_without_a_grind_shortens_the_ratio(self) -> None:
+        shot = self._on_target_shot(
+            taste_axis="bitter", astringent=True, grind_clicks=None
+        )
+        recipe = correct(shot, TARGET, beta_prior("espresso", K6), K6, PID_MACHINE)
+        assert recipe.yield_g is not None
+        self.assertLess(recipe.yield_g, 36.0)
+
+    def test_sour_on_a_pid_machine_lengthens_the_ratio_before_heating(self) -> None:
+        shot = self._on_target_shot(taste_axis="sour", brew_temp_c=93.0)
+        recipe = correct(shot, TARGET, beta_prior("espresso", K6), K6, PID_MACHINE)
+        assert recipe.yield_g is not None
+        self.assertGreater(recipe.yield_g, 36.0)
+        self.assertEqual(recipe.brew_temp_c, 93.0)
+
+    def test_sour_at_the_long_end_of_the_ratio_raises_the_temperature(self) -> None:
+        shot = self._on_target_shot(
+            taste_axis="sour", yield_g=45.0, time_s=35.0, brew_temp_c=93.0
+        )
+        recipe = correct(shot, TARGET, beta_prior("espresso", K6), K6, PID_MACHINE)
+        self.assertEqual(recipe.brew_temp_c, 94.0)
+
+    def test_sour_at_the_long_end_without_a_pid_goes_one_step_finer(self) -> None:
+        shot = self._on_target_shot(taste_axis="sour", yield_g=45.0, time_s=35.0)
+        recipe = correct(
+            shot, TARGET, beta_prior("espresso", K6), K6, FIXED_TEMP_MACHINE
+        )
+        assert recipe.grind_clicks is not None
+        self.assertTrue(is_finer(recipe.grind_clicks, 33.0, K6))
+
+    def test_a_fast_shot_that_tasted_balanced_keeps_its_grind(self) -> None:
+        """The time band is a convention; the cup is the target."""
+        shot = self._on_target_shot(time_s=17.0, taste_axis="balanced")
+        recipe = correct(
+            shot, TARGET, beta_prior("espresso", K6), K6, FIXED_TEMP_MACHINE
+        )
+        self.assertEqual(recipe.grind_clicks, 33.0)
+        self.assertEqual(recipe.target_time_s, 17)
+
+    def test_a_fast_shot_rated_well_with_no_taste_keeps_its_grind(self) -> None:
+        shot = self._on_target_shot(time_s=17.0, rating=4)
+        recipe = correct(
+            shot, TARGET, beta_prior("espresso", K6), K6, FIXED_TEMP_MACHINE
+        )
+        self.assertEqual(recipe.grind_clicks, 33.0)
+
+    def test_a_fast_balanced_but_drying_shot_is_still_corrected(self) -> None:
+        shot = self._on_target_shot(time_s=17.0, taste_axis="balanced", astringent=True)
+        recipe = correct(
+            shot, TARGET, beta_prior("espresso", K6), K6, FIXED_TEMP_MACHINE
+        )
+        assert recipe.grind_clicks is not None
+        self.assertTrue(is_finer(recipe.grind_clicks, 33.0, K6))
+
+    def test_a_fast_sour_shot_is_still_corrected_finer(self) -> None:
+        shot = self._on_target_shot(time_s=17.0, taste_axis="sour")
+        recipe = correct(
+            shot, TARGET, beta_prior("espresso", K6), K6, FIXED_TEMP_MACHINE
+        )
+        assert recipe.grind_clicks is not None
+        self.assertTrue(is_finer(recipe.grind_clicks, 33.0, K6))
 
     def test_sour_on_a_fixed_temp_machine_lengthens_the_ratio(self) -> None:
         shot = self._on_target_shot(taste_axis="sour")
