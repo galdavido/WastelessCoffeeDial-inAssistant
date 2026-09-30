@@ -932,6 +932,18 @@ function renderRecipe(data) {
     flags.appendChild(chip);
   });
 
+  // Only ever the engine's words and numbers; textContent, so nothing in
+  // them is parsed as markup.
+  const suggestion = $('recipe-suggestion');
+  if (suggestion) {
+    const s = data.suggestion;
+    suggestion.hidden = !s;
+    if (s) {
+      const text = s.note.charAt(0).toUpperCase() + s.note.slice(1).replaceAll('; ', '. ');
+      $('recipe-suggestion-text').textContent = text.endsWith('.') ? text : `${text}.`;
+    }
+  }
+
   const prose = data.rationale
     ? [data.rationale.headline, data.rationale.why, data.rationale.what_to_watch]
         .filter(Boolean).join('\n\n')
@@ -1172,7 +1184,9 @@ function fitDrawChart(data, meta, narrow) {
     ? `<span><svg width="22" height="13" aria-hidden="true"><line x1="0" y1="6.5" x2="22" y2="6.5" stroke="var(--bad)" stroke-width="2" stroke-dasharray="5 4"/></svg>channeling floor</span>`
     : '');
 
-  fitSetProbe('Tap a shot to read it. T_r is the shot time normalised to a 1:2 ratio, so shots at different doses compare.');
+  fitSetProbe(law.gamma > 0 && law.dose_ref_g
+    ? `Tap a shot to read it. T_r is the shot time per unit of brew ratio, carried to ${fitN(law.dose_ref_g, 1)} g with the dose term (T_r ∝ dose^${fitN(law.gamma, 2)}), so shots at different doses compare.`
+    : 'Tap a shot to read it. T_r is the shot time per unit of brew ratio, so shots at different ratios compare.');
 
   // The headline, written out of the numbers rather than asserted over them.
   const gap = $('fit-gap');
@@ -1205,7 +1219,11 @@ function fitShotLine(shot, m) {
   const bits = [
     when, m.name || '', `${fitN(shot.clicks, 0)} clicks`,
     shot.time_s != null ? `${fitN(shot.time_s, 0)} s` : null,
-    `T_r ${fitN(shot.tr)}`,
+    // With a dose term the point is drawn at the recipe's dose; the measured
+    // value is what the shot actually ran.
+    shot.tr_measured != null && Math.abs(shot.tr_measured - shot.tr) > 0.005
+      ? `T_r ${fitN(shot.tr)} at the recipe's dose (measured ${fitN(shot.tr_measured)})`
+      : `T_r ${fitN(shot.tr)}`,
     shot.dose_g != null ? `${fitN(shot.dose_g, 1)} g in` : null,
     shot.yield_g != null ? `${fitN(shot.yield_g, 1)} g out` : null,
     shot.brew_temp_c != null ? `${fitN(shot.brew_temp_c, 0)} °C` : null,

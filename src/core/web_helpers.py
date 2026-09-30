@@ -20,7 +20,7 @@ from database.models import (
     as_float,
 )
 
-from .brewing import value_of
+from .brewing import ROAST_FILL, roast_fill, value_of
 from .web_schemas import FeedbackRequest, LogDetailsInput
 
 DEFAULT_DOSE_G = 16.0
@@ -69,16 +69,6 @@ _ROAST_ORDINALS: dict[str, int] = {
     "french": 5,
     "italian": 5,
     "vienna": 5,
-}
-
-# The starting fill for a coffee with no shots of its own, by roast ordinal.
-# See docs/science.md#starting-dose: the numbers live in brewing.CONSTANTS.
-_STARTING_FILL_BY_ROAST: dict[int, str] = {
-    1: "starting_fill_light",
-    2: "starting_fill_light",
-    3: "starting_fill_medium",
-    4: "starting_fill_medium_dark",
-    5: "starting_fill_dark",
 }
 
 
@@ -144,11 +134,10 @@ def starting_dose_for_roast(
     """
     if roast_level_ord is None:
         return None
-    fill = _STARTING_FILL_BY_ROAST.get(roast_level_ord)
-    if fill is None:
+    if roast_level_ord not in ROAST_FILL:
         return None
     basket = basket_size_g or value_of("starting_reference_basket_g")
-    return round(basket * value_of(fill) * 2) / 2
+    return round(basket * roast_fill(roast_level_ord) * 2) / 2
 
 
 def normalize_label(value: str) -> str:

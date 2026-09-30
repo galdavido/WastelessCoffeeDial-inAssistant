@@ -170,16 +170,14 @@ c = (ln T_r_target − α − δ̂_bean) / β
 similar enough. With no fitted `α` at all — a new grinder, or moka — the engine
 falls back to [#cold-start](#cold-start).
 
-**Missing term: dose.** Bed depth `L` is proportional to dose (Cameron 2020),
-and Darcy makes `T_r` scale with `L`, so dose is a first-order effect the law
-does not yet model. On the reference history dose and bean are completely
-confounded (one coffee always at 18 g, the other at 16 g), and grinding is
-independent of origin and process (Uman 2016), so the fitted `δ_bean` gap is
-more likely dose than bean. Until `+ γ·ln(dose)` is added and refitted, read
-`δ_bean` as "this bag, at the dose you use for it". A requested dose is honoured
-(ratio preserved), but the grind is still solved at the anchor's dose and the
-recipe says which way the time will move. Tracked in
-`docs/open-decisions.md` #5.
+**Dose.** For espresso the law also carries a dose term, `+ γ·ln D`, where
+`D` is the bed depth; see [#dose-term](#dose-term). On the reference history
+one coffee was always dosed 18 g and the other almost always 16 g, so dose and
+bean looked confounded — but the darker coffee is dosed lighter *because* a
+dark roast is less dense, and the two fill the basket to about the same depth.
+So dose explains none of the gap between their offsets; the darker coffee runs
+slower at a given setting because of its roast, which is what `δ_bean` is for.
+That is why the term measures **depth**, not grams.
 
 ### 2.5 Extraction yield {#ey-formula}
 
@@ -188,6 +186,71 @@ EY% = (beverage_g × TDS%) / dose_g
 ```
 
 Documented for the day a refractometer appears. **Not computable here.**
+
+### 2.6 The dose term {#dose-term}
+
+For espresso:
+
+```text
+ln T_r = α_setup + δ_bean + β_setup · c + γ · ln D + ln fill(roast)
+D = dose / (18 g × fill(roast))
+```
+
+`D` is the **bed depth** relative to a full reference basket. Darcy's `L` is a
+depth and grams only a proxy for it: a darker roast has expanded more and is
+less dense (Schenker 2000), so the same depth weighs less. `fill(roast)` is the
+starting-dose table ([#starting-dose](#starting-dose)): 1.03 light, 0.97
+medium, 0.94 medium-dark, 0.92 dark, 1 when unknown. A light coffee at 18.5 g
+and a dark one at 16.5 g are the same bed. Within one coffee `D` is simply
+proportional to grams, so the fit of `γ` is unaffected; the roast correction
+matters wherever coffees are compared — bean offsets, the solve for a new
+coffee, the fit chart.
+
+**Why `ln fill(roast)` too.** `T_r = t / R` and `t = beverage / Q`, so
+`T_r = dose / Q`: at a fixed ratio a smaller dose is a smaller drink, which
+takes less time even at the same depth. That factor is kinematics, exponent 1.
+Depth enters through Darcy's `Q`. Within one coffee both scale with grams (total
+`γ = 2`); across roasts only the depth part is density-corrected, and the
+drink-size part leaves `ln fill(roast)`, a per-coffee constant that cancels
+whenever two shots of one coffee are compared.
+
+**Why γ = 2.** Bed depth is proportional to dose (Cameron 2020). At fixed
+pressure Darcy gives `Q ∝ 1/L ∝ 1/dose`; the beverage at a fixed ratio is
+`R · dose`, so `t ∝ R · dose²` and `T_r ∝ dose²`. The prior is `γ = 2`
+(`dose_exponent_prior`, `PHYSICS`): 18 g → 19 g at the same setting and ratio
+should slow the shot ~11%, about 3 s on 28 s. **Caveat:** the bed is
+poroelastic (Waszkiewicz 2026, [#darcy](#darcy)); a deeper bed sees a gentler
+pressure gradient and compacts less, which would make the fitted `γ` come out
+somewhat below 2. That is what shrinkage toward data is for.
+
+**Why only espresso.** The derivation needs a fixed pressure drop. Pour-over
+drawdown is driven by the pour, and moka has no grind law, so `γ = 0` there:
+a requested dose is honoured, but the grind is solved at the last shot's dose
+and the recipe says so.
+
+**How it is fitted.** Like `β`, shrunk toward the data:
+`γ = w·γ_fitted + (1 − w)·γ_prior`, `w = n/(n + κ_dose)`, `n` counting dose
+pairs ([#dose-fit](#dose-fit)). A dose pair is two shots of one coffee,
+prepared the same way (the same rules as `β`'s pairs), doses at least
+`dose_pair_min_diff_g` apart; its grind difference is removed with `β` first,
+`(Δ ln T_r − β·Δc) / Δ ln dose`, and `γ_fitted` is their median. A fit at or
+below zero is discarded — no bed runs faster when deeper. `β`'s pairs take the
+dose effect out in the same way, and the two are fitted in one round (`β` with
+the prior `γ`, `γ` given that `β`, `β` again); they are nearly orthogonal unless
+dose and grind always moved together, when no iteration could separate them.
+
+**Where it acts.** The differential correction carries the anchor to the new
+dose before comparing it with the target,
+`T_r' = T_r · (dose_new / dose_anchor)^γ`, so a heavier dose moves the grind
+coarser by what it should do to the time. The absolute solve subtracts
+`γ·ln D`; `α` is quoted at a full reference basket.
+
+**Measured on the reference history (2026-09-23).** 15 measured shots and no
+dose pair yet, so `γ` is the prior. The two coffees' usual doses sit at nearly
+the same depth (`ln D` −0.03 and −0.06). Leave-one-out prediction of `ln T_r`
+gives a mean absolute error of **0.260 with no dose term and 0.244 with
+γ = 2**; with the term, the darker coffee runs about 1.4× slower than the
+lighter at the same setting and depth — the roast.
 
 ---
 
@@ -334,9 +397,8 @@ Khamitova 2020 reach the same direction from chemistry: finer particles in a
 redesigned basket kept the extracted bioactive compounds up while using less
 ground coffee (abstract only).
 
-**Not yet acted on**: no code proposes a dose reduction. It needs a trigger
-("channeling keeps recurring at this dose"), which needs the dose term of
-[#beta-law](#beta-law). Tracked in `docs/open-decisions.md` #6.
+The engine offers this as a suggestion beside the recipe, never folded into
+it; when, is in [#dose-reduction](#dose-reduction).
 
 ### 3.11 Temperature by roast level {#temp-by-roast}
 
@@ -569,7 +631,45 @@ half a gram. The fills are practitioner midpoints (dark ~16–17 g, light
 ~18–19 g in an 18 g basket), not measurements, hence `HEURISTIC`: the direction
 is supported, the numbers are not. The basket guardrail
 ([#limits](#limits)) still applies, and the user's own dose takes over from the
-first logged shot.
+first logged shot. The same fills convert grams to bed depth in the dose term
+([#dose-term](#dose-term)).
+
+### 5.10 Fitting the dose term {#dose-fit}
+
+Three choices in [#dose-term](#dose-term) are ours, not physics:
+
+- `kappa_dose = 4` dose pairs — the weight `κ_espresso` gives distinct settings
+  for `β`. A handful of pairs should move `γ`, not define it.
+- `dose_pair_min_diff_g = 0.5` g — below this, two doses differ by less than an
+  ordinary scale-and-basket repeat, so the pair measures noise.
+- `dose_reference_g = 18` g — the basket `α` is quoted at, scaled by the roast's
+  fill. A centring choice that changes no prediction.
+
+### 5.11 When to suggest less coffee {#dose-reduction}
+
+The engine offers [#cameron-reproducibility](#cameron-reproducibility)'s move —
+less coffee, coarser, the same drink — as a **suggestion beside the recipe**.
+The shot it describes deliberately runs faster and at a longer ratio than the
+recipe's bands; the point is extraction and repeatability, not the clock, and
+the guardrails would undo it if it went through them. Every number is still the
+engine's. It is offered only when all of these hold:
+
+- **Espresso**, and the **channeling floor has taken the grind lever away**
+  (`grind_channeling_floor`). Before that, grinding is the simpler fix.
+- **This coffee has channeled repeatedly at this dose**: at least
+  `cameron_min_channeled_shots = 2` of its shots within `dose_pair_min_diff_g`
+  of the recipe's dose show a channeling sign by the floor's own triggers. Two,
+  because one bad puck is not a pattern; one dose, because that keeps the
+  comparisons safe without a dose correction.
+- **No markedly lighter dose has been tried** on this coffee yet (half the
+  reduction or more). After that its own shots are the evidence.
+- **The pre-infusion experiment is not running.** One lever at a time.
+
+The suggestion is `cameron_dose_reduction = 20%` less coffee, rounded to half a
+gram and never below the basket's fill floor, with the drink the same size and
+the grind one step coarser than the floor. Cameron 2020 went 25% on commercial
+baskets; home baskets are sized closer to their nominal dose, so this starts at
+the conservative end. One step coarser is a direction, not a solved number.
 
 ---
 
@@ -615,8 +715,8 @@ entry in `docs/open-decisions.md`.
 | Brew temperature has little direct effect at fixed extraction (Schmieder 2023; Batali 2020) | Roast-level temperature split (`temp_*`) as a `LITERATURE` recommendation | Keep as a starting point, but relabel its authority and prefer grind/ratio corrections before ever moving temperature | 11 |
 | Flow saturates with pressure above ~5 bar (Waszkiewicz 2026) | Doc previously said time falls inversely with pressure | Doc corrected; never advise more pressure to shorten a shot | — |
 | Uneven flow exists at all grinds; time is not a channeling signature (Lee 2023; Cameron 2020) | Time-plateau trigger in channeling detection | Replace with a noise-aware test, or demote to a warning | 12 |
-| Dose sets bed depth and so time (Cameron 2020) | No dose term in the grind law | Add `γ·ln(dose)` | 5 |
-| Less coffee, coarser, is more reproducible (Cameron 2020; Khamitova 2020) | Not proposed | Wire in once the dose term exists | 6 |
+| Dose sets bed depth and so time (Cameron 2020) | Built: `γ·ln D` ([#dose-term](#dose-term)) | Resolved | 5 |
+| Less coffee, coarser, is more reproducible (Cameron 2020; Khamitova 2020) | Built: a suggestion ([#dose-reduction](#dose-reduction)) | Resolved | 6 |
 | Moka extract averages ~80 °C; the final phase extracts harsh compounds (Navarini 2009) | `moka_temp` 90–96 °C | Describe as water temperature; advise cutting the heat before sputtering | 13 |
 
 ---

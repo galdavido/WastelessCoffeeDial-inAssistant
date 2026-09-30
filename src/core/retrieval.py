@@ -140,6 +140,7 @@ def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRec
         rating=log.rating,
         days_since_roast=days,
         created_at=log.created_at,
+        roast_level_ord=bean.roast_level_ord if bean is not None else None,
     )
 
 
