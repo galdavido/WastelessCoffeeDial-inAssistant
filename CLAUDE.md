@@ -67,9 +67,11 @@ The two stacks run side by side on one host, so they must not share a port:
   (`WCDA_AUTH_MODE=tailscale`): per-user data keyed on the `Tailscale-User-Login`
   header. The web port is bound to **loopback only** (`127.0.0.1:8081`) and
   fronted on the host by:
-  ```
+
+  ```text
   sudo tailscale serve --bg --https=443 http://127.0.0.1:8081
   ```
+
   Friends reach it at the tailnet HTTPS URL, not on the LAN. `WCDA_PROD_BIND`
   can widen that bind address, but **only** together with
   `WCDA_AUTH_MODE=single` — publishing on `0.0.0.0` while in `tailscale` mode
@@ -160,6 +162,10 @@ The two stacks run side by side on one host, so they must not share a port:
   database, skips when none is reachable, and **fails** instead when `CI` is
   set. New API behaviour gets a test there.
 - `ruff check .` and `ruff format --check .`; `mypy src`.
+- Three `tests/test_web_app.py` wiring tests also reach Postgres (they hit
+  routes that open a session before validating), so in a throwaway container
+  with no `DATABASE_URL` they fail with "connection refused" — expected, not a
+  regression.
 - Dev install: `pip install -e '.[dev]'` (or run the checks in a throwaway
   `python:3.14-slim` container with the repo mounted).
 - CI: `.github/workflows/ci.yml` (quality / test / docker-build). **CI's

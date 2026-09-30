@@ -1,0 +1,8 @@
+{
+  // Read by markdownlint-cli2 and the VS Code markdownlint extension.
+  "config": {
+    // Prose wraps at 80; a table row or a code line cannot.
+    "MD013": { "tables": false, "code_blocks": false }
+  },
+  "ignores": [".venv*/**", "node_modules/**", "backups/**"]
+}

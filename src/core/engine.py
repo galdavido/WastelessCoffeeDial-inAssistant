@@ -13,6 +13,7 @@ given anything to say about it.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -25,6 +26,7 @@ from database.models import Bean, BrewSetup, Equipment, Recommendation, as_float
 
 from .brewing import (
     Basis,
+    DoseReduction,
     GrinderCaps,
     MachineCaps,
     Method,
@@ -36,12 +38,15 @@ from .brewing import (
     clicks_for_target,
     cold_start_clicks,
     correct,
+    dose_reduction,
+    dose_term,
     finest_useful_clicks,
     normalised_time,
     preinfusion_experiment,
     prep_advice,
     prep_incomparable_reason,
     resistance_disagreement,
+    shot_noise,
     snap_to_step,
     target_for,
     temp_band_for_roast,
@@ -80,6 +85,12 @@ class EngineResult:
     bean_history: tuple[ShotRecord, ...] = ()
     target: Target | None = None
     caps: GrinderCaps | None = None
+    # Cameron's use-less-coffee move, when channeling keeps coming back. Kept
+    # beside the recipe, never in it -- see brewing.DoseReduction.
+    suggestion: DoseReduction | None = None
+    # The coffee in the basket's roast, so a view can put the recipe's dose
+    # on the same bed-depth scale as the shots.
+    roast_level_ord: int | None = None
 
 
 def grinder_caps(grinder: Equipment | None) -> GrinderCaps:
@@ -182,6 +193,9 @@ def recommend(
             days_since_roast=days,
             roast_level_ord=roast_ord,
             dose_g=dose_g,
+            gamma=calibration.gamma,
+            noise_ln=shot_noise(bean_history)[0],
+            replicates=bean_history,
         )
         basis = "calibrated" if calibration.is_fitted else "history"
     else:
@@ -202,7 +216,15 @@ def recommend(
             fetch_bean_features(db, owner, calibration.bean_offsets),
         )
         grind = (
-            clicks_for_target(calibration.alpha, calibration.beta, tr_aim, delta)
+            clicks_for_target(
+                calibration.alpha,
+                calibration.beta,
+                tr_aim,
+                delta,
+                gamma=calibration.gamma,
+                dose_g=dose_g,
+                roast_level_ord=roast_ord,
+            )
             if tr_aim is not None
             else None
         )
@@ -269,7 +291,13 @@ def recommend(
     # no reason to obey. A coffee with no shots of its own falls back to the
     # setup, which is the conservative direction: more triggers, not fewer.
     recipe = apply_guardrails(
-        recipe, caps, machine_spec, bean_history or history, target
+        recipe,
+        caps,
+        machine_spec,
+        bean_history or history,
+        target,
+        calibration.beta,
+        calibration.gamma,
     )
 
     # Pre-infusion: a second resistance reading, and advice once there is
@@ -312,6 +340,20 @@ def recommend(
         notes=recipe.notes + tuple(prep_notes),
     )
 
+    # One lever at a time: while the pre-infusion experiment is running, its
+    # shots are the ones to learn from, so the dose suggestion waits.
+    suggestion = (
+        dose_reduction(
+            bean_history, recipe, caps, machine_spec, target, calibration.beta
+        )
+        if experiment is None
+        else None
+    )
+    if suggestion is not None:
+        # In the notes too, so the explanation can speak to it and its numbers
+        # count as the engine's own.
+        recipe = replace(recipe, notes=recipe.notes + (suggestion.note,))
+
     context_lines = [
         f"Tier {tier} ({len(history)} measured shots on this setup, "
         f"{len(bean_history)} of them on this coffee)."
@@ -335,6 +377,8 @@ def recommend(
         bean_history=tuple(bean_history),
         target=target,
         caps=caps,
+        suggestion=suggestion,
+        roast_level_ord=roast_ord,
     )
 
 
@@ -403,6 +447,18 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
         "confidence_label": confidence_label(result.calibration),
         "tier": result.tier,
         "protocol": result.protocol,
+        "suggestion": (
+            {
+                "kind": "use_less_coffee",
+                "dose_g": result.suggestion.dose_g,
+                "yield_g": result.suggestion.yield_g,
+                "grind_clicks": result.suggestion.grind_clicks,
+                "channeled_shots": result.suggestion.channeled_shots,
+                "note": result.suggestion.note,
+            }
+            if result.suggestion is not None
+            else None
+        ),
     }
 
 
@@ -459,7 +515,7 @@ def serialize_fit(
     target = result.target
     caps = result.caps or GrinderCaps()
 
-    candidates = theil_sen_pairs(history)
+    candidates = theil_sen_pairs(history, calibration.pair_gamma)
     terms = [pair for pair in candidates if pair.used]
     used = {index for term in terms for index in (term.a_index, term.b_index)}
 
@@ -474,17 +530,40 @@ def serialize_fit(
 
     # Same arguments apply_guardrails used, so the floor drawn is the floor
     # that actually clamped the recipe.
-    floor = finest_useful_clicks(result.bean_history or result.history, caps, target)
+    floor = finest_useful_clicks(
+        result.bean_history or result.history,
+        caps,
+        target,
+        calibration.beta,
+        calibration.gamma,
+    )
+
+    # The chart draws one line per coffee in (clicks, T_r). With a dose term
+    # the law is a surface, so both the lines and the points are taken at the
+    # recipe's dose: each shot's time is carried there with gamma, and the
+    # measured value rides along for the tooltip.
+    ref_dose = result.recipe.dose_g
+    gamma = calibration.gamma
+    ln_ref = dose_term(ref_dose, result.roast_level_ord, gamma)
+
+    def at_ref_dose(tr: float | None, shot: ShotRecord) -> float | None:
+        if not tr or not gamma or not shot.dose_g or shot.dose_g <= 0:
+            return tr
+        return tr * math.exp(
+            ln_ref - dose_term(shot.dose_g, shot.roast_level_ord, gamma)
+        )
 
     shots = []
     for index, shot in enumerate(history):
-        tr = normalised_time(shot)
+        measured = normalised_time(shot)
+        tr = at_ref_dose(measured, shot)
         shots.append(
             {
                 "index": index,
                 "bean_id": shot.bean_id,
                 "clicks": shot.grind_clicks,
                 "tr": round(tr, 3) if tr else None,
+                "tr_measured": round(measured, 3) if measured else None,
                 "time_s": shot.time_s,
                 "dose_g": shot.dose_g,
                 "yield_g": shot.yield_g,
@@ -504,7 +583,19 @@ def serialize_fit(
 
     return {
         "law": {
-            "alpha": calibration.alpha,
+            # The intercept at the recipe's dose, so the chart's lines and
+            # points share one dose. alpha_reference_dose is the fitted term
+            # itself, quoted at dose_reference_g.
+            "alpha": (calibration.alpha + ln_ref)
+            if calibration.alpha is not None
+            else None,
+            "alpha_reference_dose": calibration.alpha,
+            "gamma": gamma,
+            "gamma_prior": calibration.gamma_prior,
+            "gamma_fitted": calibration.gamma_fitted,
+            "gamma_weight": calibration.gamma_weight,
+            "n_dose_pairs": calibration.n_dose_pairs,
+            "dose_ref_g": ref_dose if gamma else None,
             "beta_used": calibration.beta,
             "beta_fitted": calibration.beta_fitted,
             "beta_prior": calibration.beta_prior_value,
@@ -558,7 +649,14 @@ def serialize_fit(
             "time_hi": target.time_hi if target else None,
             "ratio_aim": target.ratio_aim if target else None,
         },
-        "floor": {"clicks": floor.clicks, "reason": floor.reason},
+        # The floor that stops the grinder, and -- when only one channeling
+        # sign has been seen -- the softer line the engine merely warns at.
+        "floor": {"clicks": floor.hard_clicks, "reason": floor.hard_reason},
+        "warning": (
+            {"clicks": floor.clicks, "reason": floor.reason}
+            if floor.clicks is not None and floor.clicks != floor.hard_clicks
+            else {"clicks": None, "reason": None}
+        ),
         "grinder": {
             "min_clicks": caps.min_clicks,
             "max_clicks": caps.max_clicks,

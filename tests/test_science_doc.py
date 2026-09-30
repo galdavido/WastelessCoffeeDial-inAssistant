@@ -81,15 +81,17 @@ class TestScienceDoc(unittest.TestCase):
             "ey-formula",
             "sca-bands",
             "cameron",
-            # Literature the engine does not act on yet: the dose-reduction
-            # move is documented, but no code proposes it.
+            # Literature whose numbers live elsewhere: the dose-reduction move
+            # is sized under #dose-reduction, the taste rules are code, not
+            # constants.
             "cameron-reproducibility",
             "taste-mapping",
-            # Recorded decisions, not yet a constant: each explains a policy
-            # conclusion and the shape a future threshold would take, without
-            # fixing a number the engine uses today.
+            # A recorded decision, not a constant: it explains a policy
+            # conclusion without fixing a number the engine uses.
             "target-reachability",
-            "deadband",
+            # Where peer-reviewed findings disagree with the engine; each row
+            # points at an entry in docs/open-decisions.md.
+            "open-conflicts",
         }
         cited = {c.anchor.lstrip("#") for c in CONSTANTS.values()}
         orphans = _doc_anchors() - cited - narrative

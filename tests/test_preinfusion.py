@@ -14,6 +14,7 @@ import unittest
 from core.brewing import (
     GrinderCaps,
     ShotRecord,
+    beta_prior,
     finest_useful_clicks,
     normalised_time,
     preinfusion_experiment,
@@ -262,7 +263,7 @@ class TestFalseChannelingSignature(unittest.TestCase):
             _shot(34, 30.0, preinfusion_s=8.0, pause_s=5.0),
             _shot(30, 22.0, preinfusion_s=8.0, pause_s=5.0),
         ]
-        limit = finest_useful_clicks(history, K6, TARGET)
+        limit = finest_useful_clicks(history, K6, TARGET, beta_prior("espresso", K6))
         self.assertIsNotNone(limit.clicks)
 
     def test_consistent_preinfusion_relaxes_the_floor(self) -> None:
@@ -275,8 +276,9 @@ class TestFalseChannelingSignature(unittest.TestCase):
             _shot(34, 30.0),
             _shot(30, 22.0),
         ]
-        with_relief = finest_useful_clicks(consistent, K6, TARGET)
-        without = finest_useful_clicks(no_preinfusion, K6, TARGET)
+        beta = beta_prior("espresso", K6)
+        with_relief = finest_useful_clicks(consistent, K6, TARGET, beta)
+        without = finest_useful_clicks(no_preinfusion, K6, TARGET, beta)
         assert with_relief.clicks is not None and without.clicks is not None
         # Lower clicks are finer on this grinder.
         self.assertLess(with_relief.clicks, without.clicks)
@@ -316,7 +318,7 @@ class TestResistanceCorroboration(unittest.TestCase):
         note = resistance_disagreement(odd, [odd, *peers])
         self.assertIsNotNone(note)
         assert note is not None
-        self.assertIn("tamp", note)
+        self.assertIn("puck prep", note)
 
     def test_both_readings_moving_together_is_not_flagged(self) -> None:
         """A genuinely finer puck is slower to pressurise and slower to pull."""
