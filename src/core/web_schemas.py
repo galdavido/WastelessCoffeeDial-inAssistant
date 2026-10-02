@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Names typed by a person: a coffee, a roaster, a grinder, a setup. The cap is
 # far above anything real and only stops a runaway paste reaching the table.
@@ -120,4 +121,15 @@ class BeanRecordInput(BaseModel):
     origin: Name
     process: Name
     roast_level: Name
+    # Typed by hand, so it is how a misread from the bag scan gets corrected.
+    # Left out entirely (an older cached client), the stored date is kept.
+    roast_date: date | None = None
     log: LogDetailsInput | None = None
+
+    @field_validator("roast_date")
+    @classmethod
+    def _not_in_the_future(cls, value: date | None) -> date | None:
+        # A day of slack: the phone may already be on tomorrow's date.
+        if value is not None and value > date.today() + timedelta(days=1):
+            raise ValueError("Roast date cannot be in the future")
+        return value

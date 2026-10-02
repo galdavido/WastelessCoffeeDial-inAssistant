@@ -96,7 +96,10 @@ def parse_roast_date(value: Any) -> date | None:
     """Parse the roast date vision extracts, tolerating the usual formats.
 
     Returns None rather than guessing: days-since-roast widens the acceptance
-    bands, so a wrong date silently changes the advice.
+    bands, so a wrong date silently changes the advice. That includes a date
+    that parses but cannot be right for a bag being brewed now -- in the
+    future, or more than a year old -- which is what a misread digit in the
+    year (2023 for 2026) produces.
     """
     if value is None:
         return None
@@ -107,10 +110,23 @@ def parse_roast_date(value: Any) -> date | None:
         return None
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%Y.%m.%d", "%m/%d/%Y"):
         try:
-            return datetime.strptime(text, fmt).date()
+            parsed = datetime.strptime(text, fmt).date()
         except ValueError:
             continue
+        return parsed if plausible_roast_date(parsed) else None
     return None
+
+
+# Older than this, a scanned roast date is far more likely a misread year than
+# a bag still being dialled in.
+MAX_ROAST_AGE_DAYS = 365
+
+
+def plausible_roast_date(value: date, today: date | None = None) -> bool:
+    """Whether a roast date read off a bag could belong to a coffee in use."""
+    # A day of slack for a roaster in a timezone ahead of the server.
+    age = ((today or date.today()) - value).days
+    return -1 <= age <= MAX_ROAST_AGE_DAYS
 
 
 def roast_level_ordinal(label: str | None) -> int | None:

@@ -49,6 +49,9 @@ def _apply_bean_fields(bean: Bean, body: BeanRecordInput) -> None:
     # The ordinal is what the engine reads (temperature band, coffee
     # similarity), so it must follow the label on every write.
     bean.roast_level_ord = roast_level_ordinal(bean.roast_level)
+    # Only when sent: a client that predates the field must not wipe it.
+    if "roast_date" in body.model_fields_set:
+        bean.roast_date = body.roast_date
 
 
 @router.get("/api/logs")

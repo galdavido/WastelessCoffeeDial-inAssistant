@@ -511,6 +511,12 @@ function relativeDay(iso) {
   return `brewed ${then.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
 }
 
+/* YYYY-MM-DD in the phone's own timezone, which is what a date input wants. */
+function localIsoDate(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function daysSinceRoast(iso) {
   if (!iso) return null;
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -599,6 +605,9 @@ function openRecordEditor(entry = null) {
   $('form-origin').value = entry?.origin || '';
   $('form-process').value = entry?.process || '';
   $('form-roast-level').value = entry?.roast_level || '';
+  // The scan can misread the date; this is where it gets put right.
+  $('form-roast-date').value = entry?.roast_date || '';
+  $('form-roast-date').max = localIsoDate(new Date());
   $('form-grind-setting').value = entry?.latest_log?.grind_setting || '';
   $('form-dose').value = entry?.latest_log?.dose_g ?? '';
   $('form-yield').value = entry?.latest_log?.yield_g ?? '';
@@ -621,6 +630,7 @@ async function saveRecordFromForm() {
     origin: $('form-origin').value.trim(),
     process: $('form-process').value.trim(),
     roast_level: $('form-roast-level').value.trim(),
+    roast_date: $('form-roast-date').value || null,
     log: {
       grind_setting: $('form-grind-setting').value.trim() || null,
       dose_g: parseNullableNumber($('form-dose').value),

@@ -385,6 +385,38 @@ class TestLibrary(FlowTestCase):
         self.ok(self.api.delete(f"/api/logs/{bean_id}"))
         self.assertEqual(self.ok(self.api.get("/api/logs"))["entries"], [])
 
+    def test_the_roast_date_can_be_corrected_by_hand(self) -> None:
+        """A scan that misread the year is fixed from the edit form."""
+        self.make_setup()
+        record = {
+            "roaster": "Hand",
+            "name": "Nicaragua",
+            "origin": "Nicaragua",
+            "process": "Washed",
+            "roast_level": "Medium",
+            "roast_date": "2026-09-20",
+            "log": {"grind_setting": "22"},
+        }
+        bean_id = self.ok(self.api.post("/api/logs/manual", json=record))["bean_id"]
+        self.assertEqual(self.only_coffee()["roast_date"], "2026-09-20")
+
+        record["roast_date"] = "2026-09-25"
+        self.ok(self.api.put(f"/api/logs/{bean_id}", json=record))
+        self.assertEqual(self.only_coffee()["roast_date"], "2026-09-25")
+
+        # A client that does not send the field leaves the date alone.
+        del record["roast_date"]
+        self.ok(self.api.put(f"/api/logs/{bean_id}", json=record))
+        self.assertEqual(self.only_coffee()["roast_date"], "2026-09-25")
+
+        record["roast_date"] = None
+        self.ok(self.api.put(f"/api/logs/{bean_id}", json=record))
+        self.assertIsNone(self.only_coffee()["roast_date"])
+
+        record["roast_date"] = "2999-01-01"
+        response = self.api.put(f"/api/logs/{bean_id}", json=record)
+        self.assertEqual(response.status_code, 422)
+
     def test_a_coffee_with_recommendations_can_still_be_deleted(self) -> None:
         """Regression: the recommendations FK once made coffees undeletable."""
         self.make_setup()
