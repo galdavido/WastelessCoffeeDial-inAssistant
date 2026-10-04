@@ -70,8 +70,11 @@
   --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
 
   /* The nav floats clear of the bottom edge, so panels must clear the pill
-     plus both of its margins, not just its height. */
-  --nav-h:      calc(88px + env(safe-area-inset-bottom, 0px));
+     plus both of its margins, not just its height. The bottom gap dips into
+     the home-indicator inset instead of stacking on top of it, which left the
+     pill ~46px up on an iPhone. */
+  --nav-gap:    max(8px, calc(env(safe-area-inset-bottom, 0px) - 16px));
+  --nav-h:      calc(76px + var(--nav-gap));
   --header-h:   calc(56px + env(safe-area-inset-top, 0px));
   --radius:     20px;
   --radius-sm:  14px;
@@ -510,7 +513,8 @@ body.modal-open .tab-panel { overflow: hidden; }
 /* ── Inputs ──────────────────────────────────────────────────────────────── */
 .input {
   flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border);
-  border-radius: 8px; padding: 9px 12px; font-size: 14px; color: var(--text-1);
+  /* 16px, not less: iOS zooms the page into any focused field below it. */
+  border-radius: 8px; padding: 9px 12px; font-size: 16px; color: var(--text-1);
   outline: none; -webkit-appearance: none; appearance: none;
   transition: border-color .2s;
 }
@@ -584,7 +588,7 @@ select.input { background-image: none; }
 .bottom-nav {
   position: fixed;
   left: 12px; right: 12px;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--nav-gap);
   z-index: 50;
   height: 64px;
   border-radius: 22px;
@@ -636,6 +640,10 @@ select.input { background-image: none; }
   visibility: hidden;
   pointer-events: none;
   transition: opacity .22s ease, visibility 0s linear .22s;
+  /* iOS keeps painting a hidden full-screen backdrop blur, smearing the
+     header underneath it. Blur only while a dialog is actually open. */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 #setup-manager-dialog,

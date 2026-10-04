@@ -1632,13 +1632,40 @@ function openShotWizard() {
   showWizStep(1);
   $('shot-wizard').classList.remove('hidden');
   document.body.classList.add('modal-open');
+  acquireWakeLock();
 }
 
 function closeShotWizard() {
   stopTicker();
   $('shot-wizard')?.classList.add('hidden');
   syncModalScrollLock();
+  releaseWakeLock();
 }
+
+/* Keep the screen on while the shot wizard is open: the phone dims around
+   25 s, mid-shot, and a tap to wake it lands on the timer. Wake Lock needs a
+   secure context, so it is a no-op over plain HTTP. The OS drops the lock
+   whenever the page is hidden, so it is re-taken on return. */
+let wakeLock = null;
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator) || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch {
+    wakeLock = null; // Denied (e.g. low battery): the screen just dims as before.
+  }
+}
+function releaseWakeLock() {
+  wakeLock?.release().catch(() => {});
+  wakeLock = null;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible'
+      && !$('shot-wizard')?.classList.contains('hidden')) {
+    acquireWakeLock();
+  }
+});
 
 on('timer-surface', 'click', () => advanceTimer());
 on('btn-timer-skip', 'click', (e) => { e.stopPropagation(); skipToPull(); });
