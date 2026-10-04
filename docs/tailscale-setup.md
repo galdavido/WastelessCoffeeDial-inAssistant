@@ -29,6 +29,19 @@ sudo tailscale serve --bg --https=443 http://127.0.0.1:8081
 tailscale serve status     # confirm the mapping
 ```
 
+The **dev** instance gets its own HTTPS port on the same host. It needs a
+secure context too: the shot timer's Screen Wake Lock, which keeps the phone
+from dimming mid-shot, is unavailable over plain `http://<LAN-IP>:8082`.
+Friends cannot reach it, because the policy in step 4 grants shared users
+`tcp:443` only.
+
+```sh
+tailscale serve --bg --https=8443 http://127.0.0.1:8082
+```
+
+`sudo tailscale set --operator=galdavido` was run once (2026-10-04), so Serve
+changes no longer need root.
+
 Read back the tailnet name and your own login — the login is what owns your
 existing data (see step 5):
 

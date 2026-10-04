@@ -58,7 +58,9 @@ The two stacks run side by side on one host, so they must not share a port:
 
 - **Dev:** `docker compose up --build` (compose.yaml, project `wcda`).
   Single-user (`WCDA_AUTH_MODE=single`). Web published on all interfaces at
-  port `8082` → reachable on the LAN at `http://192.168.50.202:8082`, Postgres
+  port `8082` → reachable on the LAN at `http://192.168.50.202:8082`, and over
+  tailnet HTTPS at `https://docker-server.tail844e55.ts.net:8443` (Serve; the
+  secure context the shot timer's wake lock needs), Postgres
   on `127.0.0.1:5434`. Despite the name this is **not** a scratch instance —
   it is the one used day to day, and its DB holds the real bean/shot history.
   Treat its data like production data; it has its own nightly `db-backup`.
