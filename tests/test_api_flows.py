@@ -215,6 +215,49 @@ class TestScanAndPull(FlowTestCase):
         self.assertEqual(shot["band"], "in")
         self.assertEqual(shot["grind_clicks"], 20.0)
 
+    def test_editing_the_coffee_keeps_its_latest_shot_measured(self) -> None:
+        # The edit form carries no taste field. Grading the shot from the form
+        # alone demoted a balanced shot to 'partial' -- out of calibration --
+        # the moment the coffee's roast date was corrected.
+        self.make_setup()
+        scan = self.scan()
+        self.log_shot(scan["coffee_data"])
+        entry = self.only_coffee()
+        bean = {
+            "roaster": entry["roaster"] or "Roaster",
+            "name": entry["bean_name"],
+            "origin": entry["origin"] or "Ethiopia",
+            "process": entry["process"] or "Washed",
+            "roast_level": entry["roast_level"] or "Light",
+            "roast_date": "2026-09-02",
+        }
+        form = {"grind_setting": "20", "dose_g": 18.0, "yield_g": 36.0, "time_s": 28}
+
+        def latest() -> dict[str, Any]:
+            url = f"/api/beans/{entry['bean_id']}/shots"
+            shot: dict[str, Any] = self.ok(self.api.get(url))["shots"][0]
+            return shot
+
+        self.ok(
+            self.api.put(f"/api/logs/{entry['bean_id']}", json={**bean, "log": form})
+        )
+        shot = latest()
+        self.assertEqual(shot["data_quality"], "measured")
+        self.assertEqual(shot["taste_axis"], "balanced")
+
+        # No shot details at all: the shot is left exactly as it was.
+        self.ok(self.api.put(f"/api/logs/{entry['bean_id']}", json=bean))
+        shot = latest()
+        self.assertEqual(shot["data_quality"], "measured")
+        self.assertEqual(shot["time_s"], 28)
+
+        # Clearing a measurement still demotes it.
+        no_time = {**form, "time_s": None}
+        self.ok(
+            self.api.put(f"/api/logs/{entry['bean_id']}", json={**bean, "log": no_time})
+        )
+        self.assertEqual(latest()["data_quality"], "partial")
+
     def test_a_fast_shot_that_tasted_right_is_not_reported_as_a_miss(self) -> None:
         # The engine keeps a balanced shot wherever the clock landed, so the
         # history must say so beside the band rather than only "ran fast".

@@ -22,6 +22,7 @@ from ..engine import grinder_caps
 from ..retrieval import get_active_setup_method, to_shot_record
 from ..web_helpers import (
     as_non_empty_text,
+    classify_data_quality,
     latest_photo_log,
     new_shot,
     resolve_log_values,
@@ -278,11 +279,24 @@ def update_coffee(
         latest = max(bean.logs, key=lambda log: log.created_at, default=None)
         if latest is None:
             db.add(new_shot(owner, bean.id, setup, **values))
-        else:
-            # An edit that adds the missing measurements promotes the row out
-            # of 'partial'; one that removes them demotes it again.
+        elif body.log is not None:
+            # A client that sends no shot details leaves the shot alone, as
+            # with roast_date: an edit to the coffee alone must not wipe it.
             for field, value in values.items():
                 setattr(latest, field, value)
+            # Graded on the merged row, not the form: the form carries neither
+            # taste nor water, and grading without them demoted a balanced
+            # shot to 'partial' -- out of calibration -- on any coffee edit.
+            # Adding the missing measurements still promotes it; removing
+            # them still demotes it.
+            latest.data_quality = classify_data_quality(
+                grind_clicks=as_float(latest.grind_clicks),
+                time_s=latest.time_s,
+                yield_g=latest.yield_g,
+                water_g=as_float(latest.water_g),
+                rating=latest.rating,
+                taste_axis=latest.taste_axis,
+            )
         db.commit()
     except Exception as exc:
         db.rollback()
