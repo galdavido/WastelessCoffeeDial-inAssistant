@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 from database.models import Bean, BrewSetup, DialInLog, Recommendation, as_float
 
 from ..auth import get_owner
-from ..brewing import is_finer, normalised_time, target_for
+from ..brewing import is_finer, normalised_time, target_for, tasted_right
 from ..db_session import get_db
 from ..engine import grinder_caps
 from ..retrieval import get_active_setup_method, to_shot_record
@@ -161,7 +161,8 @@ def get_bean_shots(
     shots: list[dict[str, Any]] = []
     for index, log in enumerate(logs):
         method = log.brew_method or active_method
-        tr = normalised_time(to_shot_record(log, bean, method))  # type: ignore[arg-type]
+        record = to_shot_record(log, bean, method)  # type: ignore[arg-type]
+        tr = normalised_time(record)
 
         band: str | None = None
         shot_target = target_for(method)  # type: ignore[arg-type]
@@ -212,6 +213,10 @@ def get_bean_shots(
                 "data_quality": log.data_quality,
                 "tr": round(tr, 2) if tr is not None else None,
                 "band": band,
+                # The band is a taste convention, not the target: a shot outside
+                # it that tasted right is one the engine keeps (brewing.correct).
+                # Reported beside the band so the page agrees with the engine.
+                "tasted_right": tasted_right(record),
                 "delta_clicks": delta,
                 "direction": direction,
                 "same_setup_as_prev": same_setup,

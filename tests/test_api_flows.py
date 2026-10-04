@@ -215,6 +215,21 @@ class TestScanAndPull(FlowTestCase):
         self.assertEqual(shot["band"], "in")
         self.assertEqual(shot["grind_clicks"], 20.0)
 
+    def test_a_fast_shot_that_tasted_right_is_not_reported_as_a_miss(self) -> None:
+        # The engine keeps a balanced shot wherever the clock landed, so the
+        # history must say so beside the band rather than only "ran fast".
+        self.make_setup()
+        scan = self.scan()
+        self.log_shot(scan["coffee_data"], time_s=16.0, taste_axis="balanced")
+        self.log_shot(scan["coffee_data"], time_s=16.0, taste_axis="sour")
+        bean_id = self.only_coffee()["bean_id"]
+
+        sour, balanced = self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["shots"]
+        self.assertEqual(balanced["band"], "fast")
+        self.assertTrue(balanced["tasted_right"])
+        self.assertEqual(sour["band"], "fast")
+        self.assertFalse(sour["tasted_right"])
+
     def test_returning_to_a_coffee_works_from_its_own_shots(self) -> None:
         self.make_setup()
         scan = self.scan()

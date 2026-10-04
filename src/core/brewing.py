@@ -1074,7 +1074,7 @@ class Recipe:
         return tokens
 
 
-def _liked(shot: ShotRecord) -> bool:
+def tasted_right(shot: ShotRecord) -> bool:
     """Whether the user said this shot tasted right.
 
     Balanced on the taste axis, or rated 4+ with no taste given, and never
@@ -1210,7 +1210,7 @@ def correct(
             grind is not None
             and not (tr_lo <= tr <= tr_hi)
             and not dose_changed
-            and _liked(last)
+            and tasted_right(last)
         ):
             # The time band is a taste convention, not a physical optimum: a
             # fast shot that tastes balanced is a valid operating point, and

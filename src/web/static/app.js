@@ -286,7 +286,13 @@ function historyNote(shots) {
   }
   const [latest, previous] = measured;
   if (latest.band === 'in') return 'Your last shot landed in the target band.';
-  if (latest.band && latest.band === previous.band) {
+  // The engine keeps a shot that tasted right wherever the clock landed, so
+  // the note must not nag about a time it has already decided to repeat.
+  if (latest.tasted_right) {
+    return 'Your last shot tasted right — the cup is the target, not the '
+      + 'clock, so the setting stays.';
+  }
+  if (latest.band && latest.band === previous.band && !previous.tasted_right) {
     // `direction` comes from the server, which knows which way this grinder's
     // dial runs; a bigger number is not coarser on every grinder.
     const movedRight = (latest.band === 'long' && latest.direction === 'coarser')
@@ -312,7 +318,9 @@ function renderHistory(shots) {
     const measured = shot.data_quality === 'measured';
     const row = document.createElement('div');
     row.className = 'history-row' + (measured ? '' : ' is-unmeasured');
-    if (shot.band) row.dataset.band = shot.band;
+    // Outside the band but tasted right reads as a good shot, not a miss.
+    const liked = shot.band && shot.band !== 'in' && shot.tasted_right;
+    if (shot.band) row.dataset.band = liked ? 'liked' : shot.band;
 
     const when = new Date(shot.created_at).toLocaleDateString([], {
       month: 'short', day: 'numeric',
@@ -324,7 +332,9 @@ function renderHistory(shots) {
     // you learn why it did not move the recommendation.
     const verdict = measured
       ? (shot.band
-        ? `<span class="chip chip-band">${escapeHtml(BAND_LABELS[shot.band])}</span>`
+        ? `<span class="chip chip-band">${escapeHtml(liked
+          ? `${BAND_LABELS[shot.band]}, tasted right`
+          : BAND_LABELS[shot.band])}</span>`
         : '')
       : '<span class="chip chip-guard">Not measured</span>';
 
