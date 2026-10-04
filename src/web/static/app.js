@@ -102,6 +102,18 @@ function clearCoffee() {
   currentImageName = null;
 }
 
+/* ── Keyboard dismissal (iOS 26) ───────────────────────────────────────── */
+/* iOS 26 leaves the viewport shifted after the keyboard closes
+   (visualViewport.offsetTop never returns to 0), so the fixed nav floats up
+   and a bare strip opens below it. Nothing in the app scrolls the window, so
+   putting it back at 0 once no field holds focus is always safe. */
+function resetViewportAfterKeyboard() {
+  if (document.activeElement?.matches('input, textarea, select')) return;
+  window.scrollTo(0, 0);
+}
+document.addEventListener('focusout', () => setTimeout(resetViewportAfterKeyboard, 60));
+window.visualViewport?.addEventListener('resize', resetViewportAfterKeyboard);
+
 /* ── Dialogs ────────────────────────────────────────────────────────────── */
 function syncModalScrollLock() {
   const anyOpen = document.querySelector('.dialog-overlay:not(.hidden)') !== null;

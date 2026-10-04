@@ -11,7 +11,9 @@
   <!-- iOS PWA -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- Opaque, not black-translucent: on iOS 26 a translucent status bar
+       blurs the page content beneath and just below it, smearing the header. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="apple-mobile-web-app-title" content="Barista AI" />
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg" />
@@ -19,7 +21,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=46" />
+  <link rel="stylesheet" href="/static/style.css?v=47" />
 </head>
 <body>
   <div id="app">
@@ -689,6 +691,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=46"></script>
+  <script src="/static/app.js?v=47"></script>
 </body>
 </html>
