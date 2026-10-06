@@ -125,7 +125,9 @@ up are in README's "Run it".
   orphans its data** — naming the projects in 2026-08 did exactly that. The
   orphaned database was deliberately discarded on 2026-09-08, so do not go
   looking for it: the live data is `wcda_postgres_data` (dev, history from
-  2026-09-06) and `wcda-prod_postgres_data` (prod).
+  2026-09-06) and `wcda-prod_postgres_data` (prod). The old
+  `wastelesscoffeedial-inassistant_log_images` volume is still dangling (known,
+  not live data).
 - **Never run `docker volume prune` or `docker system prune --volumes`**
   here: the two stacks' live volumes are only ever attached while their
   containers exist, and a stopped stack's data would go with it. Check

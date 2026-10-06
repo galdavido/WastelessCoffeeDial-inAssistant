@@ -17,13 +17,38 @@ import uuid
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import make_url
 
 _ready: bool | None = None
+
+# Hosts and ports that belong to the live stacks (dev owns 5434; ``db`` is a
+# live stack's service name inside the compose network).
+_LIVE_HOSTS = {"wcda-dev-db", "wcda-prod-db-1", "db"}
+_LIVE_PORTS = {5434}
+
+
+def refuse_live_database(url: str | None) -> None:
+    """Raise if ``url`` names a live database, unless explicitly overridden.
+
+    The tests create rows (some visible to every user) and run migrations, so
+    pointing them at the dev or prod database pollutes real data. A skip would
+    hide the mistake, so this fails loudly.
+    """
+    if not url or os.getenv("WCDA_TESTS_ALLOW_LIVE_DB") == "1":
+        return
+    parsed = make_url(url)
+    if parsed.host in _LIVE_HOSTS or parsed.port in _LIVE_PORTS:
+        raise RuntimeError(
+            f"refusing to run tests against {parsed.host}:{parsed.port}: it looks "
+            "like a live database. Point DATABASE_URL at a disposable Postgres, "
+            "or set WCDA_TESTS_ALLOW_LIVE_DB=1 to override."
+        )
 
 
 def require_database() -> None:
     """Skip (locally) or fail (in CI) unless the schema is at head."""
     global _ready
+    refuse_live_database(os.getenv("DATABASE_URL"))
     if _ready is None:
         try:
             from core.db_bootstrap import run_migrations
