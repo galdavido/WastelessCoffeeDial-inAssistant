@@ -34,6 +34,7 @@ from core.brewing import (
 from core.calibration import bean_offsets, fit_setup, theil_sen_comparable
 from core.retrieval import BeanFeatures, borrow_bean_offset, shots_for_bean
 
+# Unlike tests/_fixtures.K6, this dial runs 0-180 clicks.
 K6 = GrinderCaps(
     min_clicks=0.0,
     max_clicks=180.0,
@@ -41,6 +42,7 @@ K6 = GrinderCaps(
     um_per_click=16.0,
     finer_direction="lower_is_finer",
 )
+# Unlike tests/_fixtures.MACHINE_18G, no basket size is known.
 FIXED_TEMP_MACHINE = MachineCaps(basket_size_g=None, temp_controllable=False)
 TARGET = target_for("espresso")
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import unittest
 
+from _fixtures import K6
 from _sim import BedParams, simulate_shot
 from core.brewing import (
     GrinderCaps,
@@ -21,14 +22,6 @@ from core.brewing import (
     snap_to_step,
     solve_grind,
     target_for,
-)
-
-K6 = GrinderCaps(
-    min_clicks=0.0,
-    max_clicks=90.0,
-    step_clicks=1.0,
-    um_per_click=16.0,
-    finer_direction="lower_is_finer",
 )
 
 

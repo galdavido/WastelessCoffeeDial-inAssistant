@@ -26,6 +26,7 @@ from core.brewing import (
 )
 from core.calibration import theil_sen_comparable
 
+# Unlike tests/_fixtures.K6, this dial runs 0-180 clicks.
 K6 = GrinderCaps(
     min_clicks=0.0,
     max_clicks=180.0,

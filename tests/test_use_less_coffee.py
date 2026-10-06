@@ -5,8 +5,9 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
+from _fixtures import K6
+from _fixtures import MACHINE_18G as MACHINE
 from core.brewing import (
-    GrinderCaps,
     MachineCaps,
     Recipe,
     ShotRecord,
@@ -17,14 +18,6 @@ from core.brewing import (
     target_for,
 )
 
-K6 = GrinderCaps(
-    min_clicks=0.0,
-    max_clicks=90.0,
-    step_clicks=1.0,
-    um_per_click=16.0,
-    finer_direction="lower_is_finer",
-)
-MACHINE = MachineCaps(basket_size_g=18.0)
 TARGET = target_for("espresso")
 BETA = beta_prior("espresso", K6)
 
