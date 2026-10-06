@@ -102,7 +102,8 @@ src/
     engine.py  one recommendation: retrieve, calibrate, correct, guard, explain
     brewing.py, calibration.py, retrieval.py   the deterministic engine
     eval_harness.py, backtest_cli.py           measuring the engine
-    auth.py, web_helpers.py, web_schemas.py, db_bootstrap.py, web_server.py
+    parsing.py, beans.py, setups.py, shots.py  helpers behind the routes
+    auth.py, web_schemas.py, db_bootstrap.py, web_server.py
     admin_*.py the dev-only usage dashboard
   database/    models and engine
   web/static/  index.html, app.js, style.css, sw.js, admin.*

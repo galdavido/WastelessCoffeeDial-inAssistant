@@ -15,7 +15,7 @@ from database.models import BrewSetup
 
 from ..auth import get_owner
 from ..db_session import get_db
-from ..web_helpers import get_active_setup
+from ..setups import get_active_setup
 
 logger = logging.getLogger("wcda.routes")
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from core.web_helpers import latest_photo_log
+from core.beans import latest_photo_log
 
 
 class _FakeLog:

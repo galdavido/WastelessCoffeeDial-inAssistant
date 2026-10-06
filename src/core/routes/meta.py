@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -9,8 +11,26 @@ from fastapi.responses import FileResponse
 
 from ..auth import auth_mode, get_owner
 from ..engine import ENGINE_VERSION
-from ..web_helpers import read_asset_version
 from .common import STATIC_DIR
+
+_CACHE_VERSION_RE = re.compile(r"const CACHE\s*=\s*'wcda-v(\d+)'")
+
+
+def read_asset_version(static_dir: str) -> int | None:
+    """The shipped bundle version, parsed from sw.js.
+
+    sw.js's CACHE constant is the one hand-authored version number in the
+    project; everything else derives from it. Returns None rather than a guess
+    when it cannot be read, so the client shows no update prompt instead of a
+    false one.
+    """
+    try:
+        text = (Path(static_dir) / "sw.js").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = _CACHE_VERSION_RE.search(text)
+    return int(match.group(1)) if match else None
+
 
 router = APIRouter()
 

@@ -171,7 +171,7 @@ class TestWebAppWiring(unittest.TestCase):
     def test_fractional_shot_time_is_rounded_to_whole_seconds(self) -> None:
         # dial_in_logs.time_s is an Integer column, so the tenths are rounded
         # off at the boundary rather than reaching the database.
-        from core.web_helpers import resolve_log_values
+        from core.shots import resolve_log_values
         from core.web_schemas import LogDetailsInput
 
         class _Db:
