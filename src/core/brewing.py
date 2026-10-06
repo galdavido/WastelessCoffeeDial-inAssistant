@@ -379,7 +379,6 @@ class Target:
     time_hi: float | None
     temp_lo: float
     temp_hi: float
-    source_anchor: str
 
     @property
     def tr_lo(self) -> float | None:
@@ -400,7 +399,6 @@ TARGETS: dict[str, Target] = {
         value_of("espresso_time_hi"),
         value_of("espresso_temp_lo"),
         value_of("espresso_temp_hi"),
-        "#ratio-espresso",
     ),
     "ristretto": Target(
         value_of("ristretto_ratio_lo"),
@@ -410,7 +408,6 @@ TARGETS: dict[str, Target] = {
         value_of("ristretto_time_hi"),
         value_of("espresso_temp_lo"),
         value_of("espresso_temp_hi"),
-        "#ratio-ristretto",
     ),
     "lungo": Target(
         value_of("lungo_ratio_lo"),
@@ -420,7 +417,6 @@ TARGETS: dict[str, Target] = {
         value_of("lungo_time_hi"),
         value_of("espresso_temp_lo"),
         value_of("espresso_temp_hi"),
-        "#ratio-lungo",
     ),
     "pourover": Target(
         value_of("pourover_ratio_lo"),
@@ -430,7 +426,6 @@ TARGETS: dict[str, Target] = {
         value_of("pourover_time_hi"),
         value_of("pourover_temp_lo"),
         value_of("pourover_temp_hi"),
-        "#ratio-pourover",
     ),
     # Moka has no target time: brew time is set by stove heat input, not by
     # bed permeability, so claiming one would be dishonest.
@@ -442,7 +437,6 @@ TARGETS: dict[str, Target] = {
         None,
         value_of("moka_temp_lo"),
         value_of("moka_temp_hi"),
-        "#ratio-moka",
     ),
 }
 
