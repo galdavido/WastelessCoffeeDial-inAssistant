@@ -1,0 +1,123 @@
+"""Regression tests for the log data-integrity rules.
+
+Older builds fabricated measurements the user never took: yield_g = dose*2,
+time_s = 28, rating = 5, plus the LLM's own recommendation prose written into
+tasting_notes. Those rows were then retrieved as "past successful shots" and
+fed back into the next prompt, so the system trained on its own output.
+
+These tests pin the rules that stop that happening again. They are DB-free.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from core.shots import classify_data_quality
+from core.web_schemas import LogDetailsInput
+
+
+class _FakeDB:
+    """Stands in for a Session: resolve_log_values only reads the dose setting.
+
+    It ignores the owner scoping too -- every query returns nothing, so the
+    helper falls through to its defaults whichever owner is asked for.
+    """
+
+    def query(self, *_args: object, **_kwargs: object) -> _FakeDB:
+        return self
+
+    def filter(self, *_args: object, **_kwargs: object) -> _FakeDB:
+        return self
+
+    def first(self) -> None:
+        return None
+
+
+class TestClassifyDataQuality(unittest.TestCase):
+    def test_complete_shot_is_measured(self) -> None:
+        self.assertEqual(
+            classify_data_quality(
+                grind_clicks=33.0,
+                time_s=27,
+                yield_g=32.0,
+                water_g=None,
+                rating=4,
+                taste_axis=None,
+            ),
+            "measured",
+        )
+
+    def test_taste_axis_alone_satisfies_the_outcome_requirement(self) -> None:
+        self.assertEqual(
+            classify_data_quality(
+                grind_clicks=33.0,
+                time_s=27,
+                yield_g=None,
+                water_g=250.0,
+                rating=None,
+                taste_axis="sour",
+            ),
+            "measured",
+        )
+
+    def test_missing_measurements_downgrade_to_partial(self) -> None:
+        # Each of these alone is enough to keep a row out of calibration.
+        for kwargs in (
+            {"grind_clicks": None},
+            {"time_s": None},
+            {"yield_g": None, "water_g": None},
+            {"rating": None, "taste_axis": None},
+        ):
+            base = {
+                "grind_clicks": 33.0,
+                "time_s": 27,
+                "yield_g": 32.0,
+                "water_g": None,
+                "rating": 4,
+                "taste_axis": None,
+            }
+            base.update(kwargs)
+            self.assertEqual(classify_data_quality(**base), "partial", kwargs)
+
+
+class TestResolveLogValuesDoesNotFabricate(unittest.TestCase):
+    def test_absent_measurements_stay_none(self) -> None:
+        from core.shots import resolve_log_values
+
+        values = resolve_log_values(LogDetailsInput(), _FakeDB(), "owner")
+
+        # The exact fabrications this project used to write.
+        self.assertIsNone(values["yield_g"], "yield_g must not default to dose*2")
+        self.assertIsNone(values["time_s"], "time_s must not default to 28")
+        self.assertIsNone(values["rating"], "rating must not default to 5")
+        self.assertEqual(values["data_quality"], "partial")
+
+    def test_dose_still_falls_back_to_the_stored_preference(self) -> None:
+        # The dose default is a real user preference, not a guessed outcome.
+        from core.shots import resolve_log_values
+
+        values = resolve_log_values(LogDetailsInput(), _FakeDB(), "owner")
+        self.assertEqual(values["dose_g"], 16.0)
+
+    def test_supplied_measurements_are_kept_and_marked_measured(self) -> None:
+        from core.shots import resolve_log_values
+
+        values = resolve_log_values(
+            LogDetailsInput(
+                grind_setting="33",
+                dose_g=18.0,
+                yield_g=36.0,
+                time_s=29,
+                rating=4,
+            ),
+            _FakeDB(),
+            "owner",
+        )
+        self.assertEqual(values["yield_g"], 36.0)
+        self.assertEqual(values["time_s"], 29)
+        self.assertEqual(values["grind_clicks"], 33.0)
+        self.assertEqual(values["data_quality"], "measured")
+
+
+if __name__ == "__main__":
+    unittest.main()

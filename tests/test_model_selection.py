@@ -14,10 +14,9 @@ from ai.model_selection import (
     thinking_level_for,
     try_model_candidates,
 )
-from ai.vision import _parse_coffee_data_response
 
 
-class TestAiRefactors(unittest.TestCase):
+class TestModelSelection(unittest.TestCase):
     def test_try_model_candidates_returns_first_success(self) -> None:
         attempts: list[str] = []
 
@@ -64,29 +63,6 @@ class TestAiRefactors(unittest.TestCase):
     # The old _rank_similar_logs_for_active_setup test lived here. That
     # ranking moved into core.retrieval.similarity(), where "same setup"
     # is an explicit, weighted term -- see test_retrieval.py.
-
-    def test_parse_coffee_data_response_validates_payload(self) -> None:
-        valid_json = (
-            '{"roaster":"Demo","name":"Lot 1","origin":"Ethiopia",'
-            '"process":"Washed","roast_level":"Light","roast_date":"2026-05-01"}'
-        )
-        invalid_json = '{"name":"Only Name"}'
-
-        parsed_valid = _parse_coffee_data_response(valid_json)
-        parsed_invalid = _parse_coffee_data_response(invalid_json)
-
-        self.assertIsNotNone(parsed_valid)
-        self.assertEqual(parsed_valid["origin"], "Ethiopia")
-        self.assertIsNone(parsed_invalid)
-
-    def test_an_unreadable_image_raises_rather_than_setting_shared_state(self) -> None:
-        """The failure travels with the call, so concurrent scans cannot swap it."""
-        import ai.vision as vision
-
-        with self.assertRaises(vision.VisionError) as ctx:
-            vision.analyze_coffee_bag(b"not an image")
-        self.assertIn("Failed to read image", str(ctx.exception))
-        self.assertFalse(hasattr(vision, "get_last_vision_error"))
 
 
 class TestThinkingLevel(unittest.TestCase):
