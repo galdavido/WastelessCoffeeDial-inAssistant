@@ -23,14 +23,12 @@ from ..engine import (
     serialize_result,
 )
 from ..web_helpers import (
-    as_non_empty_text,
     bean_coffee_data,
-    find_existing_bean,
     get_default_dose_g,
-    parse_roast_date,
-    roast_level_ordinal,
+    match_bean,
     save_shot,
     starting_dose_for_roast,
+    transient_bean,
 )
 from ..web_schemas import FeedbackRequest, RecommendationRequest
 from .common import active_setup, server_error, uploads_dir
@@ -45,37 +43,6 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 # HEIC to JPEG for a web upload anyway.
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
-
-
-def _bean_for(db: Session, owner: str, coffee_data: dict[str, Any]) -> Bean:
-    """The stored bean if we have brewed it, otherwise a transient stand-in.
-
-    An unsaved Bean still carries roast level, process and origin, which is
-    what similarity scoring needs -- so a coffee scanned for the first time
-    still gets sensible retrieval rather than none.
-    """
-    name = as_non_empty_text(coffee_data.get("name"))
-    roaster = as_non_empty_text(coffee_data.get("roaster"))
-    origin = as_non_empty_text(coffee_data.get("origin"))
-    process = as_non_empty_text(coffee_data.get("process"))
-    roast_level = as_non_empty_text(coffee_data.get("roast_level"))
-
-    existing = find_existing_bean(
-        db, owner, name=name, roaster=roaster, origin=origin, process=process
-    )
-    if existing is not None:
-        return existing
-
-    return Bean(
-        owner=owner,
-        roaster=roaster,
-        name=name,
-        origin=origin,
-        process=process,
-        roast_level=roast_level,
-        roast_date=parse_roast_date(coffee_data.get("roast_date")),
-        roast_level_ord=roast_level_ordinal(roast_level),
-    )
 
 
 def _basket_g(setup: BrewSetup | None) -> float | None:
@@ -107,7 +74,7 @@ def _recommend(
     coffee's id whenever it is already in the library.
     """
     if bean is None:
-        bean = _bean_for(db, owner, coffee_data)
+        bean = match_bean(db, owner, coffee_data) or transient_bean(owner, coffee_data)
 
     roast_dose = starting_dose_for_roast(bean.roast_level_ord, _basket_g(setup))
     result = recommend(

@@ -20,6 +20,7 @@ from core.web_helpers import (
     parse_roast_date,
     plausible_roast_date,
     roast_level_ordinal,
+    transient_bean,
 )
 from core.web_schemas import LogDetailsInput
 
@@ -53,6 +54,18 @@ class TestParseGrindClicks(unittest.TestCase):
         self.assertIsNone(parse_grind_clicks("Unknown"))
         self.assertIsNone(parse_grind_clicks(""))
         self.assertIsNone(parse_grind_clicks(None))
+
+
+class TestTransientBean(unittest.TestCase):
+    def test_transient_bean_carries_roast_fields(self) -> None:
+        bean = transient_bean(
+            "me",
+            {"name": "X", "roast_level": "Medium-dark", "roast_date": "2026-09-01"},
+        )
+        self.assertEqual(bean.roast_level_ord, roast_level_ordinal("Medium-dark"))
+        self.assertEqual(bean.roast_date, date(2026, 9, 1))
+        self.assertEqual(bean.owner, "me")
+        self.assertEqual(bean.origin, "Unknown")
 
 
 class TestRoastLevelOrdinal(unittest.TestCase):

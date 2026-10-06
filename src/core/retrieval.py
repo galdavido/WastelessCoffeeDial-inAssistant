@@ -183,7 +183,7 @@ def shots_for_bean(
     from the wrong bag.
 
     An empty list is the right answer for a coffee scanned for the first time:
-    `routes.recipe._bean_for` hands the engine a transient Bean with no id, and
+    `routes.recipe._recommend` hands the engine a transient Bean with no id, and
     the caller falls through to solving the grind law instead.
     """
     if bean_id is None:

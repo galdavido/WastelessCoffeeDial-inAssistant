@@ -473,6 +473,40 @@ def new_shot(owner: str, bean_id: int, setup: BrewSetup, **fields: Any) -> DialI
     )
 
 
+def match_bean(db: Any, owner: str, coffee_data: dict[str, Any]) -> Bean | None:
+    """The owner's stored bean for these scanned/typed fields, if any."""
+    return find_existing_bean(
+        db,
+        owner,
+        name=as_non_empty_text(coffee_data.get("name")),
+        roaster=as_non_empty_text(coffee_data.get("roaster")),
+        origin=as_non_empty_text(coffee_data.get("origin")),
+        process=as_non_empty_text(coffee_data.get("process")),
+    )
+
+
+def transient_bean(owner: str, coffee_data: dict[str, Any]) -> Bean:
+    """An unsaved Bean built from the coffee fields.
+
+    It still carries roast level, process and origin, which is what similarity
+    scoring needs -- so a coffee scanned for the first time gets sensible
+    retrieval rather than none.
+    """
+    roast_level = as_non_empty_text(coffee_data.get("roast_level"))
+    return Bean(
+        owner=owner,
+        roaster=as_non_empty_text(coffee_data.get("roaster")),
+        name=as_non_empty_text(coffee_data.get("name")),
+        origin=as_non_empty_text(coffee_data.get("origin")),
+        process=as_non_empty_text(coffee_data.get("process")),
+        roast_level=roast_level,
+        roast_date=parse_roast_date(coffee_data.get("roast_date")),
+        # It drives the roast-level temperature band and the roast term in
+        # similarity, so a bean stored without it is invisible to both.
+        roast_level_ord=roast_level_ordinal(roast_level),
+    )
+
+
 def _bean_for_shot(db: Any, owner: str, coffee_data: dict[str, Any]) -> Bean:
     """The coffee a shot belongs to, created on its first shot.
 
@@ -489,29 +523,11 @@ def _bean_for_shot(db: Any, owner: str, coffee_data: dict[str, Any]) -> Bean:
         if bean is not None and bean.owner == owner:
             return bean
 
-    name = as_non_empty_text(coffee_data.get("name"))
-    roaster = as_non_empty_text(coffee_data.get("roaster"))
-    origin = as_non_empty_text(coffee_data.get("origin"))
-    process = as_non_empty_text(coffee_data.get("process"))
-    existing = find_existing_bean(
-        db, owner, name=name, roaster=roaster, origin=origin, process=process
-    )
+    existing = match_bean(db, owner, coffee_data)
     if existing is not None:
         return existing
 
-    roast_level = as_non_empty_text(coffee_data.get("roast_level"))
-    bean = Bean(
-        owner=owner,
-        roaster=roaster,
-        name=name,
-        origin=origin,
-        process=process,
-        roast_level=roast_level,
-        roast_date=parse_roast_date(coffee_data.get("roast_date")),
-        # It drives the roast-level temperature band and the roast term in
-        # similarity, so a bean stored without it is invisible to both.
-        roast_level_ord=roast_level_ordinal(roast_level),
-    )
+    bean = transient_bean(owner, coffee_data)
     db.add(bean)
     db.flush()
     return bean
