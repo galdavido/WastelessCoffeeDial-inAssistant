@@ -7,13 +7,19 @@ working when the LLM is unavailable or misbehaving.
 
 from __future__ import annotations
 
+import json
+import os
 import unittest
+from collections.abc import Callable
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 from ai.rationale import (
     Rationale,
     _allowed_tokens,
     render_template,
     scrub_numerals,
+    write_rationale,
 )
 from core.brewing import Recipe
 
@@ -87,6 +93,128 @@ class TestTemplate(unittest.TestCase):
         rationale = render_template(recipe, "First shot")
         self.assertNotIn("grind ", rationale.headline)
         self.assertIn("tastes", rationale.what_to_watch)
+
+
+LABEL = "Low - based on general guidance"
+
+
+def reply(headline: str, why: str, watch: str) -> Any:
+    """A stand-in for a Gemini response carrying structured JSON."""
+    return MagicMock(
+        text=json.dumps({"headline": headline, "why": why, "what_to_watch": watch})
+    )
+
+
+class TestWriteRationale(unittest.TestCase):
+    """The orchestration around the model: the template is the safety net.
+
+    ``write_rationale`` returns ``(rationale, model)``; a model of ``None``
+    means the deterministic template was used. The Gemini client is replaced
+    wholesale, so nothing here touches the network.
+    """
+
+    TEMPLATE = render_template(RECIPE, LABEL)
+
+    def setUp(self) -> None:
+        env = patch.dict(
+            os.environ,
+            {"WCDA_GEMINI_MODELS": "model-a,model-b", "WCDA_LLM_BUDGET_S": "5"},
+        )
+        env.start()
+        self.addCleanup(env.stop)
+        self.calls: list[str] = []
+
+    def run_with(self, behaviour: Callable[[str], Any]) -> tuple[Rationale, str | None]:
+        def generate_content(model: str, **_: Any) -> Any:
+            self.calls.append(model)
+            return behaviour(model)
+
+        client = MagicMock()
+        client.models.generate_content.side_effect = generate_content
+        with patch("ai.rationale.genai.Client", return_value=client):
+            return write_rationale(RECIPE, LABEL)
+
+    def assert_is_template(self, result: tuple[Rationale, str | None]) -> None:
+        rationale, model = result
+        self.assertIsNone(model)
+        self.assertEqual(rationale, self.TEMPLATE)
+
+    def test_a_clean_answer_is_used_and_names_its_model(self) -> None:
+        good = reply(
+            "Grind at 33, pull 18 g into 36 g.", "A touch slower.", "Watch it."
+        )
+
+        rationale, model = self.run_with(lambda _: good)
+
+        self.assertEqual(model, "model-a")
+        self.assertEqual(rationale.headline, "Grind at 33, pull 18 g into 36 g.")
+        self.assertEqual(self.calls, ["model-a"])
+
+    def test_an_invented_number_falls_through_to_the_next_model(self) -> None:
+        bad = reply("Try 27 clicks instead.", "Finer.", "Watch.")
+        good = reply("Stay at 33.", "Steady.", "Watch.")
+
+        rationale, model = self.run_with(lambda m: bad if m == "model-a" else good)
+
+        self.assertEqual(model, "model-b")
+        self.assertEqual(rationale.headline, "Stay at 33.")
+
+    def test_when_every_model_invents_a_number_the_template_is_returned(self) -> None:
+        bad = reply("Brew at 94 C.", "Hotter.", "Watch.")
+
+        result = self.run_with(lambda _: bad)
+
+        self.assert_is_template(result)
+        self.assertEqual(self.calls, ["model-a", "model-b"])
+
+    def test_the_template_contains_no_numeral_outside_the_allow_list(self) -> None:
+        result = self.run_with(lambda _: reply("Brew at 94 C.", "x", "y"))
+
+        self.assert_is_template(result)
+        rationale = result[0]
+        allowed = _allowed_tokens(RECIPE, LABEL, "", str(RECIPE))
+        for field in (rationale.headline, rationale.why, rationale.what_to_watch):
+            self.assertIsNotNone(scrub_numerals(field, allowed), field)
+
+    def test_an_empty_response_is_rejected(self) -> None:
+        self.assert_is_template(self.run_with(lambda _: MagicMock(text="")))
+
+    def test_a_response_that_is_not_the_schema_is_rejected(self) -> None:
+        self.assert_is_template(self.run_with(lambda _: MagicMock(text="{not json")))
+
+    def test_a_retired_model_is_skipped_for_the_next_one(self) -> None:
+        good = reply("Stay at 33.", "Steady.", "Watch.")
+
+        def behaviour(model: str) -> Any:
+            if model == "model-a":
+                raise RuntimeError("404 NOT_FOUND: model is no longer available")
+            return good
+
+        _, model = self.run_with(behaviour)
+
+        self.assertEqual(model, "model-b")
+
+    def test_a_bad_api_key_stops_the_chain_and_returns_the_template(self) -> None:
+        def behaviour(model: str) -> Any:
+            raise RuntimeError("403 PERMISSION_DENIED: API key not valid")
+
+        self.assert_is_template(self.run_with(behaviour))
+        self.assertEqual(self.calls, ["model-a"])
+
+    def test_no_client_at_all_still_gives_a_complete_answer(self) -> None:
+        with patch("ai.rationale.genai.Client", side_effect=ValueError("no key")):
+            result = write_rationale(RECIPE, LABEL)
+
+        self.assert_is_template(result)
+
+    def test_a_failure_inside_the_chain_is_not_raised(self) -> None:
+        with (
+            patch("ai.rationale.genai.Client", return_value=MagicMock()),
+            patch("ai.rationale.try_model_candidates", side_effect=RuntimeError("x")),
+        ):
+            result = write_rationale(RECIPE, LABEL)
+
+        self.assert_is_template(result)
 
 
 class TestRationaleSchema(unittest.TestCase):
