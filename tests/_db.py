@@ -93,3 +93,84 @@ class DatabaseTestCase(unittest.TestCase):
         """The JSON body of a 200, or a failure that shows what came back."""
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+
+class Seeded:
+    """Rows written straight to the database for one fresh owner.
+
+    A unique owner per instance keeps tests isolated without any teardown, the
+    same trick ``ApiClient`` uses.
+    """
+
+    def __init__(self, owner: str | None = None) -> None:
+        from database.database import SessionLocal
+        from database.models import Bean, BrewSetup, Equipment
+
+        self.owner = owner or f"seed-{uuid.uuid4().hex[:10]}@example.com"
+        with SessionLocal() as db:
+            grinder = Equipment(owner=self.owner, type="grinder", brand="T", model="G")
+            machine = Equipment(owner=self.owner, type="machine", brand="T", model="M")
+            bean = Bean(
+                owner=self.owner,
+                roaster="R",
+                name="B",
+                origin="O",
+                process="washed",
+                roast_level="medium",
+            )
+            db.add_all([grinder, machine, bean])
+            db.flush()
+            setup = BrewSetup(
+                owner=self.owner,
+                name="Seeded",
+                grinder_id=grinder.id,
+                machine_id=machine.id,
+                method="espresso",
+            )
+            db.add(setup)
+            db.commit()
+            self.grinder_id, self.machine_id = grinder.id, machine.id
+            self.bean_id, self.setup_id = bean.id, setup.id
+
+    def add_shot(self, **fields: Any) -> int:
+        """Add one shot; ``fields`` override the measured-espresso defaults."""
+        from database.database import SessionLocal
+        from database.models import DialInLog
+
+        values: dict[str, Any] = {
+            "owner": self.owner,
+            "bean_id": self.bean_id,
+            "grinder_id": self.grinder_id,
+            "machine_id": self.machine_id,
+            "setup_id": self.setup_id,
+            "grind_setting": "20",
+            "grind_clicks": 20,
+            "dose_g": 18.0,
+            "yield_g": 36.0,
+            "time_s": 28,
+            "brew_method": "espresso",
+            "data_quality": "measured",
+        }
+        values.update(fields)
+        with SessionLocal() as db:
+            row = DialInLog(**values)
+            db.add(row)
+            db.commit()
+            return int(row.id)
+
+    def add_recommendation(self, **fields: Any) -> int:
+        from database.database import SessionLocal
+        from database.models import Recommendation
+
+        values: dict[str, Any] = {
+            "owner": self.owner,
+            "bean_id": self.bean_id,
+            "setup_id": self.setup_id,
+            "engine_version": "test",
+        }
+        values.update(fields)
+        with SessionLocal() as db:
+            row = Recommendation(**values)
+            db.add(row)
+            db.commit()
+            return int(row.id)
