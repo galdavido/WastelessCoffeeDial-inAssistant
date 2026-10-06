@@ -14,6 +14,18 @@ numeric allow-list rejects any figure it tries to add.
 FastAPI + SQLAlchemy + PostgreSQL, with a vanilla-JS PWA front end (no build
 step).
 
+## How a request flows
+
+1. `POST /api/analyze` reads the bag photo: `ai/vision.analyze_coffee_bag`.
+2. `POST /api/recommendation` calls `core/engine.recommend`, which pulls your
+   past shots on this setup (`retrieval.fetch_calibration_shots`)...
+3. ...fits the grinder's response to them (`calibration.fit_setup`)...
+4. ...corrects from this coffee's latest shot (`brewing.correct`) or, for a
+   new coffee, solves the fit for the target (`brewing.clicks_for_target`),
+   then clamps every field to the gear (`brewing.apply_guardrails`)...
+5. ...and has Gemini explain it (`ai/rationale.write_rationale`), with a
+   deterministic template (`render_template`) when it is slow or unavailable.
+
 ## Two instances
 
 | | Dev (daily driver) | Prod (friends) |
@@ -37,6 +49,7 @@ cp .env.example .env    # then set POSTGRES_PASSWORD and GEMINI_API_KEY
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | The compose database's credentials | `barista` / — / `barista_db` |
 | `DATABASE_URL` | SQLAlchemy/Alembic connection string (compose sets it) | — |
 | `GEMINI_API_KEY` | Google Gemini key. Without it scans fail and explanations fall back to a template | — |
 | `WCDA_AUTH_MODE` | `single` or `tailscale` (see above) | `single` |
@@ -73,10 +86,20 @@ the engine against your logged shots; it is read-only.
 ## Database
 
 PostgreSQL 16, schema managed by Alembic in `migrations/`. The app runs
-`alembic upgrade head` on startup. Migrations are hand-written — do not
-autogenerate them. Nightly dumps land in `backups/` (git-ignored); despite the
-`.sql.gz` name they are plain SQL, so restore with a straight redirect into
-`psql`.
+`alembic upgrade head` on startup, retrying while the database comes up.
+Migrations are hand-written — do not autogenerate them.
+
+Each stack's `db-backup` service writes a nightly dump: prod to `backups/db/`,
+dev to `backups/dev-db/` (`backups/` is git-ignored). Despite the `.sql.gz`
+name they are plain SQL, so restore with a straight redirect into `psql`, not
+through `gunzip`:
+
+```bash
+docker compose -f compose.prod.yaml exec -T db \
+  psql -U barista -d barista_db < backups/db/last/<file>.sql.gz         # prod
+docker compose exec -T db \
+  psql -U barista -d barista_db < backups/dev-db/last/<file>.sql.gz     # dev
+```
 
 ## Tests and checks
 
@@ -86,11 +109,15 @@ ruff check . && ruff format --check .
 mypy src
 ```
 
+pytest is configured in `pyproject.toml` (`pythonpath = ["src"]`). With no
+local venv, run the same commands in a throwaway `python:3.14-slim` container
+with the repo mounted, after `pip install -e '.[dev]'`.
+
 Most tests are pure and need nothing. `tests/test_api_flows.py` drives the
 HTTP API against a real Postgres (Gemini stubbed): it skips locally when no
-database is reachable, and fails in CI instead. CI runs all of it on pushes to
-`main` and on pull requests: lint, format, mypy, migrations, tests and a
-Docker build.
+database is reachable, and fails in CI instead. CI
+(`.github/workflows/ci.yml`) runs all of it on pushes to `main` and on pull
+requests: lint, format, mypy, migrations, tests and a Docker build.
 
 ## Project layout
 
@@ -108,9 +135,10 @@ src/
   database/    models and engine
   web/static/  index.html, app.js, style.css, sw.js, admin.*
 migrations/    Alembic
-tests/         pytest; _sim.py is the physics simulator the engine tests use
-docs/          science.md (every constant's source), tailscale-setup.md,
-               open-decisions.md (what is waiting on the owner)
+tests/         pytest; _sim.py is the physics simulator the engine tests use,
+               _fixtures.py the shared K6 grinder and 18 g machine, _db.py
+               the real-Postgres support
+docs/          science.md (every constant's source), tailscale-setup.md
 ```
 
 ## Security model
@@ -128,5 +156,7 @@ docs/          science.md (every constant's source), tailscale-setup.md,
   before anything is sent to Gemini.
 - **Browser.** A strict CSP (`default-src 'self'`) with no inline scripts or
   styles, and fonts self-hosted.
+- **Containers.** Prod's database has no published port, and its web
+  container runs `read_only` with `cap_drop: ALL`.
 - **Secrets** live in `.env`, never in the image. Server errors are logged in
   full and returned to the client as generic messages.

@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-Guidance for working in this repo.
+Rules and traps for working in this repo. How to configure, run, test and
+lay it out is in [`README.md`](README.md); this file does not repeat those
+commands.
 
 ## What this is
 
@@ -25,60 +27,52 @@ none of them hold "where are we in this job."
   `Next steps`, promote anything under `System notes discovered` into this
   file or auto-memory, and trim `Done this thread` back to ~10 lines.
 - Keep every section short — it is working memory, not a changelog.
-- **Commit discipline:** fold the state update into the task's own commit;
-  if a task produces no code commit, a standalone `docs: session state`
-  commit is fine.
+- **It is gitignored and local-only:** update it, but never commit it.
 
 ## Layout
 
-- `src/core/routes/` — the HTTP API, one `APIRouter` per area: `meta` (shell,
-  health, version, whoami), `recipe` (scan, recommendation, feedback, photos),
+The tree is in README's "Project layout"; what it does not say:
+
+- `src/core/routes/` — one `APIRouter` per area: `meta` (shell, health,
+  version, whoami), `recipe` (scan, recommendation, feedback, photos),
   `coffees` (library + shot history), `gear` (equipment, setups, settings).
   `common.py` holds `STATIC_DIR`, `uploads_dir()` and the request-scoped
   `active_setup` dependency.
 - `src/core/` — `web_server.py` (entry), `web_schemas.py`, the route helpers
-  (`parsing.py`, `beans.py`, `setups.py`, `shots.py`), `auth.py`, DB bootstrap/session, and the engine: `engine.py` orchestrates
-  `retrieval.py` → `calibration.py` → `brewing.py` (pure, no DB) → rationale.
+  (`parsing.py`, `beans.py`, `setups.py`, `shots.py`), `auth.py`, DB
+  bootstrap/session, and the engine: `engine.py` orchestrates `retrieval.py`
+  → `calibration.py` → `brewing.py` (pure, no DB) → rationale.
   `eval_harness.py` + `backtest_cli.py` measure it. `admin_*.py` is the
   dev-only dashboard.
 - `src/ai/` — the two Gemini calls: `vision.py` (bag OCR), `rationale.py`
   (prose around numbers the engine already fixed); `model_selection.py` holds
-  the model fallback chain and the shared `json_config()`.
+  the model fallback chain, the time budgets and the shared `json_config()`.
 - `src/database/` — SQLAlchemy 2.0 models + engine (the one place `.env` is
   loaded).
 - `src/web/static/` — the PWA: `index.html`, `app.js`, `style.css`, `sw.js`.
-- `migrations/` — Alembic. `tests/` — pytest; `_sim.py` (physics simulator,
-  a test fixture) and `_db.py` (real-Postgres test support) live there.
+- `migrations/` — Alembic. `tests/` — pytest; the support files beside the
+  tests are `_sim.py` (physics simulator, a test fixture), `_fixtures.py` (the
+  shared K6 grinder and 18 g basket machine) and `_db.py` (real-Postgres test
+  support, including the `Seeded` helper).
 - Package layout: code lives under `src/` (`pyproject.toml` `package-dir`).
 
-## Running it
+## The two instances
 
-The two stacks run side by side on one host, so they must not share a port:
-**dev owns `8082`, prod owns `8081`.**
+The dev and prod stacks run side by side on one host, so they must not share a
+port: **dev owns `8082`, prod owns `8081`.** The commands that bring each one
+up are in README's "Run it".
 
-- **Dev:** `docker compose up --build` (compose.yaml, project `wcda`).
-  Single-user (`WCDA_AUTH_MODE=single`). Web published on all interfaces at
-  port `8082` → reachable on the LAN at `http://192.168.50.202:8082`, and over
-  tailnet HTTPS at `https://docker-server.tail844e55.ts.net:8443` (Serve; the
-  secure context the shot timer's wake lock needs), Postgres
-  on `127.0.0.1:5434`. Despite the name this is **not** a scratch instance —
-  it is the one used day to day, and its DB holds the real bean/shot history.
-  Treat its data like production data; it has its own nightly `db-backup`.
-- **Prod (friends):** `docker compose -f compose.prod.yaml --env-file .env up
-  -d --build` (compose.prod.yaml, project `wcda-prod`). Multi-user
-  (`WCDA_AUTH_MODE=tailscale`): per-user data keyed on the `Tailscale-User-Login`
-  header. The web port is bound to **loopback only** (`127.0.0.1:8081`) and
-  fronted on the host by:
-
-  ```text
-  sudo tailscale serve --bg --https=443 http://127.0.0.1:8081
-  ```
-
-  Friends reach it at the tailnet HTTPS URL, not on the LAN. `WCDA_PROD_BIND`
-  can widen that bind address, but **only** together with
-  `WCDA_AUTH_MODE=single` — publishing on `0.0.0.0` while in `tailscale` mode
-  lets anyone on the LAN forge the identity header. DB is internal-only; the
-  web container is `read_only` with `cap_drop: ALL`.
+- **Dev is not a scratch instance.** It is the one used day to day, and its DB
+  holds the real bean/shot history: treat its data like production data. It is
+  on the LAN at `http://192.168.50.202:8082` and over tailnet HTTPS at
+  `https://docker-server.tail844e55.ts.net:8443` (Serve; the secure context the
+  shot timer's wake lock needs).
+- **Prod binds to loopback only** (`127.0.0.1:8081`), fronted by
+  `tailscale serve` on 443 (command in `docs/tailscale-setup.md`). Friends
+  reach it at the tailnet HTTPS URL, not on the LAN. `WCDA_PROD_BIND` can
+  widen that bind address, but **only** together with `WCDA_AUTH_MODE=single`
+  — publishing on `0.0.0.0` while in `tailscale` mode lets anyone on the LAN
+  forge the identity header.
 - Identity headers are populated for tailnet users, **including external users
   who accepted a node share** — that is what lets friends in — but never for
   *tagged* devices, which is the usual cause of an unexpected 401.
@@ -86,16 +80,15 @@ The two stacks run side by side on one host, so they must not share a port:
 - Host-side Tailscale setup (Serve, the ACL that keeps shared friends off this
   box's other services, inviting people, claiming pre-multi-user rows):
   **`docs/tailscale-setup.md`**.
-- **Admin dashboard (dev only):** `/admin` on 8082 shows how much the friends
-  instance is used and how, read live from the **prod** database through a
-  `SELECT`-only role. It is mounted only when both `WCDA_ADMIN_DATABASE_URL`
-  and `WCDA_ADMIN_TOKEN` are set -- that is the dev instance and never prod, so
-  prod's attack surface is unchanged. Bring it up with the overlay:
-  `docker compose -f compose.yaml -f compose.admin.yaml up -d --build`.
-  The overlay is separate because it joins `wcda-prod_backend`, and a missing
-  external network is a hard startup failure: folding it into `compose.yaml`
-  would stop the daily driver whenever the prod stack is down. Create the role
-  once with `scripts/create_readonly_role.sql`.
+- **Admin dashboard (dev only):** `/admin` on 8082 reads the **prod** database
+  live through a `SELECT`-only role (create it once with
+  `scripts/create_readonly_role.sql`). It is mounted only when both
+  `WCDA_ADMIN_DATABASE_URL` and `WCDA_ADMIN_TOKEN` are set — that is the dev
+  instance and never prod, so prod's attack surface is unchanged. It comes up
+  through the `compose.admin.yaml` overlay, which is separate because it joins
+  `wcda-prod_backend`, and a missing external network is a hard startup
+  failure: folding it into `compose.yaml` would stop the daily driver whenever
+  the prod stack is down.
 - **A container on two compose networks resolves a bare service name to
   whichever stack answers first.** Both projects have a service called `db`, so
   once the overlay put the dev web container on `wcda-prod_backend` its plain
@@ -108,72 +101,52 @@ The two stacks run side by side on one host, so they must not share a port:
   `Database: ...` at startup — check it in `docker logs` when data looks
   missing.
 - To ship a change to the running prod app, use the **`deploy` skill**.
-- App process: `python -m core.web_server`; honours `WCDA_HOST` / `WEB_PORT`.
 
 ## Database
 
-- **PostgreSQL 16.** No migration uses the `vector` extension, and CI and the
-  tests run on plain `postgres:16`. Until migration 0009, both live databases
-  still had `vector` installed and an empty, unmodelled `scraped_equipment`
-  table with a `vector(768)` column, left over from the pre-Alembic schema.
-  That made the pgvector image load-bearing: plain postgres could not have read
-  the column. 0009 drops the table and the extension. The compose stacks still
-  use `pgvector/pgvector:pg16`: leave that alone, because swapping the image
-  under a live volume is risk for no gain. To confirm on the host: `\dx` and
-  `\dt scraped_equipment` in `psql` should show neither.
-- SQLAlchemy 2.0 + Alembic. `run_migrations()` runs `alembic upgrade head` on
-  startup (lifespan), retrying while the DB comes up. Migrations are
-  hand-written; never autogenerate.
+- **The compose stacks stay on `pgvector/pgvector:pg16`**, although no
+  migration uses `vector` and CI and the tests run on plain Postgres 16.
+  Migration 0009 dropped the extension and the unmodelled `scraped_equipment`
+  table (a `vector(768)` column) left from the pre-Alembic schema; swapping the
+  image under a live volume is risk for no gain. To confirm on the host: `\dx`
+  and `\dt scraped_equipment` in `psql` should show neither.
+- Migrations are hand-written; **never autogenerate**.
 - **Equipment is shared but owned.** Everyone can pick any entry for a setup;
   only `equipment.owner` may edit or delete it, and owner-NULL rows (the
   seeded hardware) are read-only. Migration 0007 backfilled owners — see
   `docs/tailscale-setup.md` for reassigning a row.
-- Env comes from `.env` (gitignored): `POSTGRES_USER/PASSWORD/DB`,
-  `DATABASE_URL`, `GEMINI_API_KEY`. Template: `.env.example`.
-- Daily dumps land in `./backups/db/` (prod) and `./backups/dev-db/` (dev) via
-  the `db-backup` compose service in each stack (`backups/` is gitignored).
-  **Despite the `.sql.gz` name these dumps are plain, uncompressed SQL**, so
-  the restore is a straight redirect — piping them through `gunzip` fails with
-  "not in gzip format":
-  `docker compose -f compose.prod.yaml exec -T db psql -U barista -d
-  barista_db < backups/db/last/<file>.sql.gz`.
-  **`docker compose up -d --build web` starts only `web` and its `depends_on`,
+- **Despite the `.sql.gz` name the nightly dumps are plain, uncompressed
+  SQL**: piping them through `gunzip` fails with "not in gzip format". The
+  restore command is in README's "Database".
+- **`docker compose up -d --build web` starts only `web` and its `depends_on`,
   never `db-backup`** — bring the stack up without naming a service, or the
   nightly dump quietly never runs.
 - **Volume names follow the compose project name, so renaming a project
-  orphans its data.** Adding `name: wcda` / `name: wcda-prod` in 2026-08 detached
-  the original `wastelesscoffeedial-inassistant_postgres_data` (PG **15**) and
-  `..._log_images`; both stacks then came up on new, empty volumes. **That old
-  database was deliberately discarded on 2026-09-08** — the owner confirmed the
-  history in it was not wanted — and the volume plus its `wcda_rescue_pg15` copy
-  were deleted. Do not go looking for it again: the live data is
-  `wcda_postgres_data` (dev) and `wcda-prod_postgres_data` (prod), and dev's
-  history starts 2026-09-06. `wastelesscoffeedial-inassistant_log_images` is
-  still dangling.
-- Still **never run `docker volume prune` or `docker system prune --volumes`**
+  orphans its data** — naming the projects in 2026-08 did exactly that. The
+  orphaned database was deliberately discarded on 2026-09-08, so do not go
+  looking for it: the live data is `wcda_postgres_data` (dev, history from
+  2026-09-06) and `wcda-prod_postgres_data` (prod).
+- **Never run `docker volume prune` or `docker system prune --volumes`**
   here: the two stacks' live volumes are only ever attached while their
   containers exist, and a stopped stack's data would go with it. Check
   `docker volume ls` before assuming a fresh start is safe.
 
 ## Tests, lint, types
 
-- `pytest` — config in `pyproject.toml`, `pythonpath = ["src"]`. Almost
-  everything is DB-free. `tests/test_api_flows.py` drives the real routes,
-  engine and Postgres with only the Gemini calls stubbed, one fresh
-  Tailscale user per test; it needs `DATABASE_URL` pointing at a disposable
-  database, skips when none is reachable, and **fails** instead when `CI` is
-  set. New API behaviour gets a test there.
-- `ruff check .` and `ruff format --check .`; `mypy src`.
+The commands are in README's "Tests and checks".
+
+- `tests/test_api_flows.py` drives the real routes, engine and Postgres with
+  only the Gemini calls stubbed, one fresh Tailscale user per test. It needs
+  `DATABASE_URL` pointing at a **disposable** database, skips when none is
+  reachable, and **fails** instead when `CI` is set. New API behaviour gets a
+  test there.
 - Three `tests/test_web_app.py` wiring tests also reach Postgres (they hit
   routes that open a session before validating), so in a throwaway container
   with no `DATABASE_URL` they fail with "connection refused" — expected, not a
   regression.
-- Dev install: `pip install -e '.[dev]'` (or run the checks in a throwaway
-  `python:3.14-slim` container with the repo mounted).
-- CI: `.github/workflows/ci.yml` (quality / test / docker-build). **CI's
-  Postgres service is plain `postgres:16-alpine`** — a migration that runs
-  `CREATE EXTENSION vector` would fail CI; add pgvector to the CI service if
-  that ever happens.
+- **CI's Postgres service is plain `postgres:16-alpine`** — a migration that
+  runs `CREATE EXTENSION vector` would fail CI; add pgvector to the CI service
+  if that ever happens.
 
 ## Frontend conventions
 
@@ -211,10 +184,13 @@ The two stacks run side by side on one host, so they must not share a port:
   only displays them, and Gemini's prose is checked against them
   (`ai/rationale.scrub_numerals`). Don't compute a recipe number in `app.js`.
 - **The Gemini chain is bounded by a wall-clock budget, not by the API's
-  mood.** `try_model_candidates` takes `budget_s` (4s for the rationale, 20s
-  for bag OCR) and enforces it client-side in a worker thread, because the SDK
-  cannot: `HttpOptions.timeout` also populates `X-Server-Timeout`, which the
-  API rejects below 10s, and the SDK passes `timeout=None` on each request,
+  mood.** `try_model_candidates` takes a whole-chain `budget_s` and a
+  per-attempt `attempt_timeout_s`, set in `ai/model_selection.py`: 4 s and
+  2 s for the rationale (`DEFAULT_BUDGET_S`, `DEFAULT_ATTEMPT_TIMEOUT_S`),
+  45 s and 22 s for bag OCR (`VISION_BUDGET_S`, `VISION_ATTEMPT_TIMEOUT_S`).
+  It enforces them client-side in a worker thread, because the SDK cannot:
+  `HttpOptions.timeout` also populates `X-Server-Timeout`, which the API
+  rejects below 10s, and the SDK passes `timeout=None` on each request,
   overriding any `client_args` timeout. An over-budget attempt is *abandoned*,
   not cancelled — hence `shutdown(wait=False)`, since the executor's `__exit__`
   would join exactly the thread being abandoned.
@@ -228,3 +204,21 @@ The two stacks run side by side on one host, so they must not share a port:
   invites the model to explain them — scoping the list to the recipe alone
   rejected good answers for quoting the engine back.
 - `git commit` trailer: `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
+
+## Decided, don't reopen
+
+Settled by the owner; each stays as is unless there is a new reason.
+
+- **HEIC photos are refused.** Pillow has no HEIF decoder installed, and
+  phones convert HEIC to JPEG when a web page asks for an image. One more
+  native dependency in a read-only container isn't worth it.
+- **`/api/logs/*` keeps its name.** It manages coffees, not shots, but a
+  rename would break cached clients to fix a name. `core/routes/coffees.py`
+  explains it in its first lines.
+- **`pip-audit` stays advisory in CI.** Advisories arrive without any code
+  change and would redden unrelated PRs. Read its output whenever
+  dependencies are bumped.
+- **Moka stays as it is for now.** The moka extract averages ~80 °C and the
+  final sputtering phase extracts the harshest compounds (Navarini 2009),
+  which argues for a heat-cut prompt, but moka and pour-over are set aside to
+  concentrate on espresso; revisit with a dedicated flow.
