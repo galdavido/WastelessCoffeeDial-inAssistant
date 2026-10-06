@@ -58,6 +58,9 @@ cp .env.example .env    # then set POSTGRES_PASSWORD and GEMINI_API_KEY
 | `LOG_IMAGES_DIR` | Where bag photos are stored | `./data/log_images` |
 | `WCDA_GEMINI_MODELS` | Comma-separated model fallback list | see `ai/model_selection.py` |
 | `WCDA_GEMINI_THINKING` | `low`, `high` or `off` for Gemini 3.x | `low` |
+| `WCDA_LLM_BUDGET_S` | Wall-clock budget, in seconds, for the whole Gemini chain behind the explanation; over it, the template wins | `4` |
+| `WCDA_VISION_BUDGET_S` | The same budget for bag-photo OCR, which has no fallback | `45` |
+| `LOG_LEVEL` | Python logging level | `INFO` |
 | `WCDA_ADMIN_DATABASE_URL`, `WCDA_ADMIN_TOKEN` | Dev only: the `/admin` usage dashboard over the prod database | unset |
 
 ## Run it
@@ -79,6 +82,9 @@ pip install -e '.[dev]'
 export DATABASE_URL=postgresql+psycopg2://barista:pw@localhost:5434/barista_db
 python -m core.web_server        # http://127.0.0.1:8080, migrates on startup
 ```
+
+That `DATABASE_URL` (port 5434) is the live dev database. Use it to run the
+app, never for pytest.
 
 `wcda-backtest` (or `python -m core.backtest_cli` inside the container) measures
 the engine against your logged shots; it is read-only.
@@ -103,8 +109,18 @@ docker compose exec -T db \
 
 ## Tests and checks
 
+The API tests migrate and write to whatever `DATABASE_URL` points at, so it
+must be a disposable Postgres -- never the dev database (port 5434) nor the
+prod one. The test helper refuses those hosts unless
+`WCDA_TESTS_ALLOW_LIVE_DB=1`. A throwaway:
+
 ```bash
-pytest                            # needs DATABASE_URL for the API tests
+docker run --rm -d -p 5440:5432 -e POSTGRES_USER=wcda -e POSTGRES_PASSWORD=wcda -e POSTGRES_DB=wcda_test postgres:16-alpine
+export DATABASE_URL=postgresql+psycopg2://wcda:wcda@localhost:5440/wcda_test
+```
+
+```bash
+pytest                            # API tests need the disposable DATABASE_URL
 ruff check . && ruff format --check .
 mypy src
 ```
@@ -130,7 +146,7 @@ src/
     brewing.py, calibration.py, retrieval.py   the deterministic engine
     eval_harness.py, backtest_cli.py           measuring the engine
     parsing.py, beans.py, setups.py, shots.py  helpers behind the routes
-    auth.py, web_schemas.py, db_bootstrap.py, web_server.py
+    auth.py, web_schemas.py, db_bootstrap.py, db_session.py, web_server.py
     admin_*.py the dev-only usage dashboard
   database/    models and engine
   web/static/  index.html, app.js, style.css, sw.js, admin.*

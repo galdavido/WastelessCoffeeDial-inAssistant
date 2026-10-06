@@ -95,9 +95,10 @@ services:
         max-file: "3"
 
   # Nightly pg_dump with rotation. Dumps land in ./backups/db/ on the host
-  # (gzip'd, one per run). Restore the latest with:
-  #   gunzip -c backups/db/last/<db>-latest.sql.gz \
-  #     | docker compose -f compose.prod.yaml exec -T db psql -U barista -d barista_db
+  # (one per run). Restore the latest with:
+  #   docker compose -f compose.prod.yaml exec -T db \
+  #     psql -U barista -d barista_db < backups/db/last/<file>.sql.gz
+  # (the dumps are plain SQL despite the name -- do not pipe through gunzip)
   # Trigger an off-schedule backup with:
   #   docker compose -f compose.prod.yaml exec db-backup /backup.sh
   db-backup:

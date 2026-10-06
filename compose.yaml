@@ -68,8 +68,9 @@ services:
   # the one actually used day to day, so its data is not scratch -- it is the
   # real bean/shot history and needs a backup of its own. Dumps land in
   # ./backups/dev-db/ on the host. Restore the latest with:
-  #   gunzip -c backups/dev-db/last/<db>-latest.sql.gz \
-  #     | docker compose exec -T db psql -U barista -d barista_db
+  #   docker compose exec -T db psql -U barista -d barista_db \
+  #     < backups/dev-db/last/<file>.sql.gz
+  # (the dumps are plain SQL despite the name -- do not pipe through gunzip)
   db-backup:
     image: prodrigestivill/postgres-backup-local:16
     restart: unless-stopped
