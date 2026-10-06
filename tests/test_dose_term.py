@@ -11,9 +11,9 @@ import math
 import unittest
 from dataclasses import replace
 
+from _fixtures import K6
 from _sim import BedParams, simulate_shot
 from core.brewing import (
-    GrinderCaps,
     MachineCaps,
     ShotRecord,
     beta_prior,
@@ -27,13 +27,7 @@ from core.brewing import (
 )
 from core.calibration import bean_offsets, fit_gamma, fit_setup
 
-K6 = GrinderCaps(
-    min_clicks=0.0,
-    max_clicks=90.0,
-    step_clicks=1.0,
-    um_per_click=16.0,
-    finer_direction="lower_is_finer",
-)
+# Unlike tests/_fixtures.MACHINE_18G, no basket size is known.
 MACHINE = MachineCaps(basket_size_g=None, temp_controllable=False)
 TARGET = target_for("espresso")
 BETA = beta_prior("espresso", K6)

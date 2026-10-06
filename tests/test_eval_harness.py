@@ -14,8 +14,9 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
+from _fixtures import MACHINE_18G as MACHINE
 from _sim import BedParams, simulate_shot
-from core.brewing import GrinderCaps, MachineCaps, ShotRecord, target_for
+from core.brewing import GrinderCaps, ShotRecord, target_for
 from core.eval_harness import (
     MIN_PAIRS_FOR_DIRECTION,
     MIN_SHOTS_FOR_PREDICTION,
@@ -25,6 +26,7 @@ from core.eval_harness import (
     held_out_time_error,
 )
 
+# Unlike tests/_fixtures.K6, this dial runs 0-180 clicks.
 K6 = GrinderCaps(
     min_clicks=0.0,
     max_clicks=180.0,
@@ -32,7 +34,6 @@ K6 = GrinderCaps(
     um_per_click=16.0,
     finer_direction="lower_is_finer",
 )
-MACHINE = MachineCaps(basket_size_g=18.0, temp_controllable=False)
 TARGET = target_for("espresso")
 
 

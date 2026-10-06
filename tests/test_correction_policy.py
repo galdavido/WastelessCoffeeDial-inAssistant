@@ -15,6 +15,8 @@ from __future__ import annotations
 import random
 import unittest
 
+from _fixtures import K6
+from _fixtures import MACHINE_18G as FIXED_TEMP_MACHINE
 from _sim import BedParams, simulate_shot
 from core.brewing import (
     GrinderCaps,
@@ -33,14 +35,6 @@ from core.brewing import (
 )
 from core.calibration import fit_setup, theil_sen_comparable
 
-K6 = GrinderCaps(
-    min_clicks=0.0,
-    max_clicks=90.0,
-    step_clicks=1.0,
-    um_per_click=16.0,
-    finer_direction="lower_is_finer",
-)
-FIXED_TEMP_MACHINE = MachineCaps(basket_size_g=18.0, temp_controllable=False)
 PID_MACHINE = MachineCaps(
     basket_size_g=18.0, temp_min_c=88.0, temp_max_c=98.0, temp_controllable=True
 )

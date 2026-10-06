@@ -29,6 +29,7 @@ from core.calibration import fit_setup, theil_sen_comparable, theil_sen_terms
 from core.engine import EngineResult, serialize_fit
 from core.retrieval import shots_for_bean
 
+# Unlike tests/_fixtures.K6, this dial runs 0-180 clicks.
 K6 = GrinderCaps(
     min_clicks=0.0,
     max_clicks=180.0,
