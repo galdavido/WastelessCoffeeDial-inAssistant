@@ -65,7 +65,6 @@ class BedParams:
 @dataclass(frozen=True)
 class SimShot:
     clicks: float
-    particle_um: float
     time_s: float
     yield_g: float
     ey_pct: float
@@ -175,7 +174,6 @@ def simulate_shot(
     ey = extraction_yield_pct(d_um, time_s, f)
     return SimShot(
         clicks=clicks,
-        particle_um=d_um,
         time_s=time_s,
         yield_g=target_yield_g,
         ey_pct=ey,

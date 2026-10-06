@@ -83,10 +83,6 @@ class BacktestReport:
     def render(self) -> str:
         return "\n".join(metric.render() for metric in self.metrics)
 
-    @property
-    def any_sufficient(self) -> bool:
-        return any(metric.sufficient for metric in self.metrics)
-
 
 def _measured(shots: Sequence[ShotRecord]) -> list[ShotRecord]:
     return [
