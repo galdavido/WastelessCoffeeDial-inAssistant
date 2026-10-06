@@ -711,6 +711,39 @@ class TestOwnershipOfDerivedRows(FlowTestCase):
             row = db.query(DialInLog).filter(DialInLog.owner == me.owner).one()
             self.assertIsNone(row.recommendation_id)
 
+    def test_a_shot_cannot_land_on_another_users_coffee(self) -> None:
+        """An explicit bean_id from someone else's library is ignored: the
+        shot creates (or matches) a coffee in the caller's own library."""
+        self.make_setup()
+        self.log_shot(self.scan()["coffee_data"])
+        theirs = self.only_coffee()
+        bean_id = theirs["bean_id"]
+        shots_before = len(
+            self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["shots"]
+        )
+
+        me = self.another_user()
+        self.make_setup(api=me)
+        self.ok(
+            me.post(
+                "/api/feedback",
+                json={
+                    "coffee_data": {
+                        "bean_id": bean_id,
+                        "name": "Someone Else Entirely",
+                        "roaster": "Other",
+                    },
+                    "actual_grind": "21",
+                },
+            )
+        )
+
+        after = self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["shots"]
+        self.assertEqual(len(after), shots_before)
+        mine = self.only_coffee(api=me)
+        self.assertNotEqual(mine["bean_id"], bean_id)
+        self.assertEqual(mine["bean_name"], "Someone Else Entirely")
+
     def test_editing_the_roast_level_updates_what_the_engine_reads(self) -> None:
         self.make_setup()
         fields = {
