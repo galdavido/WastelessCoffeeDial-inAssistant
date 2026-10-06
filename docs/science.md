@@ -742,7 +742,8 @@ fixture only**; its taste mapping is crude, which is why it lives under
 ## 8. Where the literature disagrees with the engine {#open-conflicts}
 
 Findings above that argued for a change to the engine, and what became of
-each. The `#` column is the entry in `docs/open-decisions.md`.
+each. The `#` column is the owner's decision number; #13 is recorded under
+"Decided, don't reopen" in `CLAUDE.md`.
 
 | Finding | Engine today | Implication | # |
 | --- | --- | --- | --- |

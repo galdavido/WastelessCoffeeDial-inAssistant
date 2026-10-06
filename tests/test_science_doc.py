@@ -90,7 +90,7 @@ class TestScienceDoc(unittest.TestCase):
             # conclusion without fixing a number the engine uses.
             "target-reachability",
             # Where peer-reviewed findings disagree with the engine; each row
-            # points at an entry in docs/open-decisions.md.
+            # carries the number of the owner's decision on it.
             "open-conflicts",
         }
         cited = {c.anchor.lstrip("#") for c in CONSTANTS.values()}
