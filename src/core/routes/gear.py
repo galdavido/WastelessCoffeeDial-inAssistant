@@ -13,8 +13,8 @@ from database.models import BrewSetup, DialInLog, Equipment, Recommendation
 
 from ..auth import get_owner
 from ..db_session import get_db
-from ..web_helpers import (
-    as_non_empty_text,
+from ..parsing import as_non_empty_text
+from ..setups import (
     get_default_dose_g,
     serialize_equipment,
     serialize_setup,

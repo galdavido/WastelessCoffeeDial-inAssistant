@@ -36,8 +36,8 @@ none of them hold "where are we in this job."
   `coffees` (library + shot history), `gear` (equipment, setups, settings).
   `common.py` holds `STATIC_DIR`, `uploads_dir()` and the request-scoped
   `active_setup` dependency.
-- `src/core/` — `web_server.py` (entry), `web_helpers.py`, `web_schemas.py`,
-  `auth.py`, DB bootstrap/session, and the engine: `engine.py` orchestrates
+- `src/core/` — `web_server.py` (entry), `web_schemas.py`, the route helpers
+  (`parsing.py`, `beans.py`, `setups.py`, `shots.py`), `auth.py`, DB bootstrap/session, and the engine: `engine.py` orchestrates
   `retrieval.py` → `calibration.py` → `brewing.py` (pure, no DB) → rationale.
   `eval_harness.py` + `backtest_cli.py` measure it. `admin_*.py` is the
   dev-only dashboard.

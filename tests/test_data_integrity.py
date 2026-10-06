@@ -14,14 +14,14 @@ from __future__ import annotations
 import unittest
 from datetime import date, timedelta
 
-from core.web_helpers import (
-    classify_data_quality,
+from core.beans import transient_bean
+from core.parsing import (
     parse_grind_clicks,
     parse_roast_date,
     plausible_roast_date,
     roast_level_ordinal,
-    transient_bean,
 )
+from core.shots import classify_data_quality
 from core.web_schemas import LogDetailsInput
 
 
@@ -118,20 +118,20 @@ class TestParseRoastDate(unittest.TestCase):
 
 class TestStartingDose(unittest.TestCase):
     def test_lighter_roasts_start_with_more_coffee(self) -> None:
-        from core.web_helpers import starting_dose_for_roast
+        from core.beans import starting_dose_for_roast
 
         doses = [starting_dose_for_roast(o) for o in (1, 2, 3, 4, 5)]
         self.assertEqual(doses, sorted(doses, reverse=True))
         self.assertIsNone(starting_dose_for_roast(None))
 
     def test_without_a_basket_it_is_the_old_18_g_table(self) -> None:
-        from core.web_helpers import starting_dose_for_roast
+        from core.beans import starting_dose_for_roast
 
         doses = [starting_dose_for_roast(o) for o in (1, 2, 3, 4, 5)]
         self.assertEqual(doses, [18.5, 18.5, 17.5, 17.0, 16.5])
 
     def test_it_scales_with_the_brewers_basket(self) -> None:
-        from core.web_helpers import starting_dose_for_roast
+        from core.beans import starting_dose_for_roast
 
         # A 14 g basket: light 14.42 -> 14.5, dark 12.88 -> 13.0.
         self.assertEqual(starting_dose_for_roast(1, 14.0), 14.5)
@@ -189,7 +189,7 @@ class TestClassifyDataQuality(unittest.TestCase):
 
 class TestResolveLogValuesDoesNotFabricate(unittest.TestCase):
     def test_absent_measurements_stay_none(self) -> None:
-        from core.web_helpers import resolve_log_values
+        from core.shots import resolve_log_values
 
         values = resolve_log_values(LogDetailsInput(), _FakeDB(), "owner")
 
@@ -201,13 +201,13 @@ class TestResolveLogValuesDoesNotFabricate(unittest.TestCase):
 
     def test_dose_still_falls_back_to_the_stored_preference(self) -> None:
         # The dose default is a real user preference, not a guessed outcome.
-        from core.web_helpers import resolve_log_values
+        from core.shots import resolve_log_values
 
         values = resolve_log_values(LogDetailsInput(), _FakeDB(), "owner")
         self.assertEqual(values["dose_g"], 16.0)
 
     def test_supplied_measurements_are_kept_and_marked_measured(self) -> None:
-        from core.web_helpers import resolve_log_values
+        from core.shots import resolve_log_values
 
         values = resolve_log_values(
             LogDetailsInput(

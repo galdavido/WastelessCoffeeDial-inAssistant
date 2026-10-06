@@ -16,18 +16,13 @@ from sqlalchemy.orm import Session, selectinload
 from database.models import Bean, BrewSetup, DialInLog, Recommendation, as_float
 
 from ..auth import get_owner
+from ..beans import latest_photo_log
 from ..brewing import is_finer, normalised_time, target_for, tasted_right
 from ..db_session import get_db
 from ..engine import grinder_caps
+from ..parsing import as_non_empty_text, roast_level_ordinal
 from ..retrieval import get_active_setup_method, to_shot_record
-from ..web_helpers import (
-    as_non_empty_text,
-    classify_data_quality,
-    latest_photo_log,
-    new_shot,
-    resolve_log_values,
-    roast_level_ordinal,
-)
+from ..shots import classify_data_quality, new_shot, resolve_log_values
 from ..web_schemas import BeanRecordInput
 from .common import active_setup, server_error
 

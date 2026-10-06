@@ -15,6 +15,12 @@ from ai.vision import VisionError, analyze_coffee_bag
 from database.models import Bean, BrewSetup, as_float
 
 from ..auth import get_owner
+from ..beans import (
+    bean_coffee_data,
+    match_bean,
+    starting_dose_for_roast,
+    transient_bean,
+)
 from ..db_session import get_db
 from ..engine import (
     persist_recommendation,
@@ -22,14 +28,8 @@ from ..engine import (
     serialize_fit,
     serialize_result,
 )
-from ..web_helpers import (
-    bean_coffee_data,
-    get_default_dose_g,
-    match_bean,
-    save_shot,
-    starting_dose_for_roast,
-    transient_bean,
-)
+from ..setups import get_default_dose_g
+from ..shots import save_shot
 from ..web_schemas import FeedbackRequest, RecommendationRequest
 from .common import active_setup, server_error, uploads_dir
 
