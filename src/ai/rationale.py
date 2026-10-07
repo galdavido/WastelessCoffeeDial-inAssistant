@@ -127,11 +127,15 @@ def render_template(recipe: Recipe, confidence_label: str) -> Rationale:
         why_parts.append("This comes from your target band and what you last measured.")
     why_parts.append(confidence_label)
 
-    watch = (
-        f"Aim for about {recipe.target_time_s:g} seconds."
-        if recipe.target_time_s is not None
-        else "Note the time and how it tastes, and I'll solve the next step from that."
-    )
+    lo, hi = recipe.target_time_lo_s, recipe.target_time_s
+    if hi is None:
+        watch = (
+            "Note the time and how it tastes, and I'll solve the next step from that."
+        )
+    elif lo is None or lo == hi:
+        watch = f"Aim for about {hi:g} seconds."
+    else:
+        watch = f"Anywhere from {lo:g} to {hi:g} seconds is on target."
     return Rationale(
         headline=headline,
         why=" ".join(why_parts),

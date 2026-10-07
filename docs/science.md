@@ -288,7 +288,9 @@ that treats 25 s as a hard target will drive every coffee finer into the
 clogged regime ([#target-reachability](#target-reachability)). **The engine
 acts on this:** a shot outside the time band that the user marked balanced —
 or rated 4+ without a taste, and not drying — keeps its grind, and its own time
-becomes the target shown.
+becomes the target shown. Otherwise the target is shown as the whole band
+(25–30 s), not its top: the grind is solved for the band's middle, and any time
+inside it counts as on target.
 
 On temperature, Andueza 2003 found **92 °C optimal for arabica** espresso (of
 88/92/96/98 °C), with 88 °C preferred for a dark torrefacto robusta blend.

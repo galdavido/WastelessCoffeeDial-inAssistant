@@ -1076,6 +1076,10 @@ class Recipe:
     yield_g: float | None = None
     water_g: float | None = None
     brew_temp_c: float | None = None
+    # The time to aim for, as a band: anything inside it is on target. The
+    # grind is solved for its middle. Equal ends when the shot's own time is
+    # the target (a fast shot that tasted right). docs/science.md#ratio-espresso.
+    target_time_lo_s: float | None = None
     target_time_s: float | None = None
     # Suggested preparation. Echoes the user's own consistent routine until
     # there is enough variation to say whether changing it helps.
@@ -1104,6 +1108,7 @@ class Recipe:
             self.yield_g,
             self.water_g,
             self.brew_temp_c,
+            self.target_time_lo_s,
             self.target_time_s,
             self.preinfusion_s,
             self.pause_s,
@@ -1233,6 +1238,7 @@ def correct(
             if last.method != "espresso"
             else None,
             "brew_temp_c": temp,
+            "target_time_lo_s": target.time_lo,
             "target_time_s": target.time_hi,
             "notes": tuple(notes),
             "anchor_clicks": last.grind_clicks,
@@ -1274,10 +1280,10 @@ def correct(
                 f"range but tasted right, and the cup is the target, not the "
                 f"clock -- keep the setting and repeat it"
             )
+            own = round(last.time_s) if last.time_s is not None else None
             return build(
-                target_time_s=round(last.time_s)
-                if last.time_s is not None
-                else target.time_hi,
+                target_time_lo_s=own if own is not None else target.time_lo,
+                target_time_s=own if own is not None else target.time_hi,
                 grind_note=notes[-1],
             )
         if (
@@ -1774,22 +1780,22 @@ def _rewrite_grind_note(
     proposed: float,
     held_by: str,
     caps: GrinderCaps,
-) -> list[str]:
+) -> tuple[list[str], str | None]:
     """Replace the correction's grind note when a guardrail turned it around.
 
     The correction says which way to go from the last shot ("go finer");
     a guardrail that then holds the grind at or past the last shot's setting
     makes that sentence false beside the number actually given. Only the
     direction is checked: a clamp that still lands finer, just less so,
-    leaves "go finer" true.
+    leaves "go finer" true. Returns the notes and the grind note to keep.
     """
     anchor = recipe.anchor_clicks
     if recipe.grind_note is None or anchor is None or recipe.grind_note not in notes:
-        return notes
+        return notes, recipe.grind_note
     wanted = _direction(proposed, anchor, caps)
     given_way = _direction(given, anchor, caps)
     if wanted == given_way:
-        return notes
+        return notes, recipe.grind_note
     wanted_words = (
         "keep the setting" if wanted == "same" else f"go {wanted} than {anchor:g}"
     )
@@ -1803,7 +1809,8 @@ def _rewrite_grind_note(
             f"go {given_way}, to {given:g}: the last shot on its own would "
             f"{wanted_words}, but {held_by}"
         )
-    return [replacement if note == recipe.grind_note else note for note in notes]
+    notes = [replacement if note == recipe.grind_note else note for note in notes]
+    return notes, replacement
 
 
 def apply_guardrails(
@@ -1823,6 +1830,7 @@ def apply_guardrails(
     """
     hits = list(recipe.guardrails_hit)
     notes = list(recipe.notes)
+    grind_note = recipe.grind_note
     grind = recipe.grind_clicks
     dose = recipe.dose_g
     temp = recipe.brew_temp_c
@@ -1872,7 +1880,7 @@ def apply_guardrails(
             grind = snapped
 
         if held_by is not None and recipe.grind_clicks is not None:
-            notes = _rewrite_grind_note(
+            notes, grind_note = _rewrite_grind_note(
                 notes, recipe, grind, recipe.grind_clicks, held_by, grinder
             )
 
@@ -1937,4 +1945,5 @@ def apply_guardrails(
         brew_temp_c=temp,
         guardrails_hit=tuple(hits),
         notes=tuple(notes),
+        grind_note=grind_note,
     )

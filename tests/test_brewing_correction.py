@@ -262,6 +262,8 @@ class TestCameronGuardrail(unittest.TestCase):
             any(note.startswith("keep the grind at 30") for note in guarded.notes),
             guarded.notes,
         )
+        # The field the explanation prompt sees moves with it.
+        self.assertTrue((guarded.grind_note or "").startswith("keep the grind at 30"))
 
     def test_a_clamp_that_still_goes_finer_keeps_the_note(self) -> None:
         recipe = Recipe(
@@ -402,6 +404,8 @@ class TestTastePolicy(unittest.TestCase):
         )
         self.assertEqual(recipe.grind_clicks, 33.0)
         self.assertEqual(recipe.target_time_s, 17)
+        # Its own time is the target, so the band collapses to that point.
+        self.assertEqual(recipe.target_time_lo_s, 17)
 
     def test_a_fast_shot_rated_well_with_no_taste_keeps_its_grind(self) -> None:
         shot = self._on_target_shot(time_s=17.0, rating=4)

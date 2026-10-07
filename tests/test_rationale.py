@@ -11,6 +11,7 @@ import json
 import os
 import unittest
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -81,6 +82,20 @@ class TestTemplate(unittest.TestCase):
                 scrub_numerals(field, ALLOWED),
                 f"template produced an unapproved number: {field!r}",
             )
+
+    def test_template_names_the_whole_time_band(self) -> None:
+        """The grind aims at the band's middle; quoting its top misleads."""
+        band = replace(RECIPE, target_time_lo_s=25.0, target_time_s=30.0)
+        watch = render_template(band, "Low").what_to_watch
+        self.assertIn("25", watch)
+        self.assertIn("30", watch)
+        self.assertIsNotNone(scrub_numerals(watch, frozenset(band.numeric_tokens())))
+
+    def test_template_quotes_one_time_when_the_band_is_a_point(self) -> None:
+        own = replace(RECIPE, target_time_lo_s=19.0, target_time_s=19.0)
+        self.assertEqual(
+            render_template(own, "Low").what_to_watch, "Aim for about 19 seconds."
+        )
 
     def test_template_carries_the_confidence_statement(self) -> None:
         label = "First shot - this is a starting bracket to measure from"

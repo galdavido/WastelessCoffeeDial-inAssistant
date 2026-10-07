@@ -422,6 +422,7 @@ def _first_shot_recipe(
             if machine_spec.temp_controllable
             else None
         ),
+        target_time_lo_s=target.time_lo,
         target_time_s=target.time_hi,
         notes=tuple(notes),
     )
@@ -457,6 +458,7 @@ def persist_recommendation(
             "beta": result.calibration.beta,
             "beta_source": result.calibration.beta_source,
             "gamma": result.calibration.gamma,
+            "target_time_lo_s": recipe.target_time_lo_s,
             "guardrails_hit": list(recipe.guardrails_hit),
             "preinfusion_s": recipe.preinfusion_s,
             "pause_s": recipe.pause_s,
@@ -485,6 +487,7 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
             "yield_g": recipe.yield_g,
             "water_g": recipe.water_g,
             "brew_temp_c": recipe.brew_temp_c,
+            "target_time_lo_s": recipe.target_time_lo_s,
             "target_time_s": recipe.target_time_s,
             "preinfusion_s": recipe.preinfusion_s,
             "pause_s": recipe.pause_s,

@@ -810,6 +810,7 @@ class TestShotHistory(FlowTestCase):
         )["bean_id"]
 
         body = self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+        self.assertEqual(body["recipe"]["target_time_lo_s"], 24.0)
         self.assertEqual(body["recipe"]["target_time_s"], 29.0)
         band = self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["target"]
         self.assertEqual((band["time_lo"], band["time_hi"]), (24.0, 29.0))

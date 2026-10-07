@@ -942,7 +942,10 @@ function renderRecipe(data) {
       ['Dose', r.dose_g != null ? `${r.dose_g} g` : '—'],
       [r.method === 'espresso' ? 'Out' : 'Water',
        (r.yield_g ?? r.water_g) != null ? `${r.yield_g ?? r.water_g} g` : '—'],
-      ['Time', r.target_time_s != null ? `${r.target_time_s} s` : '—'],
+      ['Time', r.target_time_s == null ? '—'
+        : r.target_time_lo_s != null && r.target_time_lo_s !== r.target_time_s
+          ? `${r.target_time_lo_s}–${r.target_time_s} s`
+          : `${r.target_time_s} s`],
     ];
     if (r.brew_temp_c != null) fields.push(['Temp', `${r.brew_temp_c} °C`]);
     if (r.preinfusion_s != null) fields.push(['Pre-inf', `${r.preinfusion_s} s`]);
