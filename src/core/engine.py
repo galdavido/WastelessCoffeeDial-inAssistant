@@ -4,10 +4,14 @@ This is the only place the pieces meet. The order matters and is the whole
 design: every number is settled by arithmetic before the language model is
 given anything to say about it.
 
-    retrieval  -> which past shots count
+    retrieval   -> which past shots count
     calibration -> how this grinder behaves (prior until data says otherwise)
-    correction  -> what to change, one lever at a time
+    correction  -> what to change, one lever at a time; a new coffee is
+                   solved from the setup's law instead
     guardrails  -> clamp to hardware and to the anti-channeling floor
+    preparation -> pre-infusion: the user's routine, or an experiment when
+                   the floor has taken the grind lever away
+    suggestion  -> less coffee, coarser, when channeling keeps coming back
     rationale   -> prose, checked against the numbers above
 """
 
@@ -44,7 +48,6 @@ from .brewing import (
     normalised_time,
     preinfusion_experiment,
     prep_advice,
-    prep_incomparable_reason,
     resistance_disagreement,
     shot_noise,
     snap_to_step,
@@ -53,6 +56,7 @@ from .brewing import (
 )
 from .calibration import (
     Calibration,
+    SlopePair,
     confidence_label,
     fit_setup,
     theil_sen_pairs,
@@ -78,13 +82,13 @@ class EngineResult:
     calibration: Calibration
     tier: str
     llm_model: str | None
-    protocol: str | None = None
     # The inputs this pass actually used, kept so a view can show the working
     # without re-running retrieval and drifting from the numbers above.
+    target: Target
+    caps: GrinderCaps
+    protocol: str | None = None
     history: tuple[ShotRecord, ...] = ()
     bean_history: tuple[ShotRecord, ...] = ()
-    target: Target | None = None
-    caps: GrinderCaps | None = None
     # Cameron's use-less-coffee move, when channeling keeps coming back. Kept
     # beside the recipe, never in it -- see brewing.DoseReduction.
     suggestion: DoseReduction | None = None
@@ -119,10 +123,10 @@ def machine_caps(machine: Equipment | None) -> MachineCaps:
     )
 
 
-def _days_since_roast(roast_date: date | None, today: date | None = None) -> int | None:
+def _days_since_roast(roast_date: date | None) -> int | None:
     if roast_date is None:
         return None
-    return ((today or date.today()) - roast_date).days
+    return (date.today() - roast_date).days
 
 
 def recommend(
@@ -176,12 +180,6 @@ def recommend(
 
     days = _days_since_roast(bean.roast_date if bean else None)
 
-    target_features = BeanFeatures(
-        roast_level_ord=roast_ord,
-        process=bean.process if bean else None,
-        origin=bean.origin if bean else None,
-        days_since_roast=days,
-    )
     protocol: str | None = None
     basis: Basis
     if bean_history:
@@ -201,93 +199,24 @@ def recommend(
         )
         basis = "calibrated" if calibration.is_fitted else "history"
     else:
-        if dose_g is None:
-            dose_g = default_dose_g
-        # No shots on this coffee yet. Where the setup has a fitted law, solve
-        # it for the target rather than correcting from a different coffee,
-        # seeding the per-bean offset from the coffees this one resembles.
-        notes: list[str] = []
-        tr_aim = (
-            (target.tr_lo + target.tr_hi) / 2.0
-            if target.tr_lo is not None and target.tr_hi is not None
-            else None
-        )
-        delta, borrowed = borrow_bean_offset(
-            target_features,
-            calibration.bean_offsets,
-            fetch_bean_features(db, owner, calibration.bean_offsets),
-        )
-        grind = (
-            clicks_for_target(
-                calibration.alpha,
-                calibration.beta,
-                tr_aim,
-                delta,
-                gamma=calibration.gamma,
-                dose_g=dose_g,
-                roast_level_ord=roast_ord,
-            )
-            if tr_aim is not None
-            else None
-        )
-        if grind is not None:
-            grind = snap_to_step(grind, caps)
-            basis = "setup_law"
-            notes.append(
-                "this is your first shot on this coffee, so the setting comes "
-                "from how your grinder has behaved"
-                + (
-                    ", nudged toward the similar coffees you have brewed"
-                    if borrowed
-                    else " across everything you have brewed on it"
-                )
-                + " rather than from a correction to another coffee"
-            )
-        else:
-            # Cold start. Everything but the grind comes from the target band;
-            # the grind number comes from hardware midpoint, or not at all.
-            # Estimate the dial position for the reference particle size rather
-            # than taking the middle of the hardware range -- that range spans
-            # espresso to French press, so its midpoint is far too coarse.
-            basis = "prior"
-            grind = cold_start_clicks(caps, method)
-            if grind is None:
-                # Tier E: nothing measured and no way to locate the dial. Any
-                # click number here would be invented, so ask for one
-                # measurement.
-                protocol = calibration_protocol(
-                    method, dose_g, round(dose_g * target.ratio_aim, 1)
-                )
-                notes.append(protocol)
-        recipe = Recipe(
-            method=method,
-            # The caller's dose, not whatever was in the basket for a
-            # different coffee.
-            dose_g=dose_g,
-            grind_clicks=grind,
-            yield_g=round(dose_g * target.ratio_aim, 1)
-            if method == "espresso"
-            else None,
-            water_g=round(dose_g * target.ratio_aim, 1)
-            if method != "espresso"
-            else None,
-            # A first shot still deserves a temperature to aim at, from the
-            # roast-level band. Suppressed by the guardrails when the machine
-            # cannot hold one.
-            brew_temp_c=(
-                round(sum(temp_band_for_roast(roast_ord)) / 2.0, 1)
-                if machine_spec.temp_controllable
-                else None
-            ),
-            target_time_s=target.time_hi,
-            notes=tuple(notes),
+        recipe, basis, protocol = _first_shot_recipe(
+            db,
+            owner,
+            method,
+            target,
+            caps,
+            machine_spec,
+            calibration,
+            bean,
+            days,
+            dose_g if dose_g is not None else default_dose_g,
         )
 
     recipe = replace(recipe, basis=basis, confidence=calibration.confidence)
     # The channeling floor is bean-scoped for the same reason the anchor is.
-    # Its triggers compare normalised times against each other ("a finer
-    # setting that ran no slower means the water channeled") and read the
-    # finest setting that has *tasted* right -- and delta_bean is precisely
+    # Its signs compare normalised times against each other ("a finer shot
+    # that ran faster than the law predicts") and read the finest setting
+    # that has *tasted* right -- and delta_bean is precisely
     # the statement that those are not comparable across coffees. A dense
     # natural at 36 would otherwise hold a washed Ethiopian at a floor it has
     # no reason to obey. A coffee with no shots of its own falls back to the
@@ -384,6 +313,108 @@ def recommend(
     )
 
 
+def _first_shot_recipe(
+    db: Session,
+    owner: str,
+    method: Method,
+    target: Target,
+    caps: GrinderCaps,
+    machine_spec: MachineCaps,
+    calibration: Calibration,
+    bean: Bean | None,
+    days: int | None,
+    dose_g: float,
+) -> tuple[Recipe, Basis, str | None]:
+    """A recipe for a coffee with no shots of its own: basis and protocol too.
+
+    Where the setup has a fitted law, solve it for the target rather than
+    correcting from a different coffee, seeding the per-bean offset from the
+    coffees this one resembles (docs/science.md#beta-law). Without one, place
+    the dial from the reference particle size (docs/science.md#cold-start), or
+    name no setting at all and return the protocol that asks for one
+    measurement.
+    """
+    roast_ord = bean.roast_level_ord if bean else None
+    notes: list[str] = []
+    protocol: str | None = None
+    basis: Basis
+    tr_aim = (
+        (target.tr_lo + target.tr_hi) / 2.0
+        if target.tr_lo is not None and target.tr_hi is not None
+        else None
+    )
+    delta, borrowed = borrow_bean_offset(
+        BeanFeatures(
+            roast_level_ord=roast_ord,
+            process=bean.process if bean else None,
+            origin=bean.origin if bean else None,
+            days_since_roast=days,
+        ),
+        calibration.bean_offsets,
+        fetch_bean_features(db, owner, calibration.bean_offsets),
+    )
+    grind = (
+        clicks_for_target(
+            calibration.alpha,
+            calibration.beta,
+            tr_aim,
+            delta,
+            gamma=calibration.gamma,
+            dose_g=dose_g,
+            roast_level_ord=roast_ord,
+        )
+        if tr_aim is not None
+        else None
+    )
+    if grind is not None:
+        grind = snap_to_step(grind, caps)
+        basis = "setup_law"
+        notes.append(
+            "this is your first shot on this coffee, so the setting comes "
+            "from how your grinder has behaved"
+            + (
+                ", nudged toward the similar coffees you have brewed"
+                if borrowed
+                else " across everything you have brewed on it"
+            )
+            + " rather than from a correction to another coffee"
+        )
+    else:
+        # Cold start: no fitted law to solve. Everything but the grind comes
+        # from the target band, and the grind from the reference particle
+        # size -- never the middle of the hardware range, which spans espresso
+        # to French press and so sits far too coarse.
+        basis = "prior"
+        grind = cold_start_clicks(caps, method)
+        if grind is None:
+            # No way to locate the dial (moka, or no microns per click). Any
+            # click number here would be invented, so ask for one measurement.
+            protocol = calibration_protocol(
+                method, dose_g, round(dose_g * target.ratio_aim, 1)
+            )
+            notes.append(protocol)
+    recipe = Recipe(
+        method=method,
+        # The caller's dose, not whatever was in the basket for a different
+        # coffee.
+        dose_g=dose_g,
+        grind_clicks=grind,
+        yield_g=round(dose_g * target.ratio_aim, 1) if method == "espresso" else None,
+        water_g=round(dose_g * target.ratio_aim, 1) if method != "espresso" else None,
+        # A first shot still deserves a temperature to aim at, from the
+        # roast-level band. Suppressed by the guardrails when the machine
+        # cannot hold one.
+        brew_temp_c=(
+            round(sum(temp_band_for_roast(roast_ord)) / 2.0, 1)
+            if machine_spec.temp_controllable
+            else None
+        ),
+        target_time_s=target.time_hi,
+        notes=tuple(notes),
+    )
+    return recipe, basis, protocol
+
+
 def persist_recommendation(
     db: Session,
     owner: str,
@@ -465,37 +496,26 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
 
 
 def _exclusion_reason(
-    shot: ShotRecord, index: int, history: Sequence[ShotRecord]
+    shot: ShotRecord, index: int, candidates: Sequence[SlopePair]
 ) -> str:
     """Why this shot fed no pairwise slope.
 
-    Answered against the same predicates the fit used, so the explanation can
-    never contradict the decision. A shot pairs with nothing for one of three
-    reasons: it carries no usable measurement, every other shot sits at its
-    exact setting, or each candidate partner was ruled out.
+    Read off the candidate pairs the fit itself was built from, so the
+    explanation can never contradict the decision. A shot pairs with nothing
+    for one of three reasons: it carries no usable measurement, every other
+    shot sits at its exact setting, or each candidate partner was ruled out.
     """
     if shot.grind_clicks is None or not normalised_time(shot):
         return "no grind setting or no time recorded"
-
-    reasons: list[str] = []
-    for other_index, other in enumerate(history):
-        if other_index == index:
-            continue
-        if other.grind_clicks is None or not normalised_time(other):
-            continue
-        if other.grind_clicks == shot.grind_clicks:
-            continue
-        if other.bean_id != shot.bean_id:
-            reasons.append("a different coffee")
-            continue
-        prep = prep_incomparable_reason(shot, other)
-        reasons.append(prep if prep else "comparable")
-
+    reasons = [
+        pair.rejected or "comparable"
+        for pair in candidates
+        if index in (pair.a_index, pair.b_index)
+    ]
     if not reasons:
         return "no other shot of this coffee at a different setting yet"
     # One distinct reason is worth naming; a mixture is not.
-    distinct = set(reasons)
-    if len(distinct) == 1:
+    if len(set(reasons)) == 1:
         return f"every other shot it could pair with is {reasons[0]}"
     return "not comparable with any other shot of this coffee"
 
@@ -515,7 +535,7 @@ def serialize_fit(
     calibration = result.calibration
     history = list(result.history)
     target = result.target
-    caps = result.caps or GrinderCaps()
+    caps = result.caps
 
     candidates = theil_sen_pairs(history, calibration.pair_gamma)
     terms = [pair for pair in candidates if pair.used]
@@ -579,7 +599,7 @@ def serialize_fit(
                 "used_in_fit": index in used,
                 "excluded_reason": None
                 if index in used
-                else _exclusion_reason(shot, index, history),
+                else _exclusion_reason(shot, index, candidates),
             }
         )
 
@@ -617,7 +637,6 @@ def serialize_fit(
                 "id": candidate_id,
                 "name": bean_names.get(candidate_id, f"Coffee {candidate_id}"),
                 "delta_bean": round(offset, 4),
-                "shots_used": sum(1 for s in history if s.bean_id == candidate_id),
                 "is_current": candidate_id == bean_id,
             }
             for candidate_id, offset in sorted(calibration.bean_offsets.items())
@@ -645,11 +664,11 @@ def serialize_fit(
         ],
         "pairs_rejected_by_reason": rejected_counts,
         "target": {
-            "tr_lo": target.tr_lo if target else None,
-            "tr_hi": target.tr_hi if target else None,
-            "time_lo": target.time_lo if target else None,
-            "time_hi": target.time_hi if target else None,
-            "ratio_aim": target.ratio_aim if target else None,
+            "tr_lo": target.tr_lo,
+            "tr_hi": target.tr_hi,
+            "time_lo": target.time_lo,
+            "time_hi": target.time_hi,
+            "ratio_aim": target.ratio_aim,
         },
         # The floor that stops the grinder, and -- when only one channeling
         # sign has been seen -- the softer line the engine merely warns at.
