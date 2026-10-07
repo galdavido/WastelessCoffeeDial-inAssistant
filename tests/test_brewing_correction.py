@@ -221,6 +221,37 @@ class TestCameronGuardrail(unittest.TestCase):
         guarded = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, history, TARGET)
         self.assertEqual(guarded.grind_clicks, 30.0)
         self.assertIn("grind_channeling_floor", guarded.guardrails_hit)
+        self.assertEqual(limit.hard_kind, "channeling")
+
+    def test_the_leap_limit_is_not_called_channeling(self) -> None:
+        """docs/science.md#channeling-detection: it is about guessing."""
+        liked = ShotRecord(
+            "espresso", 18.0, grind_clicks=30.0, yield_g=36.0, time_s=27.0, rating=5
+        )
+        limit = finest_useful_clicks([liked], K6, TARGET)
+        self.assertEqual((limit.hard_clicks, limit.hard_kind), (28.0, "guess"))
+        recipe = Recipe(method="espresso", dose_g=18.0, grind_clicks=24.0)
+        guarded = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, [liked], TARGET)
+        self.assertEqual(guarded.grind_clicks, 28.0)
+        self.assertIn("grind_finer_than_best", guarded.guardrails_hit)
+        self.assertNotIn("grind_channeling_floor", guarded.guardrails_hit)
+
+    def test_pre_infusion_relief_does_not_loosen_the_leap_limit(self) -> None:
+        """Pre-infusion mitigates channeling; it adds no evidence about grind."""
+        liked = [
+            ShotRecord(
+                "espresso",
+                18.0,
+                grind_clicks=30.0,
+                yield_g=36.0,
+                time_s=27.0,
+                rating=5,
+                preinfusion_s=6.0,
+            )
+            for _ in range(2)
+        ]
+        limit = finest_useful_clicks(liked, K6, TARGET)
+        self.assertEqual((limit.hard_clicks, limit.hard_kind), (28.0, "guess"))
 
     def test_a_finer_step_inside_the_noise_is_not_a_sign(self) -> None:
         """2 clicks finer and a little faster: within one shot's scatter."""

@@ -918,6 +918,7 @@ function parseNullableInt(value) {
 const GUARDRAIL_LABELS = {
   grind_channeling_floor: 'Held back from finer — channeling',
   grind_channeling_warning: 'Possible channeling — watch it',
+  grind_finer_than_best: 'Held near what has worked',
   grind_hardware_min: 'At your grinder’s finest',
   grind_hardware_max: 'At your grinder’s coarsest',
   grind_snapped_to_step: 'Rounded to a real click',

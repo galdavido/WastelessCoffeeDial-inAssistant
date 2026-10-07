@@ -641,7 +641,11 @@ counts shots by the same signs and needs the hard floor.
 Two limits always hold, because they are about guessing, not channeling: never
 more than `max_steps_finer_than_best = 2` steps finer than the finest setting
 that has tasted right, and no single move above `max_move_fraction = 25%` of
-`|1/β|`. All of these numbers are judgement calls.
+`|1/β|`. All of these numbers are judgement calls. The first is reported as
+what it is (`grind_finer_than_best`), never as the channeling floor, so it
+neither starts the pre-infusion experiment nor counts toward the
+use-less-coffee suggestion, and pre-infusion relief ([#preinfusion](#preinfusion))
+does not loosen it.
 
 ### 5.8 The deadband: when not to change anything {#deadband}
 

@@ -952,12 +952,17 @@ class FinenessLimit:
     part that actually stops the grinder: the leap limit, plus the channeling
     signs once two independent ones agree. A single sign only warns
     (docs/science.md#channeling-detection).
+
+    ``hard_kind`` says which of the two stops it. They are different claims --
+    "the water is channeling" versus "that far past anything that worked is a
+    guess" -- and only the first may start the remedies for channeling.
     """
 
     clicks: float | None
     reason: str | None
     hard_clicks: float | None = None
     hard_reason: str | None = None
+    hard_kind: Literal["channeling", "guess"] | None = None
 
 
 def finest_useful_clicks(
@@ -980,9 +985,25 @@ def finest_useful_clicks(
     ]
     signs = channeling_signs(history, caps, target, beta, gamma)
     confirmed = _confirmed(signs)
-    candidates: list[tuple[float, str, bool]] = [
-        (s.clicks, s.reason, confirmed) for s in signs
-    ]
+
+    # A consistently pre-infused, rested puck saturates evenly before full
+    # pressure arrives, which is the standard channeling mitigation. Where the
+    # user does that every time, the channeling floor genuinely sits finer
+    # than it would otherwise -- so give back a step rather than holding them
+    # at a limit measured under worse conditions. Only the channeling signs
+    # get it: pre-infusion does nothing to the evidence the leap limit is
+    # about.
+    relief = _preinfuses_consistently(measured)
+    candidates: list[tuple[float, str, bool, Literal["channeling", "guess"]]] = []
+    for sign in signs:
+        clicks, reason = sign.clicks, sign.reason
+        if relief:
+            clicks = finer_by(clicks, value_of("preinfusion_channeling_relief"), caps)
+            reason = (
+                f"{reason}. Your pre-infusion is consistent, which lets the puck "
+                f"take a slightly finer grind than it otherwise would"
+            )
+        candidates.append((clicks, reason, confirmed, "channeling"))
 
     # (The hardware end-stop is deliberately *not* a trigger here. It is a
     # different kind of limit and apply_guardrails applies it separately, so
@@ -990,7 +1011,8 @@ def finest_useful_clicks(
     # "your shots are channeling".)
 
     # Never leap far below the finest setting that has actually worked. Not a
-    # channeling sign but a limit on guessing, so it always holds.
+    # channeling sign but a limit on guessing, so it always holds -- and it is
+    # labelled as what it is, for the same reason as the end-stop.
     acceptable = [
         s.grind_clicks
         for s in history
@@ -1005,47 +1027,28 @@ def finest_useful_clicks(
                 "more than a couple of steps finer than anything that has "
                 "worked before is a guess, not a correction",
                 True,
+                "guess",
             )
         )
 
-    if not candidates:
-        return FinenessLimit(None, None)
-
-    def coarsest(pool: list[tuple[float, str, bool]]) -> tuple[float, str] | None:
+    def coarsest(
+        pool: list[tuple[float, str, bool, Literal["channeling", "guess"]]],
+    ) -> tuple[float, str, Literal["channeling", "guess"]] | None:
         if not pool:
             return None
         best = pool[0]
         for candidate in pool[1:]:
             if is_finer(best[0], candidate[0], caps):
                 best = candidate
-        return best[0], best[1]
+        return best[0], best[1], best[3]
 
     soft = coarsest(candidates)
+    if soft is None:
+        return FinenessLimit(None, None)
     hard = coarsest([c for c in candidates if c[2]])
-    assert soft is not None
-
-    # A consistently pre-infused, rested puck saturates evenly before full
-    # pressure arrives, which is the standard channeling mitigation. Where the
-    # user does that every time, the floor genuinely sits finer than it would
-    # otherwise -- so give back a step rather than holding them at a limit
-    # measured under worse conditions.
-    relief = _preinfuses_consistently(measured)
-
-    def relieved(limit: tuple[float, str] | None) -> tuple[float | None, str | None]:
-        if limit is None:
-            return None, None
-        clicks, reason = limit
-        if relief:
-            clicks = finer_by(clicks, value_of("preinfusion_channeling_relief"), caps)
-            reason = (
-                f"{reason}. Your pre-infusion is consistent, which lets the puck "
-                f"take a slightly finer grind than it otherwise would"
-            )
-        return clicks, reason
-
-    clicks, reason = relieved(soft)
-    hard_clicks, hard_reason = relieved(hard)
-    return FinenessLimit(clicks, reason, hard_clicks, hard_reason)
+    if hard is None:
+        return FinenessLimit(soft[0], soft[1])
+    return FinenessLimit(soft[0], soft[1], hard[0], hard[1], hard[2])
 
 
 def _preinfuses_consistently(shots: Sequence[ShotRecord]) -> bool:
@@ -1773,7 +1776,11 @@ def apply_guardrails(
             grind, limit.hard_clicks, grinder
         ):
             grind = limit.hard_clicks
-            hits.append("grind_channeling_floor")
+            hits.append(
+                "grind_channeling_floor"
+                if limit.hard_kind == "channeling"
+                else "grind_finer_than_best"
+            )
             if limit.hard_reason:
                 notes.append(limit.hard_reason)
         elif limit.clicks is not None and is_finer(grind, limit.clicks, grinder):
