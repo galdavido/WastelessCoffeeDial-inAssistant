@@ -1738,20 +1738,59 @@ def prep_advice(
             ),
         )
 
-    best = max(
-        recorded,
-        key=lambda s: (
-            (s.rating or 0),
-            -abs(TASTE_SCALE.get(s.taste_axis or "balanced", 0)),
-        ),
-    )
+    # Two durations at least: compare them, but only on enough rated shots at
+    # each -- one well-rated shot is a single puck, not a finding.
+    groups: dict[int, list[ShotRecord]] = {}
+    for shot in recorded:
+        if shot.preinfusion_s:
+            groups.setdefault(round(shot.preinfusion_s), []).append(shot)
+    # The habit: the duration pulled most, the shorter on a tie.
+    habit = max(groups, key=lambda d: (len(groups[d]), -d))
+    needed = int(value_of("min_shots_at_new_prep"))
+
+    def rated(duration: int) -> list[int]:
+        return [s.rating for s in groups[duration] if s.rating is not None]
+
+    def routine(duration: int) -> tuple[float, float | None]:
+        shots = groups[duration]
+        durations = [s.preinfusion_s for s in shots if s.preinfusion_s]
+        rests = [s.pause_s for s in shots if s.pause_s is not None]
+        return (
+            statistics.median(durations),
+            statistics.median(rests) if rests else None,
+        )
+
+    habit_pi, habit_pause = routine(habit)
+    comparable = [d for d in groups if len(rated(d)) >= needed]
+    if habit not in comparable or len(comparable) < 2:
+        return (
+            habit_pi,
+            habit_pause,
+            (
+                f"Keeping pre-infusion at your usual {habit_pi:g} s. There are "
+                f"not yet {needed} rated shots at each of two durations, so "
+                f"whether another one is better is still unmeasured."
+            ),
+        )
+
+    best = max(comparable, key=lambda d: (statistics.median(rated(d)), d == habit))
+    best_pi, best_pause = routine(best)
+    if best == habit:
+        return (
+            habit_pi,
+            habit_pause,
+            (
+                f"Your shots at your usual {habit_pi:g} s rate at least as well "
+                f"as at the other durations you have tried, so keep it."
+            ),
+        )
     return (
-        best.preinfusion_s,
-        best.pause_s,
+        best_pi,
+        best_pause,
         (
-            f"Your best-rated shots pre-infuse for about {best.preinfusion_s:g} s"
-            + (f" with a {best.pause_s:g} s rest" if best.pause_s else "")
-            + "."
+            f"Your shots pre-infused for about {best_pi:g} s rate better than "
+            f"at your usual {habit_pi:g} s, over at least {needed} rated shots "
+            f"each" + (f", with a {best_pause:g} s rest" if best_pause else "") + "."
         ),
     )
 

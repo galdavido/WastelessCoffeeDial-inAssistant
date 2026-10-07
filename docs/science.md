@@ -591,6 +591,13 @@ relief. The grind is held where the guardrails left it: one lever at a time. It 
 to the advice above. The use-less-coffee suggestion waits while it runs
 ([#dose-reduction](#dose-reduction)).
 
+**Comparing durations.** With two or more durations recorded, the engine
+compares the median rating at each, counting only rated shots and only
+durations with at least `min_shots_at_new_prep` of them. It moves away from the
+user's habitual duration only when another one rates strictly better; a tie, or
+too few rated shots, keeps the habit. One well-rated shot is a single puck, not
+a finding.
+
 ### 5.6 Brew temperature as a covariate {#temp-covariate}
 
 Hotter water is less viscous and extracts faster, so two shots at different

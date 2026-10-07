@@ -366,7 +366,34 @@ class TestPrepAdvice(unittest.TestCase):
         pi, pause, note = prep_advice(shots)
         self.assertEqual(pi, 12.0)
         self.assertEqual(pause, 6.0)
-        self.assertIn("best-rated", note)
+        self.assertIn("rate better", note)
+
+    def test_one_great_shot_does_not_move_the_routine(self) -> None:
+        """A single well-rated puck is not a finding (it used to win)."""
+        shots = [
+            *[_shot(33, 28.0, preinfusion_s=2.0, rating=3) for _ in range(9)],
+            _shot(33, 28.0, preinfusion_s=5.0, rating=5),
+        ]
+        pi, _, note = prep_advice(shots)
+        self.assertEqual(pi, 2.0)
+        self.assertIn("still unmeasured", note)
+
+    def test_a_tie_keeps_the_habit(self) -> None:
+        shots = [
+            *[_shot(33, 28.0, preinfusion_s=2.0, rating=4) for _ in range(6)],
+            *[_shot(33, 28.0, preinfusion_s=5.0, rating=4) for _ in range(3)],
+        ]
+        pi, _, note = prep_advice(shots)
+        self.assertEqual(pi, 2.0)
+        self.assertIn("keep it", note)
+
+    def test_unrated_shots_are_not_evidence(self) -> None:
+        shots = [
+            *[_shot(33, 28.0, preinfusion_s=2.0, rating=3) for _ in range(6)],
+            *[_shot(33, 28.0, preinfusion_s=5.0) for _ in range(4)],
+        ]
+        pi, _, _ = prep_advice(shots)
+        self.assertEqual(pi, 2.0)
 
 
 if __name__ == "__main__":
