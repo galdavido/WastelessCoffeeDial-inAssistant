@@ -475,7 +475,10 @@ midpoint of the hardware range is *not* a safe default: on a K6 (0–180) it is
 
 **Assumption:** zero is burr contact and the scale is linear. True for zero-set
 hand grinders; not for stepped electric grinders with an arbitrary origin. With
-`µm per click` unknown, the engine abstains (tier E).
+`µm per click` unknown, the engine names no setting and asks for one measured
+shot instead. That can happen at tier D (range known) as well as tier E (no
+range): the tier says how much was measured, not whether the dial can be
+located.
 
 ### 4.3 Kingrinder K6 {#k6-caps}
 
@@ -494,6 +497,11 @@ hardcoding a range.
 `κ_bean = 2.0` for the per-bean offset. `n_eff` counts **distinct grind
 settings**, not shots: ten shots at one setting carry no slope information.
 About four distinct settings gets you halfway from prior to fitted. Pure guess.
+
+Below `min_fit_settings = 3` distinct settings spanning `min_fit_span_steps = 3`
+grinder steps, `β` is not fitted at all: two settings a step apart give a slope
+that is mostly noise ([#deadband](#deadband)). The fit view reads the same gate,
+so below it no pair is drawn as feeding a fit.
 
 ### 5.2 Similarity weights {#similarity}
 
@@ -526,7 +534,8 @@ cosmetic; retained because it matches common practice.
 ### 5.4 Fresh-coffee band widening {#fresh-band}
 
 Under 7 days off roast, acceptance bands are doubled and corrections halved, and
-the user is told the target is moving. The 7 days sits near the slow degassing
+the user is told the target is moving — on a coffee's first shot too, where
+there is no band to widen yet but the warning still applies. The 7 days sits near the slow degassing
 time constant ([#degassing](#degassing)); the factors are guesses.
 
 ### 5.5 Pre-infusion and the rest before the pull {#preinfusion}
@@ -567,6 +576,18 @@ step. An inconsistent routine gets no relief.
 pre-infusion duration recorded, the engine reports the user's own routine and
 says keeping it constant makes the grind evidence readable. It does not propose
 an optimum it has not measured.
+
+**The experiment.** Once the channeling floor has taken the grind lever away,
+"keep your usual pre-infusion" is a dead end: nothing is left to change. So,
+for espresso with enough recorded shots and a habitual duration below
+`preinfusion_min_for_relief_s`, the engine proposes a longer one:
+`preinfusion_experiment_step_s` more than the habit — enough that the new shots
+are not mistaken for the old as grind evidence — and never less than
+`preinfusion_min_for_relief_s`, where pre-infusion starts to earn the floor's
+relief. The grind is held where the guardrails left it: one lever at a time. It runs until
+`min_shots_at_new_prep` shots are logged at the new duration, then hands back
+to the advice above. The use-less-coffee suggestion waits while it runs
+([#dose-reduction](#dose-reduction)).
 
 ### 5.6 Brew temperature as a covariate {#temp-covariate}
 

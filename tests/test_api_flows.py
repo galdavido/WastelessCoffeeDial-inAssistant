@@ -286,6 +286,30 @@ class TestScanAndPull(FlowTestCase):
         self.assertLess(body["recipe"]["grind_clicks"], 20.0)
         self.assertIsNotNone(body["recommendation_id"])
 
+    def test_the_stored_recommendation_carries_what_a_backtest_needs(self) -> None:
+        self.make_setup()
+        scan = self.scan()
+        self.log_shot(scan["coffee_data"], time_s=18.0)
+        bean_id = self.only_coffee()["bean_id"]
+        body = self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+
+        from core.engine import ENGINE_VERSION
+        from database.database import SessionLocal
+        from database.models import Recommendation
+
+        with SessionLocal() as db:
+            row = db.get(Recommendation, body["recommendation_id"])
+            assert row is not None
+            self.assertEqual(row.engine_version, ENGINE_VERSION)
+            for key in (
+                "gamma",
+                "preinfusion_s",
+                "pause_s",
+                "prep_experiment",
+                "suggestion_dose_g",
+            ):
+                self.assertIn(key, row.inputs_json)
+
     def test_the_fit_view_shows_the_pass_the_recipe_came_from(self) -> None:
         self.make_setup()
         scan = self.scan()

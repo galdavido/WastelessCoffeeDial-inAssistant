@@ -272,6 +272,30 @@ class TestItStaysHonestWithNothingToShow(unittest.TestCase):
         self.assertEqual(payload["law"]["shrink_weight"], 0.0)
         self.assertIsNone(payload["law"]["beta_fitted"])
 
+    def test_two_settings_draw_no_fit_that_did_not_happen(self) -> None:
+        """A comparable pair exists, but below the gate no median was taken."""
+        history = HISTORY[:2]  # one coffee, two settings
+        calibration = fit_setup(
+            history, "espresso", K6, beta_prior("espresso", K6), bean_id=RWANDA
+        )
+        self.assertEqual(calibration.beta_source, "prior")
+        result = EngineResult(
+            recipe=Recipe(method="espresso", dose_g=18.0, grind_clicks=28.0),
+            rationale=Rationale(headline="h", why="w", what_to_watch="x"),
+            calibration=calibration,
+            tier="C",
+            llm_model=None,
+            history=tuple(history),
+            bean_history=tuple(history),
+            target=TARGET,
+            caps=K6,
+        )
+        payload = serialize_fit(result, NAMES, RWANDA)
+        self.assertEqual(payload["pairs"], [])
+        for shot in payload["shots"]:
+            self.assertFalse(shot["used_in_fit"])
+            self.assertIn("textbook", shot["excluded_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

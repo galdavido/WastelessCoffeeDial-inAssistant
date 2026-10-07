@@ -305,6 +305,17 @@ def bean_offsets(
     }
 
 
+def slope_fit_ready(n_eff: int, span: float, caps: GrinderCaps) -> bool:
+    """Whether there is enough spread in the settings to fit beta at all.
+
+    Below this the slope is the prior and no pair enters a median -- the
+    fit view reads the same predicate, so it never draws a fit that did not
+    happen. docs/science.md#shrinkage.
+    """
+    min_span = value_of("min_fit_span_steps") * (caps.step_clicks or 1.0)
+    return n_eff >= value_of("min_fit_settings") and span >= min_span
+
+
 def fit_setup(
     shots: Sequence[ShotRecord],
     method: Method,
@@ -333,8 +344,7 @@ def fit_setup(
 
     fitted: float | None = None
     pair_gamma = gamma_prior
-    min_span = 3.0 * (caps.step_clicks or 1.0)
-    if n_eff >= 3 and span >= min_span:
+    if slope_fit_ready(n_eff, span, caps):
         # Only comparable pairs count. There is deliberately no fallback to
         # pooling every pair: this returns None exactly when there is no
         # same-coffee, same-preparation pair to learn from, and pooling then

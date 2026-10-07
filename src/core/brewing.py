@@ -159,6 +159,20 @@ CONSTANTS: dict[str, Constant] = {
         "bean similarity tops out at 0.60; below this an offset is not worth borrowing",
     ),
     "roast_time_modifier_s": Constant(1.0, "s", "HEURISTIC", "#roast-time-modifier"),
+    "min_fit_settings": Constant(
+        3.0,
+        "settings",
+        "HEURISTIC",
+        "#shrinkage",
+        "distinct grind settings before beta is fitted at all",
+    ),
+    "min_fit_span_steps": Constant(
+        3.0,
+        "steps",
+        "HEURISTIC",
+        "#shrinkage",
+        "grinder steps the settings must span before beta is fitted",
+    ),
     "fresh_band_widening": Constant(2.0, "factor", "HEURISTIC", "#fresh-band"),
     "fresh_correction_damping": Constant(0.5, "factor", "HEURISTIC", "#fresh-band"),
     "channeling_variance_ratio": Constant(
@@ -1108,6 +1122,21 @@ def tasted_right(shot: ShotRecord) -> bool:
     return shot.rating is not None and shot.rating >= 4
 
 
+def fresh_note(days_since_roast: int | None) -> str | None:
+    """The moving-target warning for coffee still degassing, or None.
+
+    Said on every recipe for a coffee under the rest window, first shot
+    included (docs/science.md#fresh-band).
+    """
+    if days_since_roast is None or days_since_roast >= value_of("degas_rest_days"):
+        return None
+    return (
+        f"this coffee is {days_since_roast} days off roast; it is still "
+        f"releasing CO2, so flow will be erratic and the target will move "
+        f"until about day {value_of('degas_rest_days'):.0f}"
+    )
+
+
 def correct(
     last: ShotRecord,
     target: Target,
@@ -1179,15 +1208,10 @@ def correct(
         else None
     )
 
-    fresh = days_since_roast is not None and days_since_roast < value_of(
-        "degas_rest_days"
-    )
-    if fresh:
-        notes.append(
-            f"this coffee is {days_since_roast} days off roast; it is still "
-            f"releasing CO2, so flow will be erratic and the target will move "
-            f"until about day {value_of('degas_rest_days'):.0f}"
-        )
+    fresh_warning = fresh_note(days_since_roast)
+    fresh = fresh_warning is not None
+    if fresh_warning:
+        notes.append(fresh_warning)
 
     def build(**overrides: object) -> Recipe:
         base: dict[str, object] = {

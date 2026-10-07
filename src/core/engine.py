@@ -45,6 +45,7 @@ from .brewing import (
     dose_reduction,
     dose_term,
     finest_useful_clicks,
+    fresh_note,
     normalised_time,
     preinfusion_experiment,
     prep_advice,
@@ -53,12 +54,14 @@ from .brewing import (
     snap_to_step,
     target_for,
     temp_band_for_roast,
+    value_of,
 )
 from .calibration import (
     Calibration,
     SlopePair,
     confidence_label,
     fit_setup,
+    slope_fit_ready,
     theil_sen_pairs,
 )
 from .retrieval import (
@@ -72,7 +75,9 @@ from .retrieval import (
     shots_for_bean,
 )
 
-ENGINE_VERSION = "1.0.0"
+# Stored with every recommendation, so a backtest can tell engines apart.
+# Bump it whenever a change can move a recipe number or the advice.
+ENGINE_VERSION = "1.1.0"
 
 
 @dataclass(frozen=True)
@@ -89,6 +94,8 @@ class EngineResult:
     protocol: str | None = None
     history: tuple[ShotRecord, ...] = ()
     bean_history: tuple[ShotRecord, ...] = ()
+    # Whether the pre-infusion experiment set this recipe's preparation.
+    prep_experiment: bool = False
     # Cameron's use-less-coffee move, when channeling keeps coming back. Kept
     # beside the recipe, never in it -- see brewing.DoseReduction.
     suggestion: DoseReduction | None = None
@@ -308,6 +315,7 @@ def recommend(
         bean_history=tuple(bean_history),
         target=target,
         caps=caps,
+        prep_experiment=experiment is not None,
         suggestion=suggestion,
         roast_level_ord=roast_ord,
     )
@@ -337,6 +345,11 @@ def _first_shot_recipe(
     roast_ord = bean.roast_level_ord if bean else None
     notes: list[str] = []
     protocol: str | None = None
+    # A first shot on a coffee still degassing is the least predictable of
+    # all, so it is warned about the same as any other.
+    fresh_warning = fresh_note(days)
+    if fresh_warning:
+        notes.append(fresh_warning)
     basis: Basis
     tr_aim = (
         (target.tr_lo + target.tr_hi) / 2.0
@@ -443,7 +456,14 @@ def persist_recommendation(
             "n_eff": result.calibration.n_eff,
             "beta": result.calibration.beta,
             "beta_source": result.calibration.beta_source,
+            "gamma": result.calibration.gamma,
             "guardrails_hit": list(recipe.guardrails_hit),
+            "preinfusion_s": recipe.preinfusion_s,
+            "pause_s": recipe.pause_s,
+            "prep_experiment": result.prep_experiment,
+            "suggestion_dose_g": result.suggestion.dose_g
+            if result.suggestion is not None
+            else None,
         },
         rationale_text=result.rationale.why,
         llm_model=result.llm_model,
@@ -520,6 +540,19 @@ def _exclusion_reason(
     return "not comparable with any other shot of this coffee"
 
 
+def _unfitted_reason(calibration: Calibration, caps: GrinderCaps) -> str | None:
+    """Why no slope was fitted at all, or None when the fit ran."""
+    if calibration.beta_prior_value is None:
+        return "this brew method has no grind law to fit"
+    if slope_fit_ready(calibration.n_eff, calibration.click_span, caps):
+        return None
+    return (
+        f"the slope is still the textbook one until there are shots at "
+        f"{value_of('min_fit_settings'):g} settings at least "
+        f"{value_of('min_fit_span_steps'):g} steps apart"
+    )
+
+
 def serialize_fit(
     result: EngineResult,
     bean_names: dict[int, str],
@@ -538,7 +571,10 @@ def serialize_fit(
     caps = result.caps
 
     candidates = theil_sen_pairs(history, calibration.pair_gamma)
-    terms = [pair for pair in candidates if pair.used]
+    # The same gate fit_setup used: below it no pair entered any median, so
+    # drawing them as the fit would show a fit that did not happen.
+    unfitted = _unfitted_reason(calibration, caps)
+    terms = [] if unfitted else [pair for pair in candidates if pair.used]
     used = {index for term in terms for index in (term.a_index, term.b_index)}
 
     # Why pairs were turned away, counted. On a two-coffee history the
@@ -599,7 +635,11 @@ def serialize_fit(
                 "used_in_fit": index in used,
                 "excluded_reason": None
                 if index in used
-                else _exclusion_reason(shot, index, candidates),
+                else (
+                    unfitted
+                    if unfitted and shot.grind_clicks is not None and measured
+                    else _exclusion_reason(shot, index, candidates)
+                ),
             }
         )
 
