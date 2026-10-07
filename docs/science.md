@@ -638,6 +638,10 @@ different shots, or different kinds of sign; two comparisons built on one freak
 shot count once. The use-less-coffee suggestion ([#dose-reduction](#dose-reduction))
 counts shots by the same signs and needs the hard floor.
 
+When a limit holds the grind at or past the last shot's setting, the advice
+says so ("keep the grind at 28 … the channeling floor holds it there") instead
+of leaving the correction's "go finer" beside a number that is not finer.
+
 Two limits always hold, because they are about guessing, not channeling: never
 more than `max_steps_finer_than_best = 2` steps finer than the finest setting
 that has tasted right, and no single move above `max_move_fraction = 25%` of

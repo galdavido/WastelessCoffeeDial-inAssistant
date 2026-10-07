@@ -223,6 +223,62 @@ class TestCameronGuardrail(unittest.TestCase):
         self.assertIn("grind_channeling_floor", guarded.guardrails_hit)
         self.assertEqual(limit.hard_kind, "channeling")
 
+    def test_a_held_grind_is_not_told_to_go_finer(self) -> None:
+        """The floor stops it at the last shot's setting: say so, not "finer"."""
+        long_sour = ShotRecord(
+            "espresso",
+            18.0,
+            grind_clicks=28.0,
+            yield_g=36.0,
+            time_s=45.0,
+            taste_axis="sour",
+        )
+        sour_drying = ShotRecord(
+            "espresso",
+            18.0,
+            grind_clicks=30.0,
+            yield_g=36.0,
+            time_s=27.0,
+            taste_axis="sour",
+            astringent=True,
+        )
+        fast = ShotRecord(
+            "espresso", 18.0, grind_clicks=30.0, yield_g=36.0, time_s=18.0
+        )
+        history = [fast, long_sour, sour_drying]
+        self.assertEqual(finest_useful_clicks(history, K6, TARGET).hard_clicks, 30.0)
+
+        beta = beta_prior("espresso", K6)
+        recipe = correct(fast, TARGET, beta, K6, FIXED_TEMP_MACHINE)
+        self.assertLess(recipe.grind_clicks, 30.0)
+        self.assertIn("so go finer", recipe.grind_note or "")
+
+        guarded = apply_guardrails(
+            recipe, K6, FIXED_TEMP_MACHINE, history, TARGET, beta
+        )
+        self.assertEqual(guarded.grind_clicks, 30.0)
+        self.assertFalse(any("so go finer" in note for note in guarded.notes))
+        self.assertTrue(
+            any(note.startswith("keep the grind at 30") for note in guarded.notes),
+            guarded.notes,
+        )
+
+    def test_a_clamp_that_still_goes_finer_keeps_the_note(self) -> None:
+        recipe = Recipe(
+            method="espresso",
+            dose_g=18.0,
+            grind_clicks=20.0,
+            notes=("your shot ran fast for the ratio, so go finer",),
+            grind_note="your shot ran fast for the ratio, so go finer",
+            anchor_clicks=30.0,
+        )
+        liked = ShotRecord(
+            "espresso", 18.0, grind_clicks=30.0, yield_g=36.0, time_s=27.0, rating=5
+        )
+        guarded = apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, [liked], TARGET)
+        self.assertEqual(guarded.grind_clicks, 28.0)
+        self.assertIn(recipe.grind_note, guarded.notes)
+
     def test_the_leap_limit_is_not_called_channeling(self) -> None:
         """docs/science.md#channeling-detection: it is about guessing."""
         liked = ShotRecord(

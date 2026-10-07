@@ -1085,6 +1085,11 @@ class Recipe:
     confidence: float = 0.0
     guardrails_hit: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    # The note in `notes` that explains the grind number, and the setting it
+    # is relative to (the last shot's). Kept so a guardrail that moves the
+    # grind the other way can replace the note instead of contradicting it.
+    grind_note: str | None = None
+    anchor_clicks: float | None = None
 
     def numeric_tokens(self) -> set[str]:
         """Every number this recipe legitimately contains.
@@ -1230,6 +1235,7 @@ def correct(
             "brew_temp_c": temp,
             "target_time_s": target.time_hi,
             "notes": tuple(notes),
+            "anchor_clicks": last.grind_clicks,
         }
         base.update(overrides)
         return Recipe(**base)  # type: ignore[arg-type]
@@ -1271,7 +1277,8 @@ def correct(
             return build(
                 target_time_s=round(last.time_s)
                 if last.time_s is not None
-                else target.time_hi
+                else target.time_hi,
+                grind_note=notes[-1],
             )
         if (
             grind is not None
@@ -1289,7 +1296,7 @@ def correct(
                 f"than shots at one setting normally vary -- pull the same shot "
                 f"again before changing the grind"
             )
-            return build()
+            return build(grind_note=notes[-1])
         if grind is not None and not (tr_lo <= tr <= tr_hi):
             tr_aim = (tr_lo + tr_hi) / 2
             proposed = solve_grind(grind, tr, tr_aim, beta)
@@ -1315,7 +1322,10 @@ def correct(
                     f"your shot ran {'long' if tr > tr_hi else 'fast'} for the "
                     f"ratio, so go {direction}"
                 )
-            return build(grind_clicks=snap_to_step(grind + move, grinder))
+            return build(
+                grind_clicks=snap_to_step(grind + move, grinder),
+                grind_note=notes[-1],
+            )
         if dose_changed and gamma:
             notes.append(
                 f"at {dose:g} g your last shot's setting should still land in "
@@ -1353,7 +1363,8 @@ def correct(
                     "still sour at the long end of the ratio range: one step finer"
                 )
                 return build(
-                    grind_clicks=snap_to_step(finer_by(grind, 1, grinder), grinder)
+                    grind_clicks=snap_to_step(finer_by(grind, 1, grinder), grinder),
+                    grind_note=notes[-1],
                 )
             notes.append(
                 "still sour, and no lever is left that this recipe can move -- "
@@ -1380,7 +1391,8 @@ def correct(
                 "drying and bitter with the timing on target: one step coarser"
             )
             return build(
-                grind_clicks=snap_to_step(finer_by(grind, -1, grinder), grinder)
+                grind_clicks=snap_to_step(finer_by(grind, -1, grinder), grinder),
+                grind_note=notes[-1],
             )
         shorter = max(target.ratio_aim * 0.9, target.ratio_lo)
         if ratio is None or ratio > shorter + 0.05:
@@ -1399,7 +1411,7 @@ def correct(
         return build()
 
     notes.append("this one looks on target -- keep it the same and repeat it")
-    return build()
+    return build(grind_note=notes[-1])
 
 
 def resistance_disagreement(
@@ -1747,6 +1759,53 @@ def temp_band_for_roast(roast_level_ord: int | None) -> tuple[float, float]:
     return value_of("temp_medium_lo"), value_of("temp_medium_hi")
 
 
+def _direction(clicks: float, anchor: float, caps: GrinderCaps) -> str:
+    if is_finer(clicks, anchor, caps):
+        return "finer"
+    if is_finer(anchor, clicks, caps):
+        return "coarser"
+    return "same"
+
+
+def _rewrite_grind_note(
+    notes: list[str],
+    recipe: Recipe,
+    given: float,
+    proposed: float,
+    held_by: str,
+    caps: GrinderCaps,
+) -> list[str]:
+    """Replace the correction's grind note when a guardrail turned it around.
+
+    The correction says which way to go from the last shot ("go finer");
+    a guardrail that then holds the grind at or past the last shot's setting
+    makes that sentence false beside the number actually given. Only the
+    direction is checked: a clamp that still lands finer, just less so,
+    leaves "go finer" true.
+    """
+    anchor = recipe.anchor_clicks
+    if recipe.grind_note is None or anchor is None or recipe.grind_note not in notes:
+        return notes
+    wanted = _direction(proposed, anchor, caps)
+    given_way = _direction(given, anchor, caps)
+    if wanted == given_way:
+        return notes
+    wanted_words = (
+        "keep the setting" if wanted == "same" else f"go {wanted} than {anchor:g}"
+    )
+    if given_way == "same":
+        replacement = (
+            f"keep the grind at {anchor:g}: the last shot on its own would "
+            f"{wanted_words}, but {held_by}"
+        )
+    else:
+        replacement = (
+            f"go {given_way}, to {given:g}: the last shot on its own would "
+            f"{wanted_words}, but {held_by}"
+        )
+    return [replacement if note == recipe.grind_note else note for note in notes]
+
+
 def apply_guardrails(
     recipe: Recipe,
     grinder: GrinderCaps,
@@ -1771,16 +1830,20 @@ def apply_guardrails(
 
     # --- grind ---------------------------------------------------------
     if grind is not None:
+        # What last moved the grind away from the correction's number, in
+        # words for the note that replaces the correction's own.
+        held_by: str | None = None
         limit = finest_useful_clicks(history, grinder, target, beta, gamma)
         if limit.hard_clicks is not None and is_finer(
             grind, limit.hard_clicks, grinder
         ):
             grind = limit.hard_clicks
-            hits.append(
-                "grind_channeling_floor"
-                if limit.hard_kind == "channeling"
-                else "grind_finer_than_best"
-            )
+            if limit.hard_kind == "channeling":
+                hits.append("grind_channeling_floor")
+                held_by = "the channeling floor holds it there"
+            else:
+                hits.append("grind_finer_than_best")
+                held_by = "that is as far past your best shots as is safe to guess"
             if limit.hard_reason:
                 notes.append(limit.hard_reason)
         elif limit.clicks is not None and is_finer(grind, limit.clicks, grinder):
@@ -1797,14 +1860,21 @@ def apply_guardrails(
         if grinder.min_clicks is not None and grind < grinder.min_clicks:
             grind = grinder.min_clicks
             hits.append("grind_hardware_min")
+            held_by = "your grinder's range ends there"
         if grinder.max_clicks is not None and grind > grinder.max_clicks:
             grind = grinder.max_clicks
             hits.append("grind_hardware_max")
+            held_by = "your grinder's range ends there"
 
         snapped = snap_to_step(grind, grinder)
         if snapped != grind:
             hits.append("grind_snapped_to_step")
             grind = snapped
+
+        if held_by is not None and recipe.grind_clicks is not None:
+            notes = _rewrite_grind_note(
+                notes, recipe, grind, recipe.grind_clicks, held_by, grinder
+            )
 
     # --- dose ----------------------------------------------------------
     asked_dose = dose
