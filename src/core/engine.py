@@ -153,7 +153,10 @@ def recommend(
     machine = setup.machine if setup else None
     caps = grinder_caps(grinder)
     machine_spec = machine_caps(machine)
-    target = target_for(method, style)
+    roast_ord = bean.roast_level_ord if bean else None
+    # The coffee's own band: correction, floor, suggestion and fit view all
+    # judge against this one, so they never disagree about "in the band".
+    target = target_for(method, style, roast_ord)
 
     setup_id = setup.id if setup else None
     bean_id = bean.id if bean else None
@@ -172,7 +175,6 @@ def recommend(
     label = confidence_label(calibration)
 
     days = _days_since_roast(bean.roast_date if bean else None)
-    roast_ord = bean.roast_level_ord if bean else None
 
     target_features = BeanFeatures(
         roast_level_ord=roast_ord,

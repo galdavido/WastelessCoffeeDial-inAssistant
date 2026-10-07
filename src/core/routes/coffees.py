@@ -152,7 +152,9 @@ def get_bean_shots(
     }
 
     active_method = get_active_setup_method(setup)
-    target = target_for(active_method)
+    # The same roast-moved band the engine corrected against, or a shot the
+    # recipe called "in the band" could be shown here as long.
+    target = target_for(active_method, roast_level_ord=bean.roast_level_ord)
 
     shots: list[dict[str, Any]] = []
     for index, log in enumerate(logs):
@@ -161,7 +163,7 @@ def get_bean_shots(
         tr = normalised_time(record)
 
         band: str | None = None
-        shot_target = target_for(method)  # type: ignore[arg-type]
+        shot_target = target_for(method, roast_level_ord=bean.roast_level_ord)  # type: ignore[arg-type]
         if tr is not None and shot_target.tr_lo is not None and shot_target.tr_hi:
             if tr > shot_target.tr_hi:
                 band = "long"

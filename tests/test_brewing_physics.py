@@ -22,6 +22,7 @@ from core.brewing import (
     snap_to_step,
     solve_grind,
     target_for,
+    temp_band_for_roast,
 )
 
 
@@ -114,6 +115,40 @@ class TestTargets(unittest.TestCase):
         t = target_for("moka")
         self.assertIsNone(t.time_lo)
         self.assertIsNone(t.tr_lo)
+
+
+class TestRoastTimeModifier(unittest.TestCase):
+    """docs/science.md#roast-time-modifier."""
+
+    def _band(self, roast: int | None, style: str | None = None) -> tuple:
+        t = target_for("espresso", style, roast)
+        return t.time_lo, t.time_hi
+
+    def test_light_aims_longer_dark_shorter(self) -> None:
+        self.assertEqual(self._band(1), (26.0, 31.0))
+        self.assertEqual(self._band(2), (26.0, 31.0))
+        self.assertEqual(self._band(4), (24.0, 29.0))
+        self.assertEqual(self._band(5), (24.0, 29.0))
+
+    def test_medium_and_unknown_keep_the_band(self) -> None:
+        self.assertEqual(self._band(3), (25.0, 30.0))
+        self.assertEqual(self._band(None), (25.0, 30.0))
+
+    def test_split_matches_the_temperature_bands(self) -> None:
+        # One idea of "light" and "dark" across the engine.
+        for roast in range(1, 6):
+            shifted = self._band(roast) != self._band(None)
+            moved_temp = temp_band_for_roast(roast) != temp_band_for_roast(3)
+            self.assertEqual(shifted, moved_temp, roast)
+
+    def test_styles_move_too_and_ratio_is_untouched(self) -> None:
+        self.assertEqual(self._band(5, "ristretto"), (19.0, 27.0))
+        light = target_for("espresso", "lungo", 1)
+        self.assertEqual(light.ratio_aim, target_for("espresso", "lungo").ratio_aim)
+        self.assertGreater(light.tr_hi, target_for("espresso", "lungo").tr_hi)
+
+    def test_moka_still_has_no_time(self) -> None:
+        self.assertIsNone(target_for("moka", roast_level_ord=1).time_lo)
 
 
 class TestSimulatorReproducesCameron(unittest.TestCase):

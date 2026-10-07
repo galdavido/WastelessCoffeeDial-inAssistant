@@ -514,7 +514,13 @@ roughly a close roast match plus one of process or origin. Pure guess.
 
 ### 5.3 Roast-level time modifier {#roast-time-modifier}
 
-±1 s on the target `T_r`: lighter roasts a touch longer, darker shorter. Nearly
+±1 s on the target time band, and so on its `T_r`: light and medium-light
+roasts aim a second longer, medium-dark and dark a second shorter, split at the
+same roast levels as [#temp-by-roast](#temp-by-roast); medium and unknown roasts
+keep the band. Espresso 25–30 s becomes 26–31 s for a light coffee and 24–29 s
+for a dark one. The shifted band is the coffee's band everywhere — the
+correction, the deadband, the channeling floor, the shot history's long/fast
+verdict and the backtest — so no two views disagree about a shot. Nearly
 cosmetic; retained because it matches common practice.
 
 ### 5.4 Fresh-coffee band widening {#fresh-band}

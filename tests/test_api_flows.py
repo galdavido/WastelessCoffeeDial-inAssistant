@@ -769,6 +769,27 @@ class TestOwnershipOfDerivedRows(FlowTestCase):
 
 
 class TestShotHistory(FlowTestCase):
+    def test_a_dark_coffee_aims_a_second_shorter_everywhere(self) -> None:
+        """docs/science.md#roast-time-modifier: recipe and history agree."""
+        self.make_setup()
+        bean_id = self.ok(
+            self.api.post(
+                "/api/logs/manual",
+                json={
+                    "roaster": "Hand",
+                    "name": "Dark",
+                    "origin": "Brazil",
+                    "process": "Natural",
+                    "roast_level": "Dark",
+                },
+            )
+        )["bean_id"]
+
+        body = self.ok(self.api.post("/api/recommendation", json={"bean_id": bean_id}))
+        self.assertEqual(body["recipe"]["target_time_s"], 29.0)
+        band = self.ok(self.api.get(f"/api/beans/{bean_id}/shots"))["target"]
+        self.assertEqual((band["time_lo"], band["time_hi"]), (24.0, 29.0))
+
     def test_the_direction_of_a_change_follows_the_grinders_dial(self) -> None:
         """A bigger number is finer on a higher-is-finer grinder."""
         grinder = self.ok(

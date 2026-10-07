@@ -43,6 +43,7 @@ from .brewing import (
     cold_start_clicks,
     correct,
     dose_term,
+    for_roast,
     normalised_time,
 )
 from .calibration import fit_setup
@@ -133,7 +134,9 @@ def direction_agreement(
     for before, after in zip(measured, measured[1:], strict=False):
         if before.grind_clicks is None or after.grind_clicks is None:
             continue
-        if not _improved(before, after, target):
+        # Judged by the band the engine would have used for this coffee.
+        bean_target = for_roast(target, before.roast_level_ord)
+        if not _improved(before, after, bean_target):
             continue
         pairs += 1
 
@@ -143,14 +146,14 @@ def direction_agreement(
         # would be when the user changes it.
         recipe = correct(
             before,
-            target,
+            bean_target,
             fit.beta,
             caps,
             machine,
             dose_g=after.dose_g,
             gamma=fit.gamma,
         )
-        recipe = apply_guardrails(recipe, caps, machine, [before], target)
+        recipe = apply_guardrails(recipe, caps, machine, [before], bean_target)
         if recipe.grind_clicks is None:
             continue
 

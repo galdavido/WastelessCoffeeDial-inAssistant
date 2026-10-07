@@ -441,11 +441,37 @@ TARGETS: dict[str, Target] = {
 }
 
 
-def target_for(method: Method, style: str | None = None) -> Target:
-    """Target band for a method, optionally an espresso style (ristretto/lungo)."""
+def target_for(
+    method: Method, style: str | None = None, roast_level_ord: int | None = None
+) -> Target:
+    """Target band for a method, optionally an espresso style (ristretto/lungo).
+
+    With the coffee's roast, the time band moves with it; see `for_roast`.
+    """
     if method == "espresso" and style in ("ristretto", "lungo"):
-        return TARGETS[style]
-    return TARGETS[method]
+        return for_roast(TARGETS[style], roast_level_ord)
+    return for_roast(TARGETS[method], roast_level_ord)
+
+
+def for_roast(target: Target, roast_level_ord: int | None) -> Target:
+    """The time band moved for this coffee's roast. docs/science.md#roast-time-modifier.
+
+    Lighter roasts a touch longer, darker a touch shorter, split at the same
+    roast levels as the temperature bands. An unknown roast, and a method with
+    no time band (moka), keep the band as it is.
+    """
+    if target.time_lo is None or target.time_hi is None or roast_level_ord is None:
+        return target
+    step = value_of("roast_time_modifier_s")
+    if roast_level_ord <= 2:
+        shift = step
+    elif roast_level_ord >= 4:
+        shift = -step
+    else:
+        return target
+    return replace(
+        target, time_lo=target.time_lo + shift, time_hi=target.time_hi + shift
+    )
 
 
 # --------------------------------------------------------------------------
