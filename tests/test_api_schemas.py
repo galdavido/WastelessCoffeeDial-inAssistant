@@ -17,7 +17,9 @@ from pydantic import ValidationError
 
 from ai.rationale import Rationale
 from core.api_schemas import (
+    BeanShotOut,
     CoffeeDataOut,
+    CoffeeEntryOut,
     EquipmentOut,
     FitOut,
     RecommendationOut,
@@ -272,6 +274,62 @@ class TestFitMatchesItsModel(unittest.TestCase):
         payload = serialize_fit(_fit_result(HISTORY, RWANDA), NAMES, RWANDA)
         payload["warning"] = {"clicks": 27.0, "reason": "one channeling sign"}
         FitOut.model_validate(payload)
+
+
+def _bean_shot(**overrides: Any) -> dict[str, Any]:
+    """One shot as get_bean_shots builds it."""
+    shot: dict[str, Any] = {
+        "id": 1,
+        "created_at": "2026-10-11T08:00:00",
+        "setup_id": 5,
+        "method": "espresso",
+        "grind_clicks": 28.0,
+        "grind_setting": "28",
+        "dose_g": 18.0,
+        "yield_g": 36.0,
+        "water_g": None,
+        "time_s": 30,
+        "taste_axis": "balanced",
+        "astringent": False,
+        "rating": 4,
+        "data_quality": "complete",
+        "tr": 15.0,
+        "band": "in",
+        "tasted_right": True,
+        "delta_clicks": -2.0,
+        "direction": "finer",
+        "same_setup_as_prev": True,
+        "suggested_grind_clicks": 28.0,
+    }
+    shot.update(overrides)
+    return shot
+
+
+class TestLibraryModels(unittest.TestCase):
+    """These dicts are built inline in routes/coffees.py, so their end-to-end
+    check is tests/test_api_flows.py; this pins the loose ends."""
+
+    def test_coffee_entry_without_shots_validates(self) -> None:
+        CoffeeEntryOut.model_validate(
+            {
+                "bean_id": 1,
+                "bean_name": "Kochere",
+                "roaster": "Test Roasters",
+                "origin": "Ethiopia",
+                "process": "Washed",
+                "roast_level": "Light",
+                "roast_date": None,
+                "last_brewed_at": None,
+                "logs_count": 0,
+                "latest_log": None,
+            }
+        )
+
+    def test_bean_shot_rejects_an_unknown_band(self) -> None:
+        BeanShotOut.model_validate(_bean_shot())
+        BeanShotOut.model_validate(_bean_shot(band=None, direction=None, tr=None))
+        with self.assertRaises(ValidationError):
+            BeanShotOut.model_validate(_bean_shot(band="slow"))
 
 
 if __name__ == "__main__":

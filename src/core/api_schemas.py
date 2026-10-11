@@ -222,6 +222,84 @@ class FitOut(_Strict):
     recipe: FitRecipeOut
 
 
+# --- Coffee library (routes/coffees.py) --------------------------------------
+
+
+class LatestLogOut(_Strict):
+    id: int
+    created_at: str
+    grinder: str
+    machine: str
+    grind_setting: str
+    dose_g: float
+    yield_g: float | None
+    time_s: int | None
+    rating: int | None
+    tasting_notes: str | None
+    # The bag photo, which lives on an older log than this one after shot one.
+    image_name: str | None
+    image_url: str | None
+
+
+class CoffeeEntryOut(_Strict):
+    bean_id: int
+    bean_name: str
+    roaster: str
+    origin: str
+    process: str
+    roast_level: str
+    roast_date: str | None
+    last_brewed_at: str | None
+    logs_count: int
+    latest_log: LatestLogOut | None
+
+
+class CoffeeListOut(_Strict):
+    """``GET /api/logs``: the coffees, most recently brewed first."""
+
+    entries: list[CoffeeEntryOut]
+
+
+class BeanRefOut(_Strict):
+    id: int
+    name: str
+    roaster: str
+
+
+class BeanShotOut(_Strict):
+    """One shot, judged against its band on the server, not in the browser."""
+
+    id: int
+    created_at: str
+    setup_id: int | None
+    method: str
+    grind_clicks: float | None
+    grind_setting: str
+    dose_g: float
+    yield_g: float | None
+    water_g: float | None
+    time_s: int | None
+    taste_axis: str | None
+    astringent: bool | None
+    rating: int | None
+    data_quality: str
+    tr: float | None
+    band: Literal["in", "fast", "long"] | None
+    tasted_right: bool
+    delta_clicks: float | None
+    direction: Literal["finer", "coarser"] | None
+    same_setup_as_prev: bool
+    suggested_grind_clicks: float | None
+
+
+class BeanShotsOut(_Strict):
+    """``GET /api/beans/{bean_id}/shots``."""
+
+    bean: BeanRefOut
+    target: TargetOut
+    shots: list[BeanShotOut]
+
+
 # --- Gear -------------------------------------------------------------------
 
 

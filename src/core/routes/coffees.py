@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from database.models import Bean, BrewSetup, DialInLog, Recommendation, as_float
 
+from ..api_schemas import BeanSavedOut, BeanShotsOut, CoffeeListOut, StatusOut
 from ..auth import get_owner
 from ..beans import latest_photo_log
 from ..brewing import is_finer, normalised_time, target_for, tasted_right
@@ -50,7 +51,7 @@ def _apply_bean_fields(bean: Bean, body: BeanRecordInput) -> None:
         bean.roast_date = body.roast_date
 
 
-@router.get("/api/logs")
+@router.get("/api/logs", response_model=CoffeeListOut)
 def list_coffees(
     limit: int = 20,
     db: Session = Depends(get_db),
@@ -119,7 +120,7 @@ def list_coffees(
     return {"entries": entries}
 
 
-@router.get("/api/beans/{bean_id}/shots")
+@router.get("/api/beans/{bean_id}/shots", response_model=BeanShotsOut)
 def get_bean_shots(
     bean_id: int,
     limit: int = 5,
@@ -237,7 +238,7 @@ def get_bean_shots(
     }
 
 
-@router.post("/api/logs/manual")
+@router.post("/api/logs/manual", response_model=BeanSavedOut)
 def create_coffee(
     body: BeanRecordInput,
     db: Session = Depends(get_db),
@@ -260,7 +261,7 @@ def create_coffee(
     return {"status": "created", "bean_id": bean.id}
 
 
-@router.put("/api/logs/{bean_id}")
+@router.put("/api/logs/{bean_id}", response_model=BeanSavedOut)
 def update_coffee(
     bean_id: int,
     body: BeanRecordInput,
@@ -301,7 +302,7 @@ def update_coffee(
     return {"status": "updated", "bean_id": bean.id}
 
 
-@router.delete("/api/logs/{bean_id}")
+@router.delete("/api/logs/{bean_id}", response_model=StatusOut)
 def delete_coffee(
     bean_id: int,
     db: Session = Depends(get_db),
