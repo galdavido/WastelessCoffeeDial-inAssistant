@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 
+from ..api_schemas import VersionOut, WhoamiOut
 from ..auth import auth_mode, get_owner
 from ..engine import ENGINE_VERSION
 from .common import STATIC_DIR
@@ -61,7 +62,7 @@ def service_worker() -> FileResponse:
     )
 
 
-@router.get("/api/version")
+@router.get("/api/version", response_model=VersionOut)
 def get_version() -> dict[str, Any]:
     """What the server is currently serving.
 
@@ -72,7 +73,7 @@ def get_version() -> dict[str, Any]:
     return {"asset_version": _ASSET_VERSION, "engine_version": ENGINE_VERSION}
 
 
-@router.get("/api/whoami")
+@router.get("/api/whoami", response_model=WhoamiOut)
 def whoami(owner: str = Depends(get_owner)) -> dict[str, str]:
     """Who the server thinks you are, and how it decided.
 

@@ -11,6 +11,17 @@ from sqlalchemy.orm import Session
 
 from database.models import BrewSetup, DialInLog, Equipment, Recommendation
 
+from ..api_schemas import (
+    ActiveEquipmentOut,
+    DoseOut,
+    DoseSavedOut,
+    EquipmentLibraryOut,
+    EquipmentSavedOut,
+    SetupSavedOut,
+    SetupSelectedOut,
+    SetupsOut,
+    StatusOut,
+)
 from ..auth import get_owner
 from ..db_session import get_db
 from ..parsing import as_non_empty_text
@@ -148,7 +159,7 @@ def _owned_setup(db: Session, setup_id: int, owner: str) -> BrewSetup:
 # --- equipment ---------------------------------------------------------------
 
 
-@router.get("/api/equipment")
+@router.get("/api/equipment", response_model=ActiveEquipmentOut)
 def get_active_equipment(setup: BrewSetup = Depends(active_setup)) -> dict[str, Any]:
     """The grinder and brewer of the active setup, by name."""
     return {
@@ -157,7 +168,7 @@ def get_active_equipment(setup: BrewSetup = Depends(active_setup)) -> dict[str, 
     }
 
 
-@router.get("/api/equipment/library")
+@router.get("/api/equipment/library", response_model=EquipmentLibraryOut)
 def get_equipment_library(
     db: Session = Depends(get_db),
     owner: str = Depends(get_owner),
@@ -177,7 +188,7 @@ def get_equipment_library(
     }
 
 
-@router.post("/api/equipment/library")
+@router.post("/api/equipment/library", response_model=EquipmentSavedOut)
 def create_equipment(
     body: EquipmentInput,
     db: Session = Depends(get_db),
@@ -195,7 +206,7 @@ def create_equipment(
     return {"status": "created", "equipment": serialize_equipment(item, owner)}
 
 
-@router.put("/api/equipment/library/{equipment_id}")
+@router.put("/api/equipment/library/{equipment_id}", response_model=EquipmentSavedOut)
 def update_equipment(
     equipment_id: int,
     body: EquipmentInput,
@@ -223,7 +234,7 @@ def update_equipment(
     return {"status": "updated", "equipment": serialize_equipment(item, owner)}
 
 
-@router.delete("/api/equipment/library/{equipment_id}")
+@router.delete("/api/equipment/library/{equipment_id}", response_model=StatusOut)
 def delete_equipment(
     equipment_id: int,
     db: Session = Depends(get_db),
@@ -247,7 +258,7 @@ def delete_equipment(
 # --- setups ------------------------------------------------------------------
 
 
-@router.get("/api/setups")
+@router.get("/api/setups", response_model=SetupsOut)
 def get_setups(
     db: Session = Depends(get_db),
     owner: str = Depends(get_owner),
@@ -265,7 +276,7 @@ def get_setups(
     }
 
 
-@router.post("/api/setups")
+@router.post("/api/setups", response_model=SetupSavedOut)
 def create_setup(
     body: SetupInput,
     db: Session = Depends(get_db),
@@ -291,7 +302,7 @@ def create_setup(
 
 # Declared before "/api/setups/{setup_id}": FastAPI matches in definition
 # order, so otherwise the literal "active" is parsed as a setup id.
-@router.put("/api/setups/active")
+@router.put("/api/setups/active", response_model=SetupSelectedOut)
 def select_setup(
     body: SetupSelectInput,
     db: Session = Depends(get_db),
@@ -302,7 +313,7 @@ def select_setup(
     return {"status": "selected", "setup_id": setup.id}
 
 
-@router.put("/api/setups/{setup_id}")
+@router.put("/api/setups/{setup_id}", response_model=SetupSavedOut)
 def update_setup(
     setup_id: int,
     body: SetupInput,
@@ -324,7 +335,7 @@ def update_setup(
     return {"status": "updated", "setup": serialize_setup(setup)}
 
 
-@router.delete("/api/setups/{setup_id}")
+@router.delete("/api/setups/{setup_id}", response_model=StatusOut)
 def delete_setup(
     setup_id: int,
     db: Session = Depends(get_db),
@@ -363,14 +374,14 @@ def delete_setup(
 # --- settings ----------------------------------------------------------------
 
 
-@router.get("/api/settings")
+@router.get("/api/settings", response_model=DoseOut)
 def get_settings(
     db: Session = Depends(get_db), owner: str = Depends(get_owner)
 ) -> dict[str, float]:
     return {"dose_g": get_default_dose_g(db, owner)}
 
 
-@router.put("/api/settings/dose")
+@router.put("/api/settings/dose", response_model=DoseSavedOut)
 def update_dose(
     body: DoseUpdate,
     db: Session = Depends(get_db),
