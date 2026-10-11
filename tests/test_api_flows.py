@@ -960,6 +960,17 @@ class TestRestructuredRoutes(FlowTestCase):
         # Scanning the same bag again recognises it.
         self.assertEqual(self.scan()["coffee_data"]["bean_id"], saved["bean_id"])
 
+    def test_a_sparse_coffee_comes_back_as_it_was_sent(self) -> None:
+        """The response model fills in no absent keys and drops no unknown ones."""
+        self.make_setup()
+        sent = {"name": "Kochere", "varietal": "Heirloom"}
+        body = self.ok(self.api.post("/api/recommendation", json={"coffee_data": sent}))
+        self.assertEqual(
+            set(body["coffee_data"]),
+            {"name", "varietal", "preferred_dose_g", "dose_from_roast"},
+        )
+        self.assertEqual(body["coffee_data"]["varietal"], "Heirloom")
+
     def test_reading_the_setups_writes_nothing_after_the_first_visit(self) -> None:
         from database.database import SessionLocal
         from database.models import AppSetting

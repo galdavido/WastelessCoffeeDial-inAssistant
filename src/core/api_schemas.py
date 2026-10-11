@@ -14,7 +14,11 @@ stay ``str`` because the serializers already send ``isoformat()``.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
+
+from .brewing import Basis, Method
 
 
 class _Strict(BaseModel):
@@ -23,6 +27,85 @@ class _Strict(BaseModel):
 
 class StatusOut(_Strict):
     status: str
+
+
+# --- Recommendation ---------------------------------------------------------
+
+
+class RecipeOut(_Strict):
+    """Every number on the recipe card; all of them decided by the engine."""
+
+    method: Method
+    grind_clicks: float | None
+    dose_g: float
+    yield_g: float | None
+    water_g: float | None
+    brew_temp_c: float | None
+    target_time_lo_s: float | None
+    target_time_s: float | None
+    preinfusion_s: float | None
+    pause_s: float | None
+    basis: Basis
+    confidence: float
+    guardrails_hit: list[str]
+
+
+class RationaleOut(_Strict):
+    headline: str
+    why: str
+    what_to_watch: str
+
+
+class SuggestionOut(_Strict):
+    """Cameron's use-less-coffee move, offered beside the recipe."""
+
+    kind: Literal["use_less_coffee"]
+    dose_g: float
+    yield_g: float | None
+    grind_clicks: float | None
+    channeled_shots: int
+    note: str
+
+
+class CoffeeDataOut(BaseModel):
+    """The coffee the recipe is for -- the one deliberately loose model.
+
+    ``POST /api/recommendation`` echoes back whatever ``coffee_data`` the client
+    sent and bag OCR's keys are not fixed, so unknown keys are kept and the
+    bean fields may be absent. Only the two keys the server always sets are
+    required.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    preferred_dose_g: float
+    dose_from_roast: bool
+    bean_id: int | None = None
+    image_name: str | None = None
+    name: str | None = None
+    roaster: str | None = None
+    origin: str | None = None
+    process: str | None = None
+    roast_level: str | None = None
+    roast_date: str | None = None
+
+
+class RecommendationOut(_Strict):
+    """``POST /api/analyze`` and ``POST /api/recommendation``."""
+
+    coffee_data: CoffeeDataOut
+    recommendation_id: int | None
+    recipe: RecipeOut
+    rationale: RationaleOut
+    confidence_label: str
+    tier: str
+    protocol: str | None
+    suggestion: SuggestionOut | None
+
+
+class BeanSavedOut(_Strict):
+    status: str
+    bean_id: int
 
 
 # --- Gear -------------------------------------------------------------------

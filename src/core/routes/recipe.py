@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ai.vision import VisionError, analyze_coffee_bag
 from database.models import Bean, BrewSetup, as_float
 
+from ..api_schemas import BeanSavedOut, RecommendationOut
 from ..auth import get_owner
 from ..beans import (
     bean_coffee_data,
@@ -107,7 +108,12 @@ def _recommend(
     }
 
 
-@router.post("/api/analyze")
+# exclude_unset: coffee_data comes back with exactly the keys it had. Without it
+# CoffeeDataOut's defaults would add null bean fields to every echo; the strict
+# models are unaffected, since every one of their fields is always set.
+@router.post(
+    "/api/analyze", response_model=RecommendationOut, response_model_exclude_unset=True
+)
 def analyze_image(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -152,7 +158,11 @@ def analyze_image(
     return _recommend(db, owner, setup, coffee_data)
 
 
-@router.post("/api/recommendation")
+@router.post(
+    "/api/recommendation",
+    response_model=RecommendationOut,
+    response_model_exclude_unset=True,
+)
 def refresh_recommendation(
     body: RecommendationRequest,
     db: Session = Depends(get_db),
@@ -244,7 +254,7 @@ def get_fit(
     return serialize_fit(result, names, bean_id)
 
 
-@router.post("/api/feedback")
+@router.post("/api/feedback", response_model=BeanSavedOut)
 def save_feedback(
     body: FeedbackRequest,
     db: Session = Depends(get_db),
