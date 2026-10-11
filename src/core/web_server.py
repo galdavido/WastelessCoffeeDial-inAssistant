@@ -71,7 +71,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-app = FastAPI(title="Wasteless Coffee Dial-in Assistant", lifespan=lifespan)
+# No runtime schema or docs UI: the contract is the committed docs/openapi.json,
+# written by core.openapi_export.
+app = FastAPI(
+    title="Wasteless Coffee Dial-in Assistant", lifespan=lifespan, openapi_url=None
+)
 app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 register_routes(app)

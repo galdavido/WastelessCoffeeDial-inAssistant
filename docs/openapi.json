@@ -1,0 +1,3542 @@
+{
+  "components": {
+    "schemas": {
+      "ActiveEquipmentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "grinder": {
+            "$ref": "#/components/schemas/EquipmentNameOut"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/EquipmentNameOut"
+          }
+        },
+        "required": [
+          "grinder",
+          "machine"
+        ],
+        "title": "ActiveEquipmentOut",
+        "type": "object"
+      },
+      "BeanRecordInput": {
+        "properties": {
+          "log": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogDetailsInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "maxLength": 200,
+            "title": "Origin",
+            "type": "string"
+          },
+          "process": {
+            "maxLength": 200,
+            "title": "Process",
+            "type": "string"
+          },
+          "roast_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roast Date"
+          },
+          "roast_level": {
+            "maxLength": 200,
+            "title": "Roast Level",
+            "type": "string"
+          },
+          "roaster": {
+            "maxLength": 200,
+            "title": "Roaster",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roaster",
+          "name",
+          "origin",
+          "process",
+          "roast_level"
+        ],
+        "title": "BeanRecordInput",
+        "type": "object"
+      },
+      "BeanRefOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "roaster": {
+            "title": "Roaster",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "roaster"
+        ],
+        "title": "BeanRefOut",
+        "type": "object"
+      },
+      "BeanSavedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bean_id": {
+            "title": "Bean Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "bean_id"
+        ],
+        "title": "BeanSavedOut",
+        "type": "object"
+      },
+      "BeanShotOut": {
+        "additionalProperties": false,
+        "description": "One shot, judged against its band on the server, not in the browser.",
+        "properties": {
+          "astringent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Astringent"
+          },
+          "band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in",
+                  "fast",
+                  "long"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_quality": {
+            "title": "Data Quality",
+            "type": "string"
+          },
+          "delta_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Clicks"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "finer",
+                  "coarser"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          },
+          "grind_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Clicks"
+          },
+          "grind_setting": {
+            "title": "Grind Setting",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "same_setup_as_prev": {
+            "title": "Same Setup As Prev",
+            "type": "boolean"
+          },
+          "setup_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Id"
+          },
+          "suggested_grind_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Grind Clicks"
+          },
+          "taste_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taste Axis"
+          },
+          "tasted_right": {
+            "title": "Tasted Right",
+            "type": "boolean"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          },
+          "tr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tr"
+          },
+          "water_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water G"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "setup_id",
+          "method",
+          "grind_clicks",
+          "grind_setting",
+          "dose_g",
+          "yield_g",
+          "water_g",
+          "time_s",
+          "taste_axis",
+          "astringent",
+          "rating",
+          "data_quality",
+          "tr",
+          "band",
+          "tasted_right",
+          "delta_clicks",
+          "direction",
+          "same_setup_as_prev",
+          "suggested_grind_clicks"
+        ],
+        "title": "BeanShotOut",
+        "type": "object"
+      },
+      "BeanShotsOut": {
+        "additionalProperties": false,
+        "description": "``GET /api/beans/{bean_id}/shots``.",
+        "properties": {
+          "bean": {
+            "$ref": "#/components/schemas/BeanRefOut"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/BeanShotOut"
+            },
+            "title": "Shots",
+            "type": "array"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetOut"
+          }
+        },
+        "required": [
+          "bean",
+          "target",
+          "shots"
+        ],
+        "title": "BeanShotsOut",
+        "type": "object"
+      },
+      "Body_analyze_image_api_analyze_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_analyze_image_api_analyze_post",
+        "type": "object"
+      },
+      "ClicksReasonOut": {
+        "additionalProperties": false,
+        "description": "The hard floor, or the softer warning line; both null when absent.",
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "clicks",
+          "reason"
+        ],
+        "title": "ClicksReasonOut",
+        "type": "object"
+      },
+      "CoffeeDataOut": {
+        "additionalProperties": true,
+        "description": "The coffee the recipe is for -- the one deliberately loose model.\n\n``POST /api/recommendation`` echoes back whatever ``coffee_data`` the client\nsent and bag OCR's keys are not fixed, so unknown keys are kept and the\nbean fields may be absent. Only the two keys the server always sets are\nrequired.",
+        "properties": {
+          "bean_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bean Id"
+          },
+          "dose_from_roast": {
+            "title": "Dose From Roast",
+            "type": "boolean"
+          },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "preferred_dose_g": {
+            "title": "Preferred Dose G",
+            "type": "number"
+          },
+          "process": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process"
+          },
+          "roast_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roast Date"
+          },
+          "roast_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roast Level"
+          },
+          "roaster": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roaster"
+          }
+        },
+        "required": [
+          "preferred_dose_g",
+          "dose_from_roast"
+        ],
+        "title": "CoffeeDataOut",
+        "type": "object"
+      },
+      "CoffeeEntryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bean_id": {
+            "title": "Bean Id",
+            "type": "integer"
+          },
+          "bean_name": {
+            "title": "Bean Name",
+            "type": "string"
+          },
+          "last_brewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Brewed At"
+          },
+          "latest_log": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestLogOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logs_count": {
+            "title": "Logs Count",
+            "type": "integer"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "process": {
+            "title": "Process",
+            "type": "string"
+          },
+          "roast_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roast Date"
+          },
+          "roast_level": {
+            "title": "Roast Level",
+            "type": "string"
+          },
+          "roaster": {
+            "title": "Roaster",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bean_id",
+          "bean_name",
+          "roaster",
+          "origin",
+          "process",
+          "roast_level",
+          "roast_date",
+          "last_brewed_at",
+          "logs_count",
+          "latest_log"
+        ],
+        "title": "CoffeeEntryOut",
+        "type": "object"
+      },
+      "CoffeeListOut": {
+        "additionalProperties": false,
+        "description": "``GET /api/logs``: the coffees, most recently brewed first.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CoffeeEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "title": "CoffeeListOut",
+        "type": "object"
+      },
+      "DoseOut": {
+        "additionalProperties": false,
+        "properties": {
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dose_g"
+        ],
+        "title": "DoseOut",
+        "type": "object"
+      },
+      "DoseSavedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "dose_g"
+        ],
+        "title": "DoseSavedOut",
+        "type": "object"
+      },
+      "DoseUpdate": {
+        "properties": {
+          "dose_g": {
+            "exclusiveMinimum": 0.0,
+            "title": "Dose G",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dose_g"
+        ],
+        "title": "DoseUpdate",
+        "type": "object"
+      },
+      "EquipmentInput": {
+        "description": "An equipment entry, and what the hardware can physically do.\n\nThe capabilities are all optional. Where the engine has no capability\ndata it abstains from recommending a value rather than guessing one, so a\nblank field is a safe answer -- but spec_source should carry a citation\nwhenever the numbers are filled in, since an uncited capability row is a\nguess.",
+        "properties": {
+          "basket_size_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basket Size G"
+          },
+          "brand": {
+            "maxLength": 200,
+            "title": "Brand",
+            "type": "string"
+          },
+          "burr_type": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burr Type"
+          },
+          "finer_direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lower_is_finer",
+                  "higher_is_finer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finer Direction"
+          },
+          "grind_max_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Max Clicks"
+          },
+          "grind_min_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Min Clicks"
+          },
+          "grind_step_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Step Clicks"
+          },
+          "grind_um_per_click": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Um Per Click"
+          },
+          "model": {
+            "maxLength": 200,
+            "title": "Model",
+            "type": "string"
+          },
+          "spec_source": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Source"
+          },
+          "temp_controllable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp Controllable"
+          },
+          "temp_max_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp Max C"
+          },
+          "temp_min_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp Min C"
+          },
+          "type": {
+            "enum": [
+              "grinder",
+              "espresso_machine",
+              "filter",
+              "other"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "brand",
+          "model"
+        ],
+        "title": "EquipmentInput",
+        "type": "object"
+      },
+      "EquipmentLibraryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "grinders": {
+            "items": {
+              "$ref": "#/components/schemas/EquipmentOut"
+            },
+            "title": "Grinders",
+            "type": "array"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/EquipmentOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "grinders",
+          "machines"
+        ],
+        "title": "EquipmentLibraryOut",
+        "type": "object"
+      },
+      "EquipmentNameOut": {
+        "additionalProperties": false,
+        "properties": {
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "model"
+        ],
+        "title": "EquipmentNameOut",
+        "type": "object"
+      },
+      "EquipmentOut": {
+        "additionalProperties": false,
+        "description": "``setups.serialize_equipment``. Null capabilities are meaningful gaps.",
+        "properties": {
+          "basket_size_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basket Size G"
+          },
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "burr_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burr Type"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "finer_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finer Direction"
+          },
+          "grind_max_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Max Clicks"
+          },
+          "grind_min_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Min Clicks"
+          },
+          "grind_step_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Step Clicks"
+          },
+          "grind_um_per_click": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Um Per Click"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "shared": {
+            "title": "Shared",
+            "type": "boolean"
+          },
+          "spec_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Source"
+          },
+          "temp_controllable": {
+            "title": "Temp Controllable",
+            "type": "boolean"
+          },
+          "temp_max_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp Max C"
+          },
+          "temp_min_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp Min C"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "brand",
+          "model",
+          "shared",
+          "editable",
+          "grind_min_clicks",
+          "grind_max_clicks",
+          "grind_step_clicks",
+          "grind_um_per_click",
+          "finer_direction",
+          "burr_type",
+          "basket_size_g",
+          "temp_min_c",
+          "temp_max_c",
+          "temp_controllable",
+          "spec_source"
+        ],
+        "title": "EquipmentOut",
+        "type": "object"
+      },
+      "EquipmentSavedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "equipment": {
+            "$ref": "#/components/schemas/EquipmentOut"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "equipment"
+        ],
+        "title": "EquipmentSavedOut",
+        "type": "object"
+      },
+      "FeedbackRequest": {
+        "properties": {
+          "actual_grind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Grind"
+          },
+          "astringent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Astringent"
+          },
+          "brew_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brew Temp C"
+          },
+          "coffee_data": {
+            "additionalProperties": true,
+            "title": "Coffee Data",
+            "type": "object"
+          },
+          "dose_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose G"
+          },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Name"
+          },
+          "pause_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause S"
+          },
+          "preinfusion_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preinfusion S"
+          },
+          "recommendation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Id"
+          },
+          "taste_axis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "very_sour",
+                  "sour",
+                  "balanced",
+                  "bitter",
+                  "very_bitter"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taste Axis"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          },
+          "water_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water G"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "required": [
+          "coffee_data"
+        ],
+        "title": "FeedbackRequest",
+        "type": "object"
+      },
+      "FitBeanOut": {
+        "additionalProperties": false,
+        "properties": {
+          "delta_bean": {
+            "title": "Delta Bean",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "delta_bean",
+          "is_current"
+        ],
+        "title": "FitBeanOut",
+        "type": "object"
+      },
+      "FitOut": {
+        "additionalProperties": false,
+        "properties": {
+          "beans": {
+            "items": {
+              "$ref": "#/components/schemas/FitBeanOut"
+            },
+            "title": "Beans",
+            "type": "array"
+          },
+          "floor": {
+            "$ref": "#/components/schemas/ClicksReasonOut"
+          },
+          "grinder": {
+            "$ref": "#/components/schemas/GrinderCapsOut"
+          },
+          "law": {
+            "$ref": "#/components/schemas/LawOut"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/PairOut"
+            },
+            "title": "Pairs",
+            "type": "array"
+          },
+          "pairs_rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedPairOut"
+            },
+            "title": "Pairs Rejected",
+            "type": "array"
+          },
+          "pairs_rejected_by_reason": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pairs Rejected By Reason",
+            "type": "object"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/FitRecipeOut"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/FitShotOut"
+            },
+            "title": "Shots",
+            "type": "array"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetOut"
+          },
+          "warning": {
+            "$ref": "#/components/schemas/ClicksReasonOut"
+          }
+        },
+        "required": [
+          "law",
+          "beans",
+          "shots",
+          "pairs",
+          "pairs_rejected",
+          "pairs_rejected_by_reason",
+          "target",
+          "floor",
+          "warning",
+          "grinder",
+          "recipe"
+        ],
+        "title": "FitOut",
+        "type": "object"
+      },
+      "FitRecipeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "enum": [
+              "prior",
+              "history",
+              "calibrated",
+              "setup_law"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "grind_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Clicks"
+          },
+          "guardrails_hit": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Guardrails Hit",
+            "type": "array"
+          }
+        },
+        "required": [
+          "grind_clicks",
+          "basis",
+          "guardrails_hit"
+        ],
+        "title": "FitRecipeOut",
+        "type": "object"
+      },
+      "FitShotOut": {
+        "additionalProperties": false,
+        "description": "One shot of the history; ``index`` is what the pairs point at.",
+        "properties": {
+          "bean_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bean Id"
+          },
+          "brew_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brew Temp C"
+          },
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          },
+          "excluded_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded Reason"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "pause_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause S"
+          },
+          "preinfusion_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preinfusion S"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "taste_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taste Axis"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          },
+          "tr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tr"
+          },
+          "tr_measured": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tr Measured"
+          },
+          "used_in_fit": {
+            "title": "Used In Fit",
+            "type": "boolean"
+          },
+          "water_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water G"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "required": [
+          "index",
+          "bean_id",
+          "clicks",
+          "tr",
+          "tr_measured",
+          "time_s",
+          "dose_g",
+          "yield_g",
+          "water_g",
+          "brew_temp_c",
+          "preinfusion_s",
+          "pause_s",
+          "taste_axis",
+          "rating",
+          "created_at",
+          "used_in_fit",
+          "excluded_reason"
+        ],
+        "title": "FitShotOut",
+        "type": "object"
+      },
+      "GrinderCapsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "finer_direction": {
+            "title": "Finer Direction",
+            "type": "string"
+          },
+          "max_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Clicks"
+          },
+          "min_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Clicks"
+          },
+          "step_clicks": {
+            "title": "Step Clicks",
+            "type": "number"
+          },
+          "um_per_click": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Um Per Click"
+          }
+        },
+        "required": [
+          "min_clicks",
+          "max_clicks",
+          "step_clicks",
+          "um_per_click",
+          "finer_direction"
+        ],
+        "title": "GrinderCapsOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LatestLogOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          },
+          "grind_setting": {
+            "title": "Grind Setting",
+            "type": "string"
+          },
+          "grinder": {
+            "title": "Grinder",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Name"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "machine": {
+            "title": "Machine",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "tasting_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasting Notes"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "grinder",
+          "machine",
+          "grind_setting",
+          "dose_g",
+          "yield_g",
+          "time_s",
+          "rating",
+          "tasting_notes",
+          "image_name",
+          "image_url"
+        ],
+        "title": "LatestLogOut",
+        "type": "object"
+      },
+      "LawOut": {
+        "additionalProperties": false,
+        "properties": {
+          "alpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha"
+          },
+          "alpha_reference_dose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha Reference Dose"
+          },
+          "beta_fitted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta Fitted"
+          },
+          "beta_prior": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta Prior"
+          },
+          "beta_source": {
+            "title": "Beta Source",
+            "type": "string"
+          },
+          "beta_used": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta Used"
+          },
+          "click_span": {
+            "title": "Click Span",
+            "type": "number"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "confidence_label": {
+            "title": "Confidence Label",
+            "type": "string"
+          },
+          "dose_ref_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose Ref G"
+          },
+          "gamma": {
+            "title": "Gamma",
+            "type": "number"
+          },
+          "gamma_fitted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gamma Fitted"
+          },
+          "gamma_prior": {
+            "title": "Gamma Prior",
+            "type": "number"
+          },
+          "gamma_weight": {
+            "title": "Gamma Weight",
+            "type": "number"
+          },
+          "kappa": {
+            "title": "Kappa",
+            "type": "number"
+          },
+          "n_dose_pairs": {
+            "title": "N Dose Pairs",
+            "type": "integer"
+          },
+          "n_eff": {
+            "title": "N Eff",
+            "type": "integer"
+          },
+          "shrink_weight": {
+            "title": "Shrink Weight",
+            "type": "number"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alpha",
+          "alpha_reference_dose",
+          "gamma",
+          "gamma_prior",
+          "gamma_fitted",
+          "gamma_weight",
+          "n_dose_pairs",
+          "dose_ref_g",
+          "beta_used",
+          "beta_fitted",
+          "beta_prior",
+          "beta_source",
+          "shrink_weight",
+          "kappa",
+          "n_eff",
+          "click_span",
+          "confidence",
+          "confidence_label",
+          "tier"
+        ],
+        "title": "LawOut",
+        "type": "object"
+      },
+      "LogDetailsInput": {
+        "properties": {
+          "dose_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose G"
+          },
+          "grind_setting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Setting"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "tasting_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasting Notes"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "title": "LogDetailsInput",
+        "type": "object"
+      },
+      "PairOut": {
+        "additionalProperties": false,
+        "properties": {
+          "a_index": {
+            "title": "A Index",
+            "type": "integer"
+          },
+          "b_index": {
+            "title": "B Index",
+            "type": "integer"
+          },
+          "bean_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bean Id"
+          },
+          "slope": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slope"
+          }
+        },
+        "required": [
+          "slope",
+          "a_index",
+          "b_index",
+          "bean_id"
+        ],
+        "title": "PairOut",
+        "type": "object"
+      },
+      "RationaleOut": {
+        "additionalProperties": false,
+        "properties": {
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "what_to_watch": {
+            "title": "What To Watch",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "headline",
+          "why",
+          "what_to_watch"
+        ],
+        "title": "RationaleOut",
+        "type": "object"
+      },
+      "RecipeOut": {
+        "additionalProperties": false,
+        "description": "Every number on the recipe card; all of them decided by the engine.",
+        "properties": {
+          "basis": {
+            "enum": [
+              "prior",
+              "history",
+              "calibrated",
+              "setup_law"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "brew_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brew Temp C"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          },
+          "grind_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Clicks"
+          },
+          "guardrails_hit": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Guardrails Hit",
+            "type": "array"
+          },
+          "method": {
+            "enum": [
+              "espresso",
+              "pourover",
+              "moka"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "pause_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause S"
+          },
+          "preinfusion_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preinfusion S"
+          },
+          "target_time_lo_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Time Lo S"
+          },
+          "target_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Time S"
+          },
+          "water_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Water G"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "required": [
+          "method",
+          "grind_clicks",
+          "dose_g",
+          "yield_g",
+          "water_g",
+          "brew_temp_c",
+          "target_time_lo_s",
+          "target_time_s",
+          "preinfusion_s",
+          "pause_s",
+          "basis",
+          "confidence",
+          "guardrails_hit"
+        ],
+        "title": "RecipeOut",
+        "type": "object"
+      },
+      "RecommendationOut": {
+        "additionalProperties": false,
+        "description": "``POST /api/analyze`` and ``POST /api/recommendation``.",
+        "properties": {
+          "coffee_data": {
+            "$ref": "#/components/schemas/CoffeeDataOut"
+          },
+          "confidence_label": {
+            "title": "Confidence Label",
+            "type": "string"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "rationale": {
+            "$ref": "#/components/schemas/RationaleOut"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/RecipeOut"
+          },
+          "recommendation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Id"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coffee_data",
+          "recommendation_id",
+          "recipe",
+          "rationale",
+          "confidence_label",
+          "tier",
+          "protocol",
+          "suggestion"
+        ],
+        "title": "RecommendationOut",
+        "type": "object"
+      },
+      "RecommendationRequest": {
+        "description": "Ask for a recipe, either for a scanned bag or one already saved.\n\n`bean_id` is what makes fine-tuning possible: the engine then works from\nthe real Bean row, so roast date and roast level are populated and the\nresulting recommendation is stored against a real bean.",
+        "properties": {
+          "bean_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bean Id"
+          },
+          "coffee_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coffee Data"
+          },
+          "dose_g": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose G"
+          },
+          "explain": {
+            "default": true,
+            "title": "Explain",
+            "type": "boolean"
+          }
+        },
+        "title": "RecommendationRequest",
+        "type": "object"
+      },
+      "RejectedPairOut": {
+        "additionalProperties": false,
+        "properties": {
+          "a_index": {
+            "title": "A Index",
+            "type": "integer"
+          },
+          "b_index": {
+            "title": "B Index",
+            "type": "integer"
+          },
+          "bean_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bean Id"
+          },
+          "other_bean_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Bean Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "a_index",
+          "b_index",
+          "bean_id",
+          "other_bean_id",
+          "reason"
+        ],
+        "title": "RejectedPairOut",
+        "type": "object"
+      },
+      "SetupInput": {
+        "properties": {
+          "grinder_id": {
+            "title": "Grinder Id",
+            "type": "integer"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "integer"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "enum": [
+                  "espresso",
+                  "pourover",
+                  "moka"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "grinder_id",
+          "machine_id"
+        ],
+        "title": "SetupInput",
+        "type": "object"
+      },
+      "SetupOut": {
+        "additionalProperties": false,
+        "properties": {
+          "grinder": {
+            "$ref": "#/components/schemas/EquipmentOut"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/EquipmentOut"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "method",
+          "grinder",
+          "machine"
+        ],
+        "title": "SetupOut",
+        "type": "object"
+      },
+      "SetupSavedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "setup": {
+            "$ref": "#/components/schemas/SetupOut"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "setup"
+        ],
+        "title": "SetupSavedOut",
+        "type": "object"
+      },
+      "SetupSelectInput": {
+        "properties": {
+          "setup_id": {
+            "title": "Setup Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "setup_id"
+        ],
+        "title": "SetupSelectInput",
+        "type": "object"
+      },
+      "SetupSelectedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "setup_id": {
+            "title": "Setup Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "setup_id"
+        ],
+        "title": "SetupSelectedOut",
+        "type": "object"
+      },
+      "SetupsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "active_setup_id": {
+            "title": "Active Setup Id",
+            "type": "integer"
+          },
+          "setups": {
+            "items": {
+              "$ref": "#/components/schemas/SetupOut"
+            },
+            "title": "Setups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active_setup_id",
+          "setups"
+        ],
+        "title": "SetupsOut",
+        "type": "object"
+      },
+      "StatusOut": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StatusOut",
+        "type": "object"
+      },
+      "SuggestionOut": {
+        "additionalProperties": false,
+        "description": "Cameron's use-less-coffee move, offered beside the recipe.",
+        "properties": {
+          "channeled_shots": {
+            "title": "Channeled Shots",
+            "type": "integer"
+          },
+          "dose_g": {
+            "title": "Dose G",
+            "type": "number"
+          },
+          "grind_clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grind Clicks"
+          },
+          "kind": {
+            "const": "use_less_coffee",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "yield_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield G"
+          }
+        },
+        "required": [
+          "kind",
+          "dose_g",
+          "yield_g",
+          "grind_clicks",
+          "channeled_shots",
+          "note"
+        ],
+        "title": "SuggestionOut",
+        "type": "object"
+      },
+      "TargetOut": {
+        "additionalProperties": false,
+        "description": "A target band, raw and as normalised time (time / brew ratio).",
+        "properties": {
+          "ratio_aim": {
+            "title": "Ratio Aim",
+            "type": "number"
+          },
+          "time_hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Hi"
+          },
+          "time_lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Lo"
+          },
+          "tr_hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tr Hi"
+          },
+          "tr_lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tr Lo"
+          }
+        },
+        "required": [
+          "tr_lo",
+          "tr_hi",
+          "time_lo",
+          "time_hi",
+          "ratio_aim"
+        ],
+        "title": "TargetOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Version"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_version",
+          "engine_version"
+        ],
+        "title": "VersionOut",
+        "type": "object"
+      },
+      "WhoamiOut": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "auth_mode"
+        ],
+        "title": "WhoamiOut",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Wasteless Coffee Dial-in Assistant",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/analyze": {
+      "post": {
+        "operationId": "analyze_image_api_analyze_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_image_api_analyze_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze Image"
+      }
+    },
+    "/api/beans/{bean_id}/shots": {
+      "get": {
+        "description": "Recent shots on one coffee, with each judged against its target.\n\nThe band verdict is computed here rather than in the browser because the\nengine compares *normalised* time (time / brew ratio), not raw seconds.\nRe-deriving that in JavaScript would drift from brewing.py the first time\nthe target bands change.",
+        "operationId": "get_bean_shots_api_beans__bean_id__shots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bean_id",
+            "required": true,
+            "schema": {
+              "title": "Bean Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeanShotsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Bean Shots"
+      }
+    },
+    "/api/equipment": {
+      "get": {
+        "description": "The grinder and brewer of the active setup, by name.",
+        "operationId": "get_active_equipment_api_equipment_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveEquipmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Active Equipment"
+      }
+    },
+    "/api/equipment/library": {
+      "get": {
+        "operationId": "get_equipment_library_api_equipment_library_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentLibraryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Equipment Library"
+      },
+      "post": {
+        "operationId": "create_equipment_api_equipment_library_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EquipmentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Equipment"
+      }
+    },
+    "/api/equipment/library/{equipment_id}": {
+      "delete": {
+        "operationId": "delete_equipment_api_equipment_library__equipment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipment_id",
+            "required": true,
+            "schema": {
+              "title": "Equipment Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Equipment"
+      },
+      "put": {
+        "operationId": "update_equipment_api_equipment_library__equipment_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipment_id",
+            "required": true,
+            "schema": {
+              "title": "Equipment Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EquipmentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Equipment"
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "description": "Log a shot. Returns the coffee's id, which is new on a bag's first shot.",
+        "operationId": "save_feedback_api_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeanSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Feedback"
+      }
+    },
+    "/api/fit": {
+      "get": {
+        "description": "The working behind the current recommendation.\n\nRead-only and model-free: it runs the same engine pass the recipe came\nfrom with the prose switched off, so what it returns is the fit that\nproduced the number rather than a reconstruction that could disagree\nwith it. Nothing is persisted -- opening the view must not write a\nrecommendation row.",
+        "operationId": "get_fit_api_fit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "bean_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bean Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fit"
+      }
+    },
+    "/api/log-images/{image_name}": {
+      "get": {
+        "operationId": "get_log_image_api_log_images__image_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_name",
+            "required": true,
+            "schema": {
+              "title": "Image Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Log Image"
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "description": "The user's coffees, most recently brewed first, each with its last shot.",
+        "operationId": "list_coffees_api_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoffeeListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Coffees"
+      }
+    },
+    "/api/logs/manual": {
+      "post": {
+        "description": "Add a coffee by hand, with one shot on the active setup. All or nothing.",
+        "operationId": "create_coffee_api_logs_manual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeanRecordInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeanSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Coffee"
+      }
+    },
+    "/api/logs/{bean_id}": {
+      "delete": {
+        "operationId": "delete_coffee_api_logs__bean_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bean_id",
+            "required": true,
+            "schema": {
+              "title": "Bean Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Coffee"
+      },
+      "put": {
+        "description": "Edit a coffee and its latest shot (or give it one, if it has none).",
+        "operationId": "update_coffee_api_logs__bean_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bean_id",
+            "required": true,
+            "schema": {
+              "title": "Bean Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeanRecordInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeanSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Coffee"
+      }
+    },
+    "/api/recommendation": {
+      "post": {
+        "description": "Regenerate the recipe for a scanned bag or a coffee already saved.\n\nCalled when the dose changes, when the active setup changes, and when the\nuser opens one of their existing coffees to fine-tune it. Passing\n`bean_id` uses the stored row, so the engine sees the real roast date and\nroast level rather than re-parsing strings, and the resulting\nrecommendation is recorded against that bean.",
+        "operationId": "refresh_recommendation_api_recommendation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Recommendation"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "get_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Settings"
+      }
+    },
+    "/api/settings/dose": {
+      "put": {
+        "operationId": "update_dose_api_settings_dose_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DoseUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoseSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Dose"
+      }
+    },
+    "/api/setups": {
+      "get": {
+        "operationId": "get_setups_api_setups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Setups"
+      },
+      "post": {
+        "operationId": "create_setup_api_setups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Setup"
+      }
+    },
+    "/api/setups/active": {
+      "put": {
+        "operationId": "select_setup_api_setups_active_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupSelectInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupSelectedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select Setup"
+      }
+    },
+    "/api/setups/{setup_id}": {
+      "delete": {
+        "operationId": "delete_setup_api_setups__setup_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "setup_id",
+            "required": true,
+            "schema": {
+              "title": "Setup Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Setup"
+      },
+      "put": {
+        "operationId": "update_setup_api_setups__setup_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "setup_id",
+            "required": true,
+            "schema": {
+              "title": "Setup Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupSavedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Setup"
+      }
+    },
+    "/api/version": {
+      "get": {
+        "description": "What the server is currently serving.\n\nThe client compares this against the version its own bundle was loaded\nwith, so the user can tell whether a deploy actually reached their phone\nor they are looking at a cached one.",
+        "operationId": "get_version_api_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Version"
+      }
+    },
+    "/api/whoami": {
+      "get": {
+        "description": "Who the server thinks you are, and how it decided.\n\nDeliberately the one user-scoped route that touches no database: when a\nfriend reports \"it says I'm not signed in\", this separates a Tailscale\nidentity problem (401 here) from an app problem (200 here, trouble\nelsewhere) in a single request.",
+        "operationId": "whoami_api_whoami_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoamiOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Whoami"
+      }
+    }
+  }
+}

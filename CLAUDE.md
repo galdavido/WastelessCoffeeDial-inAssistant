@@ -38,7 +38,9 @@ The tree is in README's "Project layout"; what it does not say:
   `coffees` (library + shot history), `gear` (equipment, setups, settings).
   `common.py` holds `STATIC_DIR`, `uploads_dir()` and the request-scoped
   `active_setup` dependency.
-- `src/core/` — `web_server.py` (entry), `web_schemas.py`, the route helpers
+- `src/core/` — `web_server.py` (entry), `web_schemas.py` (request models),
+  `api_schemas.py` (response models), `openapi_export.py` (writes
+  `docs/openapi.json`), the route helpers
   (`parsing.py`, `beans.py`, `setups.py`, `shots.py`), `auth.py`, DB
   bootstrap/session, and the engine: `engine.py` orchestrates `retrieval.py`
   → `calibration.py` → `brewing.py` (pure, no DB) → rationale.
@@ -146,6 +148,12 @@ The commands are in README's "Tests and checks".
   routes that open a session before validating), so in a throwaway container
   with no `DATABASE_URL` they fail with "connection refused" — expected, not a
   regression.
+- **`docs/openapi.json` is the API contract, generated and committed.**
+  Changing a request or response shape means updating its model
+  (`web_schemas.py` / `api_schemas.py`) and running
+  `python -m core.openapi_export`; `tests/test_openapi.py` fails until you do,
+  and also fails on any `/api/` route without a `response_model`. There is no
+  runtime `/openapi.json`, `/docs` or `/redoc` (`openapi_url=None`).
 - **CI's Postgres service is plain `postgres:16-alpine`** — a migration that
   runs `CREATE EXTENSION vector` would fail CI; add pgvector to the CI service
   if that ever happens.
@@ -185,6 +193,13 @@ The commands are in README's "Tests and checks".
   temperatures are decided in `core/` and returned as `recipe`; the browser
   only displays them, and Gemini's prose is checked against them
   (`ai/rationale.scrub_numerals`). Don't compute a recipe number in `app.js`.
+- **Response models forbid unknown keys and require every field**, so a
+  serializer key missing from its model in `api_schemas.py` is a 500
+  (`ResponseValidationError` names the field), not a silently dropped field.
+  That is the point: it fails in `test_api_flows.py` before `app.js` misses
+  it. `CoffeeDataOut` is the one loose model (it echoes the client's
+  `coffee_data`), and the two recipe routes use
+  `response_model_exclude_unset=True` so its defaults add no null keys.
 - **The Gemini chain is bounded by a wall-clock budget, not by the API's
   mood.** `try_model_candidates` takes a whole-chain `budget_s` and a
   per-attempt `attempt_timeout_s`, set in `ai/model_selection.py`: 4 s and

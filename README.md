@@ -123,7 +123,13 @@ export DATABASE_URL=postgresql+psycopg2://wcda:wcda@localhost:5440/wcda_test
 pytest                            # API tests need the disposable DATABASE_URL
 ruff check . && ruff format --check .
 mypy src
+python -m core.openapi_export     # regenerate docs/openapi.json after an API change
 ```
+
+`docs/openapi.json` is the API contract: every request and response shape,
+generated from the code and committed. The app serves no `/openapi.json` or
+`/docs`; open the file in any OpenAPI viewer. `tests/test_openapi.py` fails
+until it is regenerated.
 
 pytest is configured in `pyproject.toml` (`pythonpath = ["src"]`). With no
 local venv, run the same commands in a throwaway `python:3.14-slim` container
@@ -146,7 +152,9 @@ src/
     brewing.py, calibration.py, retrieval.py   the deterministic engine
     eval_harness.py, backtest_cli.py           measuring the engine
     parsing.py, beans.py, setups.py, shots.py  helpers behind the routes
-    auth.py, web_schemas.py, db_bootstrap.py, db_session.py, web_server.py
+    web_schemas.py, api_schemas.py             request and response models
+    openapi_export.py                          writes docs/openapi.json
+    auth.py, db_bootstrap.py, db_session.py, web_server.py
     admin_*.py the dev-only usage dashboard
   database/    models and engine
   web/static/  index.html, app.js, style.css, sw.js, admin.*
@@ -154,7 +162,8 @@ migrations/    Alembic
 tests/         pytest; _sim.py is the physics simulator the engine tests use,
                _fixtures.py the shared K6 grinder and 18 g machine, _db.py
                the real-Postgres support
-docs/          science.md (every constant's source), tailscale-setup.md
+docs/          science.md (every constant's source), tailscale-setup.md,
+               openapi.json (the generated API contract)
 ```
 
 ## Security model

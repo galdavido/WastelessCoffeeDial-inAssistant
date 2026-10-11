@@ -43,7 +43,13 @@ def register_admin_routes(app: FastAPI, static_dir: str) -> None:
         # only ever spent on /api/admin/stats.
         return FileResponse(os.path.join(static_dir, "admin.html"))
 
-    @app.get("/api/admin/stats", dependencies=[Depends(_require_token)])
+    # Out of the schema, so docs/openapi.json does not depend on whether the
+    # machine generating it has the admin variables set.
+    @app.get(
+        "/api/admin/stats",
+        dependencies=[Depends(_require_token)],
+        include_in_schema=False,
+    )
     def admin_dashboard(
         days: int = 90, db: Session = Depends(get_admin_db)
     ) -> dict[str, Any]:
