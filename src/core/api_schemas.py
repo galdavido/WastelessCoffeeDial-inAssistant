@@ -108,6 +108,120 @@ class BeanSavedOut(_Strict):
     bean_id: int
 
 
+# --- Fit view (GET /api/fit, engine.serialize_fit) ---------------------------
+
+
+class TargetOut(_Strict):
+    """A target band, raw and as normalised time (time / brew ratio)."""
+
+    tr_lo: float | None
+    tr_hi: float | None
+    time_lo: float | None
+    time_hi: float | None
+    ratio_aim: float
+
+
+class LawOut(_Strict):
+    alpha: float | None
+    alpha_reference_dose: float | None
+    gamma: float
+    gamma_prior: float
+    gamma_fitted: float | None
+    gamma_weight: float
+    n_dose_pairs: int
+    dose_ref_g: float | None
+    beta_used: float | None
+    beta_fitted: float | None
+    beta_prior: float | None
+    beta_source: str
+    shrink_weight: float
+    kappa: float
+    n_eff: int
+    click_span: float
+    confidence: float
+    confidence_label: str
+    tier: str
+
+
+class FitBeanOut(_Strict):
+    id: int
+    name: str
+    delta_bean: float
+    is_current: bool
+
+
+class FitShotOut(_Strict):
+    """One shot of the history; ``index`` is what the pairs point at."""
+
+    index: int
+    bean_id: int | None
+    clicks: float | None
+    tr: float | None
+    tr_measured: float | None
+    time_s: float | None
+    dose_g: float
+    yield_g: float | None
+    water_g: float | None
+    brew_temp_c: float | None
+    preinfusion_s: float | None
+    pause_s: float | None
+    taste_axis: str | None
+    rating: int | None
+    created_at: str | None
+    used_in_fit: bool
+    excluded_reason: str | None
+
+
+class PairOut(_Strict):
+    slope: float | None
+    a_index: int
+    b_index: int
+    bean_id: int | None
+
+
+class RejectedPairOut(_Strict):
+    a_index: int
+    b_index: int
+    bean_id: int | None
+    other_bean_id: int | None
+    reason: str
+
+
+class ClicksReasonOut(_Strict):
+    """The hard floor, or the softer warning line; both null when absent."""
+
+    clicks: float | None
+    reason: str | None
+
+
+class GrinderCapsOut(_Strict):
+    min_clicks: float | None
+    max_clicks: float | None
+    step_clicks: float
+    um_per_click: float | None
+    finer_direction: str
+
+
+class FitRecipeOut(_Strict):
+    grind_clicks: float | None
+    basis: Basis
+    guardrails_hit: list[str]
+
+
+class FitOut(_Strict):
+    law: LawOut
+    beans: list[FitBeanOut]
+    shots: list[FitShotOut]
+    pairs: list[PairOut]
+    pairs_rejected: list[RejectedPairOut]
+    pairs_rejected_by_reason: dict[str, int]
+    target: TargetOut
+    floor: ClicksReasonOut
+    warning: ClicksReasonOut
+    grinder: GrinderCapsOut
+    recipe: FitRecipeOut
+
+
 # --- Gear -------------------------------------------------------------------
 
 

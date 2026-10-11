@@ -19,12 +19,21 @@ from ai.rationale import Rationale
 from core.api_schemas import (
     CoffeeDataOut,
     EquipmentOut,
+    FitOut,
     RecommendationOut,
     SetupOut,
 )
-from core.brewing import DoseReduction, GrinderCaps, Recipe, beta_prior, target_for
+from core.brewing import (
+    DoseReduction,
+    GrinderCaps,
+    Recipe,
+    ShotRecord,
+    beta_prior,
+    target_for,
+)
 from core.calibration import fit_setup
-from core.engine import EngineResult, serialize_result
+from core.engine import EngineResult, serialize_fit, serialize_result
+from core.retrieval import shots_for_bean
 from core.setups import serialize_equipment, serialize_setup
 from database.models import BrewSetup, Equipment
 
@@ -192,6 +201,77 @@ class TestRecommendationMatchesItsModel(unittest.TestCase):
         self.assertIsNone(dumped["origin"])
         with self.assertRaises(ValidationError):
             CoffeeDataOut.model_validate({"dose_from_roast": True})
+
+
+RWANDA, BRAZIL = 7, 8
+NAMES = {RWANDA: "Gicumbi Red Bourbon", BRAZIL: "Cerrado"}
+
+
+def _shot(bean_id: int, clicks: float, time_s: float, temp: float) -> ShotRecord:
+    dose = 18.0 if bean_id == RWANDA else 16.0
+    return ShotRecord(
+        method="espresso",
+        dose_g=dose,
+        setup_id=1,
+        bean_id=bean_id,
+        grind_clicks=clicks,
+        yield_g=dose * 2.0,
+        time_s=time_s,
+        brew_temp_c=temp,
+        preinfusion_s=2.0,
+        pause_s=2.0,
+    )
+
+
+# The fixture of tests/test_fit_view.py: two coffees, each internally
+# consistent, brewed in temperature bands too far apart to pair.
+HISTORY = [
+    _shot(RWANDA, 26.0, 34.0, 94.0),
+    _shot(RWANDA, 28.0, 30.0, 94.0),
+    _shot(RWANDA, 30.0, 26.0, 94.0),
+    _shot(BRAZIL, 35.0, 30.0, 91.0),
+    _shot(BRAZIL, 36.0, 28.0, 91.0),
+]
+
+
+def _fit_result(history: list[ShotRecord], bean_id: int | None) -> EngineResult:
+    calibration = fit_setup(
+        history, "espresso", K6, beta_prior("espresso", K6), bean_id=bean_id
+    )
+    return EngineResult(
+        recipe=Recipe(method="espresso", dose_g=18.0, grind_clicks=29.0),
+        rationale=Rationale(headline="h", why="w", what_to_watch="x"),
+        calibration=calibration,
+        tier="A" if history else "D",
+        llm_model=None,
+        history=tuple(history),
+        bean_history=tuple(shots_for_bean(history, bean_id)),
+        target=target_for("espresso"),
+        caps=K6,
+    )
+
+
+class TestFitMatchesItsModel(unittest.TestCase):
+    def test_fit_payload_validates(self) -> None:
+        FitOut.model_validate(
+            serialize_fit(_fit_result(HISTORY, RWANDA), NAMES, RWANDA)
+        )
+
+    def test_fit_payload_with_an_excluded_shot_validates(self) -> None:
+        lonely = _shot(BRAZIL, 41.0, 21.0, 88.0)
+        payload = FitOut.model_validate(
+            serialize_fit(_fit_result([*HISTORY, lonely], BRAZIL), NAMES, BRAZIL)
+        )
+        reasons = [s.excluded_reason for s in payload.shots if not s.used_in_fit]
+        self.assertTrue(reasons and all(reasons))
+
+    def test_empty_history_fit_validates(self) -> None:
+        FitOut.model_validate(serialize_fit(_fit_result([], None), {}, None))
+
+    def test_populated_warning_validates(self) -> None:
+        payload = serialize_fit(_fit_result(HISTORY, RWANDA), NAMES, RWANDA)
+        payload["warning"] = {"clicks": 27.0, "reason": "one channeling sign"}
+        FitOut.model_validate(payload)
 
 
 if __name__ == "__main__":

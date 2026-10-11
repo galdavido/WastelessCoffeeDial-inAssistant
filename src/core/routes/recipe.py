@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from ai.vision import VisionError, analyze_coffee_bag
 from database.models import Bean, BrewSetup, as_float
 
-from ..api_schemas import BeanSavedOut, RecommendationOut
+from ..api_schemas import BeanSavedOut, FitOut, RecommendationOut
 from ..auth import get_owner
 from ..beans import (
     bean_coffee_data,
@@ -202,7 +202,7 @@ def refresh_recommendation(
         raise server_error(exc, "refresh recommendation") from exc
 
 
-@router.get("/api/fit")
+@router.get("/api/fit", response_model=FitOut)
 def get_fit(
     bean_id: int | None = None,
     db: Session = Depends(get_db),
