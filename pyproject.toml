@@ -33,6 +33,11 @@ dev = [
     "mypy>=1.11",
     "pip-audit>=2.7",
 ]
+# Offline model comparison only (core.challengers, wcda-backtest --compare).
+# Never in requirements.txt: the web image does not import it.
+ml = [
+    "scikit-learn>=1.5",
+]
 
 [project.scripts]
 wcda-backtest = "core.backtest_cli:cli"

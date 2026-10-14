@@ -88,6 +88,13 @@ app, never for pytest.
 
 `wcda-backtest` (or `python -m core.backtest_cli` inside the container) measures
 the engine against your logged shots; it is read-only.
+`wcda-backtest --compare` also scores the engine's ln(T_r) predictions against
+simple baselines and small statistical models (ridge, Gaussian process,
+boosted trees, a one-layer MLP), both leave-one-out and walk-forward (past
+shots only), with each gap paired against the engine. The models need
+scikit-learn, which the web image does not carry, so run it from a venv with
+`pip install -e '.[dev,ml]'` and `DATABASE_URL` pointed at the database to
+read.
 
 ## Database
 

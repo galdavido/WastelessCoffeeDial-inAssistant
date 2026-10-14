@@ -88,6 +88,16 @@ class TestBacktestCli(unittest.TestCase):
 
         self.assertIn("abstains from naming a grind setting", out)
 
+    def test_compare_adds_both_schemes_and_stays_honest_on_sparse_data(self) -> None:
+        seeded = Seeded()
+        seeded.add_shot()
+
+        code, out = run_cli("--owner", seeded.owner, "--compare")
+
+        self.assertEqual(code, 0)
+        self.assertIn("ln(T_r) MAE, leave-one-out: INSUFFICIENT DATA", out)
+        self.assertIn("ln(T_r) MAE, walk-forward (past shots only): INSUFFICIENT", out)
+
     def test_it_writes_nothing(self) -> None:
         seeded = Seeded()
         seeded.add_shot()
@@ -97,7 +107,7 @@ class TestBacktestCli(unittest.TestCase):
             patch.object(Session, "delete") as delete,
             patch.object(Session, "flush") as flush,
         ):
-            code, _ = run_cli("--owner", seeded.owner)
+            code, _ = run_cli("--owner", seeded.owner, "--compare")
 
         self.assertEqual(code, 0)
         for call in (commit, add, delete, flush):
