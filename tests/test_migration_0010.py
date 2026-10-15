@@ -85,6 +85,44 @@ class TestMigration0010(unittest.TestCase):
             "recommendations.water_g",
         )
 
+    def _setup_rows(self, *methods: str | None) -> None:
+        """A grinder, an espresso machine, and one setup per method on them."""
+        with self.engine.begin() as conn:
+            ids = [
+                conn.execute(
+                    text(
+                        "INSERT INTO equipment (type, brand, model) "
+                        "VALUES (:type, 'x', 'y') RETURNING id"
+                    ),
+                    {"type": kind},
+                ).scalar_one()
+                for kind in ("grinder", "espresso_machine")
+            ]
+            for method in methods:
+                conn.execute(
+                    text(
+                        "INSERT INTO brew_setups "
+                        "(owner, name, grinder_id, machine_id, method) "
+                        "VALUES ('me', 's', :g, :m, :method)"
+                    ),
+                    {"g": ids[0], "m": ids[1], "method": method},
+                )
+
+    def test_espresso_and_unset_methods_pass(self) -> None:
+        """What the live databases hold: the guard must let it through."""
+        self._migrate("upgrade", "0009")
+        self._setup_rows(None, "espresso")
+        self._migrate("upgrade", "head")
+        self.assertEqual(self._version(), "0010")
+
+    def test_refuses_on_a_non_espresso_method(self) -> None:
+        self._migrate("upgrade", "0009")
+        self._setup_rows(None, "pourover")
+        with self.assertRaises(RuntimeError) as caught:
+            self._migrate("upgrade", "head")
+        self.assertIn("brew_setups.method=1", str(caught.exception))
+        self.assertEqual(self._version(), "0009")
+
     def test_upgrade_drops_and_downgrade_restores(self) -> None:
         self._migrate("upgrade", "head")
         for table, columns in DROPPED.items():
@@ -97,6 +135,14 @@ class TestMigration0010(unittest.TestCase):
             present = self._columns(table)
             for column in columns:
                 self.assertTrue(present.get(column), f"{table}.{column} nullable")
+        checks = {
+            table: {
+                c["name"] for c in inspect(self.engine).get_check_constraints(table)
+            }
+            for table in ("brew_setups", "dial_in_logs")
+        }
+        self.assertIn("ck_brew_setups_method", checks["brew_setups"])
+        self.assertIn("ck_dial_in_logs_brew_method", checks["dial_in_logs"])
 
 
 if __name__ == "__main__":
