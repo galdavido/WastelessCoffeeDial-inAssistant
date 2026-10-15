@@ -22,7 +22,7 @@ from ..brewing import is_finer, normalised_time, target_for, tasted_right
 from ..db_session import get_db
 from ..engine import grinder_caps
 from ..parsing import as_non_empty_text, roast_level_ordinal
-from ..retrieval import get_active_setup_method, to_shot_record
+from ..retrieval import to_shot_record
 from ..shots import classify_data_quality, new_shot, resolve_log_values
 from ..web_schemas import BeanRecordInput
 from .common import active_setup, server_error
@@ -152,23 +152,20 @@ def get_bean_shots(
         .all()
     }
 
-    active_method = get_active_setup_method(setup)
     # The same roast-moved band the engine corrected against, or a shot the
     # recipe called "in the band" could be shown here as long.
-    target = target_for(active_method, roast_level_ord=bean.roast_level_ord)
+    target = target_for(bean.roast_level_ord)
 
     shots: list[dict[str, Any]] = []
     for index, log in enumerate(logs):
-        method = log.brew_method or active_method
-        record = to_shot_record(log, bean, method)  # type: ignore[arg-type]
+        record = to_shot_record(log, bean)
         tr = normalised_time(record)
 
         band: str | None = None
-        shot_target = target_for(method, roast_level_ord=bean.roast_level_ord)  # type: ignore[arg-type]
-        if tr is not None and shot_target.tr_lo is not None and shot_target.tr_hi:
-            if tr > shot_target.tr_hi:
+        if tr is not None:
+            if tr > target.tr_hi:
                 band = "long"
-            elif tr < shot_target.tr_lo:
+            elif tr < target.tr_lo:
                 band = "fast"
             else:
                 band = "in"
@@ -199,12 +196,10 @@ def get_bean_shots(
                 "id": log.id,
                 "created_at": log.created_at.isoformat(),
                 "setup_id": log.setup_id,
-                "method": method,
                 "grind_clicks": as_float(log.grind_clicks),
                 "grind_setting": log.grind_setting,
                 "dose_g": log.dose_g,
                 "yield_g": log.yield_g,
-                "water_g": as_float(log.water_g),
                 "time_s": log.time_s,
                 "taste_axis": log.taste_axis,
                 "astringent": log.astringent,

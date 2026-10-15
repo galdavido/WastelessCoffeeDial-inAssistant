@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from .brewing import Basis, Method
+from .brewing import Basis
 
 
 class _Strict(BaseModel):
@@ -35,11 +35,9 @@ class StatusOut(_Strict):
 class RecipeOut(_Strict):
     """Every number on the recipe card; all of them decided by the engine."""
 
-    method: Method
     grind_clicks: float | None
     dose_g: float
     yield_g: float | None
-    water_g: float | None
     brew_temp_c: float | None
     target_time_lo_s: float | None
     target_time_s: float | None
@@ -114,10 +112,10 @@ class BeanSavedOut(_Strict):
 class TargetOut(_Strict):
     """A target band, raw and as normalised time (time / brew ratio)."""
 
-    tr_lo: float | None
-    tr_hi: float | None
-    time_lo: float | None
-    time_hi: float | None
+    tr_lo: float
+    tr_hi: float
+    time_lo: float
+    time_hi: float
     ratio_aim: float
 
 
@@ -161,7 +159,6 @@ class FitShotOut(_Strict):
     time_s: float | None
     dose_g: float
     yield_g: float | None
-    water_g: float | None
     brew_temp_c: float | None
     preinfusion_s: float | None
     pause_s: float | None
@@ -272,12 +269,10 @@ class BeanShotOut(_Strict):
     id: int
     created_at: str
     setup_id: int | None
-    method: str
     grind_clicks: float | None
     grind_setting: str
     dose_g: float
     yield_g: float | None
-    water_g: float | None
     time_s: int | None
     taste_axis: str | None
     astringent: bool | None

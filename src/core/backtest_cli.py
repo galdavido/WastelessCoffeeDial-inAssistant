@@ -18,7 +18,7 @@ from .auth import single_user_owner
 from .brewing import target_for
 from .engine import grinder_caps, machine_caps
 from .eval_harness import backtest
-from .retrieval import fetch_calibration_shots, get_active_setup_method
+from .retrieval import fetch_calibration_shots
 
 
 def run(setup_id: int | None = None, owner: str | None = None) -> int:
@@ -40,20 +40,19 @@ def run(setup_id: int | None = None, owner: str | None = None) -> int:
             return 1
 
         for setup in setups:
-            method = get_active_setup_method(setup)
             caps = grinder_caps(setup.grinder)
             machine = machine_caps(setup.machine)
-            shots = fetch_calibration_shots(db, owner, setup.id, method)
+            shots = fetch_calibration_shots(db, owner, setup.id)
 
             print("=" * 60)
-            print(f"{setup.name}  [{method}]  -- {len(shots)} measured shots")
+            print(f"{setup.name}  -- {len(shots)} measured shots")
             print("=" * 60)
             if not caps.has_range:
                 print(
                     "  note: this grinder has no recorded range, so the engine "
                     "abstains from naming a grind setting here."
                 )
-            report = backtest(shots, target_for(method), caps, machine, method)
+            report = backtest(shots, target_for(), caps, machine)
             print(report.render())
             print()
 

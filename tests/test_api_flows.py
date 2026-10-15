@@ -134,7 +134,6 @@ class TestScanAndPull(FlowTestCase):
         self.assertEqual(body["coffee_data"]["name"], "Kochere")
         self.assertIn("image_name", body["coffee_data"])
         recipe = body["recipe"]
-        self.assertEqual(recipe["method"], "espresso")
         # A first shot on a grinder with a known um/click: the physics estimate.
         self.assertEqual(recipe["basis"], "prior")
         self.assertIsNotNone(recipe["grind_clicks"])
@@ -901,13 +900,6 @@ class TestFirstShotWithoutADial(FlowTestCase):
         self.assertIn("microns per click", protocol)
         self.assertNotIn("middle of its range", protocol)
         self.assertIn("18.5 g in to 37 g out", protocol)
-
-    def test_moka_is_told_why_there_is_no_setting(self) -> None:
-        self._setup({}, "moka")
-        body = self.scan()
-        self.assertIsNone(body["recipe"]["grind_clicks"])
-        self.assertIn("stove", body["protocol"])
-        self.assertNotIn("pull", body["protocol"])
 
 
 class TestUnclassifiedShots(DatabaseTestCase):

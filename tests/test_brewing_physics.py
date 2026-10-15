@@ -28,26 +28,26 @@ from core.brewing import (
 
 class TestDerivedMetrics(unittest.TestCase):
     def test_espresso_ratio_uses_beverage_out(self) -> None:
-        shot = ShotRecord(method="espresso", dose_g=18.0, yield_g=36.0, time_s=28)
+        shot = ShotRecord(dose_g=18.0, yield_g=36.0, time_s=28)
         self.assertAlmostEqual(brew_ratio(shot), 2.0)
 
-    def test_pourover_ratio_uses_water_in(self) -> None:
-        shot = ShotRecord(method="pourover", dose_g=15.0, water_g=240.0, time_s=180)
-        self.assertAlmostEqual(brew_ratio(shot), 16.0)
+    def test_brew_ratio_is_yield_over_dose(self) -> None:
+        self.assertEqual(brew_ratio(ShotRecord(dose_g=18.0, yield_g=36.0)), 2.0)
+        self.assertIsNone(brew_ratio(ShotRecord(dose_g=18.0)))
 
     def test_normalised_time_matches_the_worked_example(self) -> None:
         # docs/science.md#normalised-time: 18 -> 36 g in 28 s is T_r = 14.
-        shot = ShotRecord(method="espresso", dose_g=18.0, yield_g=36.0, time_s=28)
+        shot = ShotRecord(dose_g=18.0, yield_g=36.0, time_s=28)
         self.assertAlmostEqual(normalised_time(shot), 14.0)
 
     def test_normalised_time_is_comparable_across_ratios(self) -> None:
         # The whole point: same extraction rate, different ratios, same T_r.
-        short = ShotRecord(method="espresso", dose_g=18.0, yield_g=27.0, time_s=21)
-        long = ShotRecord(method="espresso", dose_g=18.0, yield_g=45.0, time_s=35)
+        short = ShotRecord(dose_g=18.0, yield_g=27.0, time_s=21)
+        long = ShotRecord(dose_g=18.0, yield_g=45.0, time_s=35)
         self.assertAlmostEqual(normalised_time(short), normalised_time(long))
 
     def test_metrics_are_none_when_unmeasured(self) -> None:
-        shot = ShotRecord(method="espresso", dose_g=18.0)
+        shot = ShotRecord(dose_g=18.0)
         self.assertIsNone(normalised_time(shot))
         self.assertIsNone(brew_ratio(shot))
 
@@ -55,35 +55,31 @@ class TestDerivedMetrics(unittest.TestCase):
 class TestGrindLaw(unittest.TestCase):
     def test_beta_prior_for_a_known_grinder(self) -> None:
         # 2 * 16 / 300 = 0.1067, negative because higher clicks = coarser.
-        beta = beta_prior("espresso", K6)
+        beta = beta_prior(K6)
         assert beta is not None
         self.assertAlmostEqual(beta, -0.10667, places=4)
 
     def test_beta_prior_sign_follows_the_dial_direction(self) -> None:
         inverted = GrinderCaps(um_per_click=16.0, finer_direction="higher_is_finer")
-        beta = beta_prior("espresso", inverted)
+        beta = beta_prior(inverted)
         assert beta is not None
         self.assertGreater(beta, 0)
 
-    def test_moka_has_no_grind_law(self) -> None:
-        # Brew time is set by stove heat, not permeability.
-        self.assertIsNone(beta_prior("moka", K6))
-
     def test_solve_grind_goes_coarser_when_the_shot_runs_long(self) -> None:
-        beta = beta_prior("espresso", K6)
+        beta = beta_prior(K6)
         assert beta is not None
         # Observed T_r above target -> need a coarser (higher) setting.
         new = solve_grind(33.0, tr_observed=18.0, tr_target=14.0, beta=beta)
         self.assertGreater(new, 33.0)
 
     def test_solve_grind_goes_finer_when_the_shot_runs_fast(self) -> None:
-        beta = beta_prior("espresso", K6)
+        beta = beta_prior(K6)
         assert beta is not None
         new = solve_grind(33.0, tr_observed=10.0, tr_target=14.0, beta=beta)
         self.assertLess(new, 33.0)
 
     def test_solve_grind_round_trips(self) -> None:
-        beta = beta_prior("espresso", K6)
+        beta = beta_prior(K6)
         assert beta is not None
         # Moving to c* should, by construction, predict the target T_r.
         c_star = solve_grind(33.0, tr_observed=18.0, tr_target=14.0, beta=beta)
@@ -99,29 +95,18 @@ class TestGrindLaw(unittest.TestCase):
 
 
 class TestTargets(unittest.TestCase):
-    def test_espresso_band(self) -> None:
-        t = target_for("espresso")
+    def test_one_espresso_target(self) -> None:
+        t = target_for()
         self.assertEqual((t.ratio_lo, t.ratio_aim, t.ratio_hi), (1.8, 2.0, 2.5))
         self.assertEqual((t.time_lo, t.time_hi), (25.0, 30.0))
-
-    def test_styles_differ(self) -> None:
-        self.assertLess(
-            target_for("espresso", "ristretto").ratio_aim,
-            target_for("espresso", "lungo").ratio_aim,
-        )
-
-    def test_moka_declares_no_target_time(self) -> None:
-        # Claiming a target time for an uncontrollable variable would be a lie.
-        t = target_for("moka")
-        self.assertIsNone(t.time_lo)
-        self.assertIsNone(t.tr_lo)
+        self.assertEqual((t.temp_lo, t.temp_hi), (90.5, 96.0))
 
 
 class TestRoastTimeModifier(unittest.TestCase):
     """docs/science.md#roast-time-modifier."""
 
-    def _band(self, roast: int | None, style: str | None = None) -> tuple:
-        t = target_for("espresso", style, roast)
+    def _band(self, roast: int | None) -> tuple:
+        t = target_for(roast)
         return t.time_lo, t.time_hi
 
     def test_light_aims_longer_dark_shorter(self) -> None:
@@ -134,21 +119,17 @@ class TestRoastTimeModifier(unittest.TestCase):
         self.assertEqual(self._band(3), (25.0, 30.0))
         self.assertEqual(self._band(None), (25.0, 30.0))
 
+    def test_ratio_is_untouched(self) -> None:
+        light = target_for(1)
+        self.assertEqual(light.ratio_aim, target_for().ratio_aim)
+        self.assertGreater(light.tr_hi, target_for().tr_hi)
+
     def test_split_matches_the_temperature_bands(self) -> None:
         # One idea of "light" and "dark" across the engine.
         for roast in range(1, 6):
             shifted = self._band(roast) != self._band(None)
             moved_temp = temp_band_for_roast(roast) != temp_band_for_roast(3)
             self.assertEqual(shifted, moved_temp, roast)
-
-    def test_styles_move_too_and_ratio_is_untouched(self) -> None:
-        self.assertEqual(self._band(5, "ristretto"), (19.0, 27.0))
-        light = target_for("espresso", "lungo", 1)
-        self.assertEqual(light.ratio_aim, target_for("espresso", "lungo").ratio_aim)
-        self.assertGreater(light.tr_hi, target_for("espresso", "lungo").tr_hi)
-
-    def test_moka_still_has_no_time(self) -> None:
-        self.assertIsNone(target_for("moka", roast_level_ord=1).time_lo)
 
 
 class TestSimulatorReproducesCameron(unittest.TestCase):

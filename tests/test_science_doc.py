@@ -46,7 +46,7 @@ class TestScienceDoc(unittest.TestCase):
         """A number we invented must be admitted as such in the doc."""
         text = _DOC.read_text(encoding="utf-8")
         start = text.index("{#heuristics}")
-        end = text.index("{#method-levers}")
+        end = text.index("{#simulator}")
         heuristics_section = text[start:end]
         # Every heuristic constant's anchor must point inside that section.
         heuristic_anchors = {
@@ -54,7 +54,7 @@ class TestScienceDoc(unittest.TestCase):
         }
         for anchor in heuristic_anchors:
             # #limits is shared with the scope section; the rest must be local.
-            if anchor in ("limits", "method-levers"):
+            if anchor == "limits":
                 continue
             self.assertIn(
                 f"{{#{anchor}}}",
@@ -92,6 +92,11 @@ class TestScienceDoc(unittest.TestCase):
             # Where peer-reviewed findings disagree with the engine; each row
             # carries the number of the owner's decision on it.
             "open-conflicts",
+            # Appendix A: research the engine does not use.
+            "ratio-ristretto",
+            "ratio-lungo",
+            "ratio-pourover",
+            "ratio-moka",
         }
         cited = {c.anchor.lstrip("#") for c in CONSTANTS.values()}
         orphans = _doc_anchors() - cited - narrative

@@ -124,14 +124,14 @@ class TestTheModelsAreStrict(unittest.TestCase):
 
 def _engine_result() -> EngineResult:
     """A first-shot EngineResult, built the way recommend() builds one."""
-    calibration = fit_setup([], "espresso", K6, beta_prior("espresso", K6))
+    calibration = fit_setup([], K6, beta_prior(K6))
     return EngineResult(
-        recipe=Recipe(method="espresso", dose_g=18.0, grind_clicks=29.0),
+        recipe=Recipe(dose_g=18.0, grind_clicks=29.0),
         rationale=Rationale(headline="h", why="w", what_to_watch="x"),
         calibration=calibration,
         tier="D",
         llm_model=None,
-        target=target_for("espresso"),
+        target=target_for(),
         caps=K6,
     )
 
@@ -212,7 +212,6 @@ NAMES = {RWANDA: "Gicumbi Red Bourbon", BRAZIL: "Cerrado"}
 def _shot(bean_id: int, clicks: float, time_s: float, temp: float) -> ShotRecord:
     dose = 18.0 if bean_id == RWANDA else 16.0
     return ShotRecord(
-        method="espresso",
         dose_g=dose,
         setup_id=1,
         bean_id=bean_id,
@@ -237,18 +236,16 @@ HISTORY = [
 
 
 def _fit_result(history: list[ShotRecord], bean_id: int | None) -> EngineResult:
-    calibration = fit_setup(
-        history, "espresso", K6, beta_prior("espresso", K6), bean_id=bean_id
-    )
+    calibration = fit_setup(history, K6, beta_prior(K6), bean_id=bean_id)
     return EngineResult(
-        recipe=Recipe(method="espresso", dose_g=18.0, grind_clicks=29.0),
+        recipe=Recipe(dose_g=18.0, grind_clicks=29.0),
         rationale=Rationale(headline="h", why="w", what_to_watch="x"),
         calibration=calibration,
         tier="A" if history else "D",
         llm_model=None,
         history=tuple(history),
         bean_history=tuple(shots_for_bean(history, bean_id)),
-        target=target_for("espresso"),
+        target=target_for(),
         caps=K6,
     )
 
@@ -282,12 +279,10 @@ def _bean_shot(**overrides: Any) -> dict[str, Any]:
         "id": 1,
         "created_at": "2026-10-11T08:00:00",
         "setup_id": 5,
-        "method": "espresso",
         "grind_clicks": 28.0,
         "grind_setting": "28",
         "dose_g": 18.0,
         "yield_g": 36.0,
-        "water_g": None,
         "time_s": 30,
         "taste_axis": "balanced",
         "astringent": False,

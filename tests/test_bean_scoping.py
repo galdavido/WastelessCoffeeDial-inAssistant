@@ -44,7 +44,7 @@ K6 = GrinderCaps(
 )
 # Unlike tests/_fixtures.MACHINE_18G, no basket size is known.
 FIXED_TEMP_MACHINE = MachineCaps(basket_size_g=None, temp_controllable=False)
-TARGET = target_for("espresso")
+TARGET = target_for()
 
 BRAZIL = 8
 RWANDA = 7
@@ -58,7 +58,6 @@ def _shot(
     taste: str | None = "balanced",
 ) -> ShotRecord:
     return ShotRecord(
-        method="espresso",
         dose_g=dose_g,
         setup_id=1,
         bean_id=bean_id,
@@ -96,7 +95,7 @@ class TestAnchorIsTheSameCoffee(unittest.TestCase):
 
     def _recommend(self, bean_id: int) -> Recipe:
         """What engine.recommend() now does, minus the database."""
-        beta = beta_prior("espresso", K6)
+        beta = beta_prior(K6)
         bean_history = shots_for_bean(REPORTED, bean_id)
         recipe = correct(bean_history[0], TARGET, beta, K6, FIXED_TEMP_MACHINE)
         return apply_guardrails(recipe, K6, FIXED_TEMP_MACHINE, bean_history, TARGET)
@@ -182,9 +181,7 @@ class TestBeanOffsets(unittest.TestCase):
     def test_fit_setup_exposes_every_bean_not_just_the_one_asked_for(self) -> None:
         """A new coffee is seeded from the others, so it needs all of them."""
         shots = self._synthetic(6.0, -0.12)
-        calibration = fit_setup(
-            shots, "espresso", K6, beta_prior("espresso", K6), bean_id=RWANDA
-        )
+        calibration = fit_setup(shots, K6, beta_prior(K6), bean_id=RWANDA)
         self.assertEqual(set(calibration.bean_offsets), {RWANDA, BRAZIL})
         self.assertAlmostEqual(
             calibration.delta_bean, calibration.bean_offsets[RWANDA], places=9
@@ -220,9 +217,7 @@ class TestSlopeIsFittedWithinCoffees(unittest.TestCase):
         self.assertLess(slope, -0.05)
 
     def test_a_mixed_history_fits_the_grinder_not_the_gap_between_bags(self) -> None:
-        calibration = fit_setup(
-            REPORTED, "espresso", K6, beta_prior("espresso", K6), bean_id=RWANDA
-        )
+        calibration = fit_setup(REPORTED, K6, beta_prior(K6), bean_id=RWANDA)
         # The regression this guards: the pooled median was +0.046, so the
         # sign check in fit_setup threw the fit away and quietly returned the
         # untouched prior at zero confidence -- on a history with four shots
@@ -238,15 +233,14 @@ class TestSlopeIsFittedWithinCoffees(unittest.TestCase):
         # the physical sign, but its size is the gap between the bags.
         one_each = [_shot(1, 28.0, 40.0), _shot(2, 32.0, 36.0), _shot(3, 36.0, 20.0)]
         self.assertIsNone(theil_sen_comparable(one_each))
-        calibration = fit_setup(one_each, "espresso", K6, beta_prior("espresso", K6))
+        calibration = fit_setup(one_each, K6, beta_prior(K6))
         self.assertEqual(calibration.beta_source, "prior")
-        self.assertEqual(calibration.beta, beta_prior("espresso", K6))
+        self.assertEqual(calibration.beta, beta_prior(K6))
 
     def test_shots_with_no_bean_recorded_still_pair_together(self) -> None:
         """Bean-less records are one pool -- the simulator tests rely on it."""
         anonymous = [
             ShotRecord(
-                method="espresso",
                 dose_g=18.0,
                 grind_clicks=clicks,
                 yield_g=36.0,
@@ -316,16 +310,14 @@ class TestGrindLawInversion(unittest.TestCase):
     def test_it_abstains_without_a_law(self) -> None:
         self.assertIsNone(clicks_for_target(None, -0.12, 13.75))
         self.assertIsNone(clicks_for_target(6.0, None, 13.75))
-        self.assertIsNone(clicks_for_target(6.0, 0.0, 13.75), "moka has no slope")
+        self.assertIsNone(clicks_for_target(6.0, 0.0, 13.75), "no slope")
         self.assertIsNone(clicks_for_target(6.0, -0.12, 0.0))
 
     def test_the_law_agrees_with_what_the_shots_measured(self) -> None:
         """Fit a setup, then ask it where a bean's own shots already sit."""
         shots = [_shot(RWANDA, c, time_s=t) for c, t in ((28.0, 22.0), (34.0, 46.0))]
         shots.append(_shot(RWANDA, 31.0, time_s=32.0))
-        calibration = fit_setup(
-            shots, "espresso", K6, beta_prior("espresso", K6), bean_id=RWANDA
-        )
+        calibration = fit_setup(shots, K6, beta_prior(K6), bean_id=RWANDA)
         middle = shots[2]
         tr = normalised_time(middle)
         assert tr is not None

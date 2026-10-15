@@ -115,8 +115,6 @@ def render_template(recipe: Recipe, confidence_label: str) -> Rationale:
     bits.append(f"{recipe.dose_g:g} g in")
     if recipe.yield_g is not None:
         bits.append(f"{recipe.yield_g:g} g out")
-    elif recipe.water_g is not None:
-        bits.append(f"{recipe.water_g:g} g water")
     if recipe.brew_temp_c is not None:
         bits.append(f"{recipe.brew_temp_c:g} C")
 
