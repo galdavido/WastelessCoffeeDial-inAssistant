@@ -323,7 +323,6 @@ class EquipmentOut(_Strict):
 class SetupOut(_Strict):
     id: int
     name: str
-    method: str | None
     grinder: EquipmentOut
     machine: EquipmentOut
 

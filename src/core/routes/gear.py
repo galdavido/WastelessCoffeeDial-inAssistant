@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,9 +41,6 @@ from .common import active_setup, server_error
 
 router = APIRouter()
 
-_POUROVER_MODELS = re.compile(r"v60|kalita|chemex|origami|switch|dripper", re.I)
-_MOKA_MODELS = re.compile(r"moka|kotyog|bialetti|brikka", re.I)
-
 _CAPABILITY_FIELDS = (
     "grind_min_clicks",
     "grind_max_clicks",
@@ -58,21 +54,6 @@ _CAPABILITY_FIELDS = (
     "temp_controllable",
     "spec_source",
 )
-
-
-def _infer_method(machine: Equipment) -> str:
-    """Best guess at brew method from the paired brewer.
-
-    Only a default: the user can override it in Settings, and the engine's
-    target bands and available levers follow whatever is stored.
-    """
-    if machine.type == "espresso_machine":
-        return "espresso"
-    if _MOKA_MODELS.search(machine.model or ""):
-        return "moka"
-    if machine.type == "filter" or _POUROVER_MODELS.search(machine.model or ""):
-        return "pourover"
-    return "espresso"
 
 
 def _apply_equipment_fields(item: Equipment, body: EquipmentInput) -> None:
@@ -137,7 +118,7 @@ def _setup_equipment(db: Session, body: SetupInput) -> tuple[Equipment, Equipmen
     )
     machine = (
         db.query(Equipment)
-        .filter(Equipment.id == body.machine_id, Equipment.type != "grinder")
+        .filter(Equipment.id == body.machine_id, Equipment.type == "espresso_machine")
         .first()
     )
     if grinder is None or machine is None:
@@ -183,7 +164,9 @@ def get_equipment_library(
             serialize_equipment(item, owner) for item in items if item.type == "grinder"
         ],
         "machines": [
-            serialize_equipment(item, owner) for item in items if item.type != "grinder"
+            serialize_equipment(item, owner)
+            for item in items
+            if item.type == "espresso_machine"
         ],
     }
 
@@ -289,7 +272,6 @@ def create_setup(
             name=as_non_empty_text(body.name),
             grinder_id=grinder.id,
             machine_id=machine.id,
-            method=body.method or _infer_method(machine),
         )
         db.add(setup)
         db.commit()
@@ -326,7 +308,6 @@ def update_setup(
         setup.name = as_non_empty_text(body.name)
         setup.grinder_id = grinder.id
         setup.machine_id = machine.id
-        setup.method = body.method or setup.method or _infer_method(machine)
         db.commit()
         db.refresh(setup)
     except Exception as exc:

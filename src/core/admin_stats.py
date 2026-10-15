@@ -138,26 +138,6 @@ def weekly_activity(db: Session, weeks: int = 12) -> list[dict[str, Any]]:
     ]
 
 
-def method_mix(db: Session, days: int) -> list[dict[str, Any]]:
-    """Share of logged shots by brew method."""
-    since = _since(days)
-    rows = db.execute(
-        select(DialInLog.brew_method, func.count())
-        .where(DialInLog.created_at >= since)
-        .group_by(DialInLog.brew_method)
-        .order_by(func.count().desc())
-    ).all()
-    total = sum(int(c) for _, c in rows)
-    return [
-        {
-            "method": method or "unspecified",
-            "shots": int(count),
-            "share_pct": _pct(int(count), total),
-        }
-        for method, count in rows
-    ]
-
-
 def feature_usage(db: Session, days: int) -> dict[str, Any]:
     """How the app is used, not just how much.
 
@@ -303,7 +283,6 @@ def dashboard(db: Session, days: int) -> dict[str, Any]:
     return {
         "summary": fleet_summary(db, days),
         "weekly": weekly_activity(db),
-        "methods": method_mix(db, days),
         "usage": feature_usage(db, days),
         "people": per_owner(db, days),
         "generated_at": datetime.now(UTC).isoformat(),

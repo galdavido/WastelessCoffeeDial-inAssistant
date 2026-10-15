@@ -103,7 +103,7 @@ class TestGearSerializersMatchTheirModels(unittest.TestCase):
         EquipmentOut.model_validate(serialize_equipment(bare))
 
     def test_setup_serializer_matches_model(self) -> None:
-        setup = BrewSetup(id=5, owner="me", name="Home", method="espresso")
+        setup = BrewSetup(id=5, owner="me", name="Home")
         setup.grinder = _grinder()
         setup.machine = _machine()
         SetupOut.model_validate(serialize_setup(setup))

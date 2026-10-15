@@ -135,7 +135,6 @@ def serialize_setup(setup: BrewSetup) -> dict[str, Any]:
     return {
         "id": setup.id,
         "name": setup.name,
-        "method": setup.method,
         "grinder": serialize_equipment(setup.grinder),
         "machine": serialize_equipment(setup.machine),
     }

@@ -286,7 +286,6 @@ def update_coffee(
                 grind_clicks=as_float(latest.grind_clicks),
                 time_s=latest.time_s,
                 yield_g=latest.yield_g,
-                water_g=as_float(latest.water_g),
                 rating=latest.rating,
                 taste_axis=latest.taste_axis,
             )

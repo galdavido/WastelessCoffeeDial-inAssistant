@@ -121,6 +121,7 @@ def test_one_espresso_target(self) -> None:
     self.assertEqual((t.time_lo, t.time_hi), (25.0, 30.0))
     self.assertEqual((t.temp_lo, t.temp_hi), (90.5, 96.0))
 
+
 def test_brew_ratio_is_yield_over_dose(self) -> None:
     self.assertEqual(brew_ratio(ShotRecord(dose_g=18.0, yield_g=36.0)), 2.0)
     self.assertIsNone(brew_ratio(ShotRecord(dose_g=18.0)))

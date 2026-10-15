@@ -788,9 +788,7 @@
           "type": {
             "enum": [
               "grinder",
-              "espresso_machine",
-              "filter",
-              "other"
+              "espresso_machine"
             ],
             "title": "Type",
             "type": "string"
@@ -1154,17 +1152,6 @@
               }
             ],
             "title": "Time S"
-          },
-          "water_g": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Water G"
           },
           "yield_g": {
             "anyOf": [
@@ -2273,22 +2260,6 @@
             "title": "Machine Id",
             "type": "integer"
           },
-          "method": {
-            "anyOf": [
-              {
-                "enum": [
-                  "espresso",
-                  "pourover",
-                  "moka"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Method"
-          },
           "name": {
             "maxLength": 200,
             "title": "Name",
@@ -2316,17 +2287,6 @@
           "machine": {
             "$ref": "#/components/schemas/EquipmentOut"
           },
-          "method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Method"
-          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2335,7 +2295,6 @@
         "required": [
           "id",
           "name",
-          "method",
           "grinder",
           "machine"
         ],

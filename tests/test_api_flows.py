@@ -60,7 +60,7 @@ class FlowTestCase(DatabaseTestCase):
             p.stop()
         super().tearDown()
 
-    def make_setup(self, api: Any = None, method: str = "espresso") -> dict[str, Any]:
+    def make_setup(self, api: Any = None) -> dict[str, Any]:
         """A K6-like grinder on a fixed-temperature machine, made active."""
         api = api or self.api
         grinder = self.ok(
@@ -82,7 +82,7 @@ class FlowTestCase(DatabaseTestCase):
             api.post(
                 "/api/equipment/library",
                 json={
-                    "type": "espresso_machine" if method == "espresso" else "filter",
+                    "type": "espresso_machine",
                     "brand": "Test",
                     "model": "Brewer",
                 },
@@ -95,7 +95,6 @@ class FlowTestCase(DatabaseTestCase):
                     "name": "Bench",
                     "grinder_id": grinder["id"],
                     "machine_id": machine["id"],
-                    "method": method,
                 },
             )
         )["setup"]
@@ -625,6 +624,23 @@ class TestEquipmentOwnership(FlowTestCase):
         theirs = self.ok(self.another_user().get("/api/setups"))["setups"][0]
         self.assertEqual(theirs["grinder"]["id"], grinder["id"])
 
+    def test_setup_machine_must_be_espresso_machine(self) -> None:
+        setup = self.make_setup()
+        grinder_id = setup["grinder"]["id"]
+        body = {"name": "Odd", "grinder_id": grinder_id, "machine_id": grinder_id}
+        self.assertEqual(self.api.post("/api/setups", json=body).status_code, 400)
+        self.assertEqual(
+            self.api.put(f"/api/setups/{setup['id']}", json=body).status_code, 400
+        )
+
+    def test_equipment_type_is_grinder_or_espresso_machine(self) -> None:
+        for kind in ("filter", "other"):
+            response = self.api.post(
+                "/api/equipment/library",
+                json={"type": kind, "brand": "B", "model": "M"},
+            )
+            self.assertEqual(response.status_code, 422, kind)
+
     def test_the_old_whole_setup_rename_routes_are_gone(self) -> None:
         for path in ("/api/equipment/grinder", "/api/equipment/machine"):
             response = self.api.put(path, json={"brand": "x", "model": "y"})
@@ -856,7 +872,7 @@ class TestShotHistory(FlowTestCase):
 
 
 class TestFirstShotWithoutADial(FlowTestCase):
-    def _setup(self, grinder_fields: dict[str, Any], method: str) -> None:
+    def _setup(self, grinder_fields: dict[str, Any]) -> None:
         grinder = self.ok(
             self.api.post(
                 "/api/equipment/library",
@@ -871,11 +887,7 @@ class TestFirstShotWithoutADial(FlowTestCase):
         machine = self.ok(
             self.api.post(
                 "/api/equipment/library",
-                json={
-                    "type": "espresso_machine" if method == "espresso" else "other",
-                    "brand": "Bare",
-                    "model": "Moka pot" if method == "moka" else "M",
-                },
+                json={"type": "espresso_machine", "brand": "Bare", "model": "M"},
             )
         )["equipment"]
         setup = self.ok(
@@ -885,7 +897,6 @@ class TestFirstShotWithoutADial(FlowTestCase):
                     "name": "Bare",
                     "grinder_id": grinder["id"],
                     "machine_id": machine["id"],
-                    "method": method,
                 },
             )
         )["setup"]
@@ -893,7 +904,7 @@ class TestFirstShotWithoutADial(FlowTestCase):
 
     def test_an_unmeasured_grinder_gets_instructions_not_a_number(self) -> None:
         """Even with a known range: its middle is far too coarse for espresso."""
-        self._setup({"grind_min_clicks": 0, "grind_max_clicks": 120}, "espresso")
+        self._setup({"grind_min_clicks": 0, "grind_max_clicks": 120})
         body = self.scan()
         self.assertIsNone(body["recipe"]["grind_clicks"])
         protocol = body["protocol"]
@@ -931,6 +942,21 @@ class TestLegacyClients(FlowTestCase):
         scan = self.scan()
         self.assertNotIn("recommendation", scan)
         self.log_shot(scan["coffee_data"], recommendation="old prose")
+        self.assertEqual(self.only_coffee()["logs_count"], 1)
+
+    def test_stale_client_fields_are_ignored(self) -> None:
+        """A cached PWA may still send a brew method or water in."""
+        setup = self.make_setup()
+        body = {
+            "name": "Old",
+            "grinder_id": setup["grinder"]["id"],
+            "machine_id": setup["machine"]["id"],
+            "method": "moka",
+        }
+        saved = self.ok(self.api.post("/api/setups", json=body))["setup"]
+        self.assertNotIn("method", saved)
+        scan = self.scan()
+        self.log_shot(scan["coffee_data"], water_g=250.0)
         self.assertEqual(self.only_coffee()["logs_count"], 1)
 
     def test_settings_carry_only_what_the_engine_reads(self) -> None:
