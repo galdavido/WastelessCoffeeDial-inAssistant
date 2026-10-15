@@ -1,10 +1,9 @@
 # Wasteless Coffee Dial-in Assistant (WCDA)
 
-An espresso (and pour-over, and moka) dial-in helper. Photograph a coffee bag,
-and the app reads it with Gemini and gives you a starting recipe — grind, dose,
-yield, temperature — worked out from your own logged shots on your own
-grinder. Log how each shot ran and tasted, and the next recipe is corrected
-from it.
+An espresso dial-in helper. Photograph a coffee bag, and the app reads it
+with Gemini and gives you a starting recipe — grind, dose, yield,
+temperature — worked out from your own logged shots on your own grinder. Log
+how each shot ran and tasted, and the next recipe is corrected from it.
 
 Every number comes from a deterministic engine (`src/core/brewing.py`,
 `calibration.py`, `engine.py`), grounded in [`docs/science.md`](docs/science.md).

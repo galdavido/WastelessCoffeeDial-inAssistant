@@ -97,6 +97,7 @@ class TestScienceDoc(unittest.TestCase):
             "ratio-lungo",
             "ratio-pourover",
             "ratio-moka",
+            "appendix-other-methods",
         }
         cited = {c.anchor.lstrip("#") for c in CONSTANTS.values()}
         orphans = _doc_anchors() - cited - narrative
