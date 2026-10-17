@@ -22,7 +22,6 @@ from typing import Protocol
 
 from .brewing import (
     GrinderCaps,
-    Method,
     ShotRecord,
     beta_prior,
     dose_term,
@@ -66,19 +65,18 @@ class EngineTimeModel:
     would score the law on a question it never answers.
     """
 
-    method: Method
     caps: GrinderCaps
     name: str = "engine"
 
     def fit(self, train: Sequence[ShotRecord]) -> Predictor | None:
-        prior = beta_prior(self.method, self.caps)
+        prior = beta_prior(self.caps)
         fits: dict[int | None, Calibration] = {}
 
         def predict(shot: ShotRecord) -> float | None:
             # bean_offsets are fitted per call, so fit once per coffee asked.
             if shot.bean_id not in fits:
                 fits[shot.bean_id] = fit_setup(
-                    train, self.method, self.caps, prior, bean_id=shot.bean_id
+                    train, self.caps, prior, bean_id=shot.bean_id
                 )
             return _law(fits[shot.bean_id], shot)
 
@@ -93,15 +91,11 @@ class PriorOnlyTimeModel:
     Expects ``train`` newest first, the order the database returns it in.
     """
 
-    method: Method
     caps: GrinderCaps
     name: str = "prior_only"
 
     def fit(self, train: Sequence[ShotRecord]) -> Predictor | None:
-        prior = beta_prior(self.method, self.caps)
-        if prior is None:
-            return None
-        return EngineTimeModel(self.method, self.caps).fit(train[:1])
+        return EngineTimeModel(self.caps).fit(train[:1])
 
 
 @dataclass(frozen=True)

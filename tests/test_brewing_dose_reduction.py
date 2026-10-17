@@ -18,13 +18,12 @@ from core.brewing import (
     target_for,
 )
 
-TARGET = target_for("espresso")
-BETA = beta_prior("espresso", K6)
+TARGET = target_for()
+BETA = beta_prior(K6)
 
 
 def _shot(clicks: float, time_s: float, dose: float = 18.0, taste: str = "balanced"):
     return ShotRecord(
-        method="espresso",
         dose_g=dose,
         bean_id=1,
         grind_clicks=clicks,
@@ -38,7 +37,6 @@ def _shot(clicks: float, time_s: float, dose: float = 18.0, taste: str = "balanc
 # it should have slowed: the channeling signature, beyond shot-to-shot noise.
 CHANNELING = [_shot(30.0, 26.0), _shot(28.0, 22.0), _shot(26.0, 20.0)]
 STUCK = Recipe(
-    method="espresso",
     dose_g=18.0,
     grind_clicks=30.0,
     yield_g=36.0,
@@ -92,12 +90,6 @@ class TestWhenItHoldsBack(unittest.TestCase):
     def test_not_once_a_lighter_dose_has_been_tried(self) -> None:
         tried = [*CHANNELING, _shot(31.0, 22.0, dose=15.0)]
         self.assertIsNone(dose_reduction(tried, STUCK, K6, MACHINE, TARGET, BETA))
-
-    def test_not_for_other_methods(self) -> None:
-        pourover = replace(STUCK, method="pourover")
-        self.assertIsNone(
-            dose_reduction(CHANNELING, pourover, K6, MACHINE, TARGET, BETA)
-        )
 
     def test_prep_differences_are_not_channeling(self) -> None:
         """A longer pre-infusion runs faster; that is not a finer shot channeling."""

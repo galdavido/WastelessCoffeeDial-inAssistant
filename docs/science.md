@@ -13,7 +13,7 @@ a source or an explicit admission that it is a guess.
 | `CALIBRATED` | a reference value chosen to make a model fit; defensible, not universal |
 | `HEURISTIC` | our own judgement, no source; change freely if the data disagrees |
 
-Citations are short-form, e.g. (Cameron 2020); full entries are in §9. Peer-
+Citations are short-form, e.g. (Cameron 2020); full entries are in §8. Peer-
 reviewed papers and practitioner sources are listed separately there, so it is
 visible which `LITERATURE` claims rest on which.
 
@@ -21,8 +21,12 @@ visible which `LITERATURE` claims rest on which.
 
 ## 1. Scope and honest limits {#limits}
 
-The app has **no refractometer**. It records dose, beverage/water mass, time, a
-taste axis and (optionally) temperature and pre-infusion.
+**Scope: espresso only, at one style.** Pour-over, moka, ristretto and lungo
+were removed on 2026-10-15; their research is kept in
+[Appendix A](#appendix-other-methods).
+
+The app has **no refractometer**. It records dose, beverage mass, time, a taste
+axis and (optionally) temperature and pre-infusion.
 
 **Cannot be computed:**
 
@@ -55,9 +59,6 @@ taste axis and (optionally) temperature and pre-infusion.
   A change of water is a change of recipe the app cannot see.
 - **Actual brew temperature** without a PID or Scace: `brew_temp_c` is what the
   user set or believes.
-- **Pour schedule and agitation** (pour-over) and **stove power** (moka) — the
-  dominant levers for those methods, hence their confidence caps
-  ([#method-levers](#method-levers)).
 - **Grinder retention and burr drift** — the same click means slightly different
   things months apart.
 
@@ -67,8 +68,7 @@ target band.*
 
 **Dose bounds.** With a basket size recorded, the dose is held to 75–105% of
 it; without one, an espresso dose is held to 12–22 g (single to triple
-baskets). Pour-over and moka get no default bound. A clamped dose scales the
-yield or water with it, so the ratio survives.
+baskets). A clamped dose scales the yield with it, so the ratio survives.
 
 ---
 
@@ -167,7 +167,7 @@ c = (ln T_r_target − α − δ̂_bean) / β
 
 `δ̂_bean` is borrowed from similar coffees on this setup
 ([#similarity](#similarity)), or 0 (the setup's average bean) if none is
-similar enough. With no fitted `α` at all — a new grinder, or moka — the engine
+similar enough. With no fitted `α` at all — a new grinder — the engine
 falls back to [#cold-start](#cold-start).
 
 **Dose.** For espresso the law also carries a dose term, `+ γ·ln D`, where
@@ -223,10 +223,10 @@ poroelastic (Waszkiewicz 2026, [#darcy](#darcy)); a deeper bed sees a gentler
 pressure gradient and compacts less, which would make the fitted `γ` come out
 somewhat below 2. That is what shrinkage toward data is for.
 
-**Why only espresso.** The derivation needs a fixed pressure drop. Pour-over
-drawdown is driven by the pour, and moka has no grind law, so `γ = 0` there:
-a requested dose is honoured, but the grind is solved at the last shot's dose
-and the recipe says so.
+**Why it holds.** The derivation needs a fixed pressure drop, which the pump
+supplies. Pour-over drawdown is driven by the pour, and moka has no grind law,
+which is why neither carried a dose term
+([Appendix A](#appendix-other-methods)).
 
 **How it is fitted.** Like `β`, shrunk toward the data:
 `γ = w·γ_fitted + (1 − w)·γ_prior`, `w = n/(n + κ_dose)`, `n` counting dose
@@ -309,44 +309,7 @@ machine the time band may simply be unreachable, and turning up the pressure is
 not the fix. The honest output is to say so, rather than to keep recommending
 finer.
 
-### 3.4 Ristretto {#ratio-ristretto}
-
-**1:1–1:1.5**, aim 1:1.25, 20–28 s. Same temperature band.
-
-### 3.5 Lungo {#ratio-lungo}
-
-**1:2.5–1:3**, aim 1:2.75, 28–36 s. Same temperature band.
-
-### 3.6 Pour-over, V60 {#ratio-pourover}
-
-**1:16** (≈60 g/L), band 1:15–1:17; water **92–96 °C**; drawdown **2:45–3:15**
-for a ~15 g single; medium-fine, ~600–800 µm. These are practitioner figures
-(§9.2). Liang 2021 supports ratio as the strength lever; Batali 2020 found brew
-temperature from 87 to 93 °C made practically no sensory difference once TDS and
-EY were held fixed — so the 92–96 °C floor is convention, not requirement.
-
-The dominant levers — pour schedule, agitation, bloom — are not recorded. See
-[#method-levers](#method-levers).
-
-### 3.7 Moka pot {#ratio-moka}
-
-Ratio **1:7–1:10** (aim 1:8), grind **360–660 µm**, steam pressure **1–2 bar**,
-water **90–96 °C**, and beyond **~8 minutes** the pot is treated as choked.
-
-Measured on a three-cup moka (150 g water, 15 g coffee — 1:10), the water in the
-kettle starts flowing at **~69–70 °C** and ends at **117–121 °C**, averaging
-**94–98 °C** depending on stove power; the extract leaves the bed much cooler,
-averaging **~79–81 °C** (Navarini 2009). The bed's permeability falls during the
-brew, stove power exceeds what the last of the water needs so flow accelerates
-at the end, and the final sputtering "strombolian" phase extracts the harshest
-compounds — the hotter and higher-pressure, the more. So the moka band describes
-the *water*, not what the coffee sees, and cutting the heat early matters more
-than any grind change.
-
-Brew time is set by heat input, not bed permeability, so the engine does not
-solve grind from time for moka.
-
-### 3.8 Degassing {#degassing}
+### 3.4 Degassing {#degassing}
 
 Coffee released **5–14 days** post-roast is the commonly cited window
 (practitioner). The kinetics are peer-reviewed: whole-bean CO₂ release fits two
@@ -360,7 +323,7 @@ That CO₂ is what makes fresh coffee flow fast and erratically and raises the
 channeling risk. The ~7.6-day time constant is consistent with a ~7-day rest;
 the magnitudes we apply to fresh coffee are heuristic ([#fresh-band](#fresh-band)).
 
-### 3.9 The extraction peak is not monotonic {#cameron}
+### 3.5 The extraction peak is not monotonic {#cameron}
 
 Cameron 2020 is the load-bearing citation. A homogeneous-flow model predicts
 EY rising monotonically as grind fines; experiment shows it **peak and then
@@ -392,7 +355,7 @@ Consequences for the engine:
   tamping pressure** on extraction kinetics, while particle size mattered
   strongly.
 
-### 3.10 The reproducibility recipe {#cameron-reproducibility}
+### 3.6 The reproducibility recipe {#cameron-reproducibility}
 
 Cameron 2020's affirmative recommendation: **less coffee, ground coarser** —
 20 g → 15 g, up to 25% less — which raised EY *and* shot-to-shot
@@ -405,7 +368,7 @@ ground coffee (abstract only).
 The engine offers this as a suggestion beside the recipe, never folded into
 it; when, is in [#dose-reduction](#dose-reduction).
 
-### 3.11 Temperature by roast level {#temp-by-roast}
+### 3.7 Temperature by roast level {#temp-by-roast}
 
 Convention within the espresso band: light **94–96 °C**, medium **92–94 °C**,
 dark **90.5–92.5 °C**. Band edges are practitioner convention; the split points
@@ -427,7 +390,7 @@ and drying goes one step coarser, then shortens the ratio, then lowers 1 °C.
 The band edges keep their `LITERATURE` kind — they are published convention —
 but they are a starting point, not a lever the engine reaches for first.
 
-### 3.12 Sour/bitter is not a reliable extraction readout {#taste-mapping}
+### 3.8 Sour/bitter is not a reliable extraction readout {#taste-mapping}
 
 "Sour means under-extracted, bitter means over-extracted" is the industry
 default and is **not** dependable:
@@ -452,9 +415,9 @@ and the rule that *bitter without astringency does not move the grind*.
 ### 4.1 Reference particle diameter and β {#beta-prior}
 
 `β = −2u / d_ref` ([#beta-law](#beta-law)) needs a reference diameter:
-`d_ref = 300 µm` for espresso and `700 µm` for pour-over, mid-range values
-consistent with §3. **Calibrated**, not measured: they set the scale of the
-correction, and the fitted `β` supersedes them. (Real grounds are bimodal —
+`d_ref = 300 µm`, a mid-range espresso value consistent with §3.
+**Calibrated**, not measured: it sets the scale of the correction, and the
+fitted `β` supersedes it. (Real grounds are bimodal —
 [#kozeny](#kozeny) — so `d_ref` is an effective diameter, not a median.)
 
 For `u = 16 µm/click` this gives `β ≈ −0.107` per click, roughly a **10% change
@@ -495,7 +458,7 @@ hardcoding a range.
 
 ### 5.1 Shrinkage constants {#shrinkage}
 
-`w = n_eff / (n_eff + κ)` with `κ = 4.0` espresso, `8.0` pour-over,
+`w = n_eff / (n_eff + κ)` with `κ = 4.0`,
 `κ_bean = 2.0` for the per-bean offset. `n_eff` counts **distinct grind
 settings**, not shots: ten shots at one setting carry no slope information.
 About four distinct settings gets you halfway from prior to fitted. Pure guess.
@@ -537,8 +500,9 @@ cosmetic; retained because it matches common practice.
 
 Under 7 days off roast, acceptance bands are doubled and corrections halved, and
 the user is told the target is moving — on a coffee's first shot too, where
-there is no band to widen yet but the warning still applies. The 7 days sits near the slow degassing
-time constant ([#degassing](#degassing)); the factors are guesses.
+there is no band to widen yet but the warning still applies. The 7 days sits
+near the slow degassing time constant ([#degassing](#degassing)); the factors
+are guesses.
 
 ### 5.5 Pre-infusion and the rest before the pull {#preinfusion}
 
@@ -586,9 +550,9 @@ for espresso with enough recorded shots and a habitual duration below
 `preinfusion_experiment_step_s` more than the habit — enough that the new shots
 are not mistaken for the old as grind evidence — and never less than
 `preinfusion_min_for_relief_s`, where pre-infusion starts to earn the floor's
-relief. The grind is held where the guardrails left it: one lever at a time. It runs until
-`min_shots_at_new_prep` shots are logged at the new duration, then hands back
-to the advice above. The use-less-coffee suggestion waits while it runs
+relief. The grind is held where the guardrails left it: one lever at a time. It
+runs until `min_shots_at_new_prep` shots are logged at the new duration, then
+hands back to the advice above. The use-less-coffee suggestion waits while it runs
 ([#dose-reduction](#dose-reduction)).
 
 **Comparing durations.** With two or more durations recorded, the engine
@@ -751,27 +715,7 @@ the conservative end. One step coarser is a direction, not a solved number.
 
 ---
 
-## 6. Method levers, and what we cannot see {#method-levers}
-
-| | espresso | pour-over | moka |
-| --- | --- | --- | --- |
-| driving force | pump, ~9 bar | gravity, ~2 kPa | steam, 1–2 bar |
-| ratio denominator | beverage out | water in | water in |
-| grind ↔ time coupling | **strong** | moderate | **weak** |
-| levers we can move | grind, dose, ratio, temp\* | grind, dose, ratio | grind, dose, ratio |
-| levers we cannot see | puck prep, distribution, RDT, water | pour schedule, agitation, bloom, water | stove power, heat-cut timing, water |
-| confidence cap | 1.0 | 0.6 | 0.4 |
-
-\* temperature only when the machine reports it as controllable.
-
-Espresso is the only method where the physics model is load-bearing. For moka
-the grind law is disabled outright (`β_prior = None`), because its flow is set
-by a rising steam pressure and a bed whose permeability falls during the brew
-(Navarini 2009).
-
----
-
-## 7. The simulator {#simulator}
+## 6. The simulator {#simulator}
 
 `tests/_sim.py` implements Darcy + Kozeny–Carman plus a logistic bypass term, so
 a fraction of flow short-circuits through a low-resistance channel as particle
@@ -783,7 +727,7 @@ fixture only**; its taste mapping is crude, which is why it lives under
 
 ---
 
-## 8. Where the literature disagrees with the engine {#open-conflicts}
+## 7. Where the literature disagrees with the engine {#open-conflicts}
 
 Findings above that argued for a change to the engine, and what became of
 each. The `#` column is the owner's decision number; #13 is recorded under
@@ -797,13 +741,13 @@ each. The `#` column is the owner's decision number; #13 is recorded under
 | Uneven flow exists at all grinds; time is not a channeling signature (Lee 2023; Cameron 2020) | Noise-aware signs; one warns, two stop the grinder; a deadband | Resolved ([#channeling-detection](#channeling-detection), [#deadband](#deadband)) | 12 |
 | Dose sets bed depth and so time (Cameron 2020) | Built: `γ·ln D` ([#dose-term](#dose-term)) | Resolved | 5 |
 | Less coffee, coarser, is more reproducible (Cameron 2020; Khamitova 2020) | Built: a suggestion ([#dose-reduction](#dose-reduction)) | Resolved | 6 |
-| Moka extract averages ~80 °C; the final phase extracts harsh compounds (Navarini 2009) | `moka_temp` 90–96 °C | Not acted on: moka is out of scope for now | 13 |
+| Moka extract averages ~80 °C; the final phase extracts harsh compounds (Navarini 2009) | Removed: espresso only | Research kept in [Appendix A](#appendix-other-methods) | 13 |
 
 ---
 
-## 9. Bibliography
+## 8. Bibliography
 
-### 9.1 Peer-reviewed
+### 8.1 Peer-reviewed
 
 - **Andueza 2002** — Andueza, S. et al. "Influence of water pressure on the
   final quality of arabica espresso coffee." *J. Agric. Food Chem.* 50(25),
@@ -915,11 +859,12 @@ each. The `#` column is the owner's decision number; #13 is recorded under
   <https://pmc.ncbi.nlm.nih.gov/articles/PMC11854300/> — tolerance 25 s ± 3 s at
   9 bar, 92–94 °C, 15–17 g ± 1 g; no shot-time variance reported.
 
-### 9.2 Practitioner and industry sources
+### 8.2 Practitioner and industry sources
 
-These back the `LITERATURE` numbers no paper above fixes: the ristretto/lungo
-bands, the V60 recipe, moka grind and ratio, the 5–14-day rest window, the
-roast-level temperature split and the K6 spec.
+These back the `LITERATURE` numbers no paper above fixes: the 5–14-day rest
+window, the roast-level temperature split and the K6 spec, and, for
+Appendix A, the ristretto/lungo bands, the V60 recipe and moka grind and
+ratio.
 
 - SCA Brewing Control Chart / Coffee Brewing Institute (Lockhart, 1950s) —
   <https://www.baristainstitute.com/blog/jori-korhonen/january-2019/how-measure-extraction-coffee>,
@@ -936,3 +881,68 @@ roast-level temperature split and the K6 spec.
   <https://honestcoffeeguide.com/kingrinder-k6-grind-settings/>
 - Coffee extraction and how to taste it — Barista Hustle.
   <https://www.baristahustle.com/coffee-extraction-and-how-to-taste-it/>
+
+---
+
+## Appendix A — Not implemented: other methods and styles {#appendix-other-methods}
+
+Nothing in this appendix is used by the engine. Pour-over, moka, ristretto
+and lungo were removed on 2026-10-15; this is the research behind them, with
+the numbers as the engine last used them, kept for when a dedicated flow
+returns.
+
+### A.1 Ristretto {#ratio-ristretto}
+
+**1:1–1:1.5**, aim 1:1.25, 20–28 s. Same temperature band.
+
+### A.2 Lungo {#ratio-lungo}
+
+**1:2.5–1:3**, aim 1:2.75, 28–36 s. Same temperature band.
+
+### A.3 Pour-over, V60 {#ratio-pourover}
+
+**1:16** (≈60 g/L), band 1:15–1:17; water **92–96 °C**; drawdown **2:45–3:15**
+for a ~15 g single; medium-fine, ~600–800 µm. These are practitioner figures
+(§8.2). Liang 2021 supports ratio as the strength lever; Batali 2020 found brew
+temperature from 87 to 93 °C made practically no sensory difference once TDS and
+EY were held fixed — so the 92–96 °C floor is convention, not requirement.
+
+The dominant levers — pour schedule, agitation, bloom — are not recorded. See
+[#method-levers](#method-levers). The engine used `d_ref = 700 µm` and a
+shrinkage `κ = 8.0` for pour-over.
+
+### A.4 Moka pot {#ratio-moka}
+
+Ratio **1:7–1:10** (aim 1:8), grind **360–660 µm**, steam pressure **1–2 bar**,
+water **90–96 °C**, and beyond **~8 minutes** the pot is treated as choked.
+
+Measured on a three-cup moka (150 g water, 15 g coffee — 1:10), the water in the
+kettle starts flowing at **~69–70 °C** and ends at **117–121 °C**, averaging
+**94–98 °C** depending on stove power; the extract leaves the bed much cooler,
+averaging **~79–81 °C** (Navarini 2009). The bed's permeability falls during the
+brew, stove power exceeds what the last of the water needs so flow accelerates
+at the end, and the final sputtering "strombolian" phase extracts the harshest
+compounds — the hotter and higher-pressure, the more. So the moka band describes
+the *water*, not what the coffee sees, and cutting the heat early matters more
+than any grind change.
+
+Brew time is set by heat input, not bed permeability, so the engine never
+solved grind from time for moka.
+
+### A.5 Method levers, and what we cannot see {#method-levers}
+
+| | espresso | pour-over | moka |
+| --- | --- | --- | --- |
+| driving force | pump, ~9 bar | gravity, ~2 kPa | steam, 1–2 bar |
+| ratio denominator | beverage out | water in | water in |
+| grind ↔ time coupling | **strong** | moderate | **weak** |
+| levers we can move | grind, dose, ratio, temp\* | grind, dose, ratio | grind, dose, ratio |
+| levers we cannot see | puck prep, distribution, RDT, water | pour schedule, agitation, bloom, water | stove power, heat-cut timing, water |
+| confidence cap | 1.0 | 0.6 | 0.4 |
+
+\* temperature only when the machine reports it as controllable.
+
+Espresso is the only method where the physics model is load-bearing. For moka
+the grind law was disabled outright (`β_prior = None`), because its flow is set
+by a rising steam pressure and a bed whose permeability falls during the brew
+(Navarini 2009).

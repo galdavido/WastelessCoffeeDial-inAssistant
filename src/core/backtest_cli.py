@@ -19,10 +19,10 @@ from database.database import SessionLocal
 from database.models import BrewSetup
 
 from .auth import single_user_owner
-from .brewing import GrinderCaps, Method, target_for
+from .brewing import GrinderCaps, target_for
 from .engine import grinder_caps, machine_caps
 from .eval_harness import backtest, compare_models
-from .retrieval import fetch_calibration_shots, get_active_setup_method
+from .retrieval import fetch_calibration_shots
 from .time_models import (
     BeanMeanTimeModel,
     EngineTimeModel,
@@ -31,11 +31,11 @@ from .time_models import (
 )
 
 
-def comparison_models(method: Method, caps: GrinderCaps) -> list[TimeModel]:
+def comparison_models(caps: GrinderCaps) -> list[TimeModel]:
     """The engine, its baselines and -- if installed -- the challengers."""
     models: list[TimeModel] = [
-        EngineTimeModel(method, caps),
-        PriorOnlyTimeModel(method, caps),
+        EngineTimeModel(caps),
+        PriorOnlyTimeModel(caps),
         BeanMeanTimeModel(),
     ]
     try:
@@ -71,24 +71,23 @@ def run(
             return 1
 
         for setup in setups:
-            method = get_active_setup_method(setup)
             caps = grinder_caps(setup.grinder)
             machine = machine_caps(setup.machine)
-            shots = fetch_calibration_shots(db, owner, setup.id, method)
+            shots = fetch_calibration_shots(db, owner, setup.id)
 
             print("=" * 60)
-            print(f"{setup.name}  [{method}]  -- {len(shots)} measured shots")
+            print(f"{setup.name}  -- {len(shots)} measured shots")
             print("=" * 60)
             if not caps.has_range:
                 print(
                     "  note: this grinder has no recorded range, so the engine "
                     "abstains from naming a grind setting here."
                 )
-            report = backtest(shots, target_for(method), caps, machine, method)
+            report = backtest(shots, target_for(), caps, machine)
             print(report.render())
             if compare:
                 print()
-                models = comparison_models(method, caps)
+                models = comparison_models(caps)
                 for scheme in ("loo", "walk_forward"):
                     print(compare_models(shots, models, scheme).render())
             print()

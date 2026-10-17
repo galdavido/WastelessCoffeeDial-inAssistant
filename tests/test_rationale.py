@@ -25,7 +25,6 @@ from ai.rationale import (
 from core.brewing import Recipe
 
 RECIPE = Recipe(
-    method="espresso",
     dose_g=18.0,
     grind_clicks=33.0,
     yield_g=36.0,
@@ -104,7 +103,7 @@ class TestTemplate(unittest.TestCase):
 
     def test_template_without_a_grind_asks_for_a_measurement(self) -> None:
         """Tier E: no click number invented, and it says what to do instead."""
-        recipe = Recipe(method="espresso", dose_g=18.0, grind_clicks=None)
+        recipe = Recipe(dose_g=18.0, grind_clicks=None)
         rationale = render_template(recipe, "First shot")
         self.assertNotIn("grind ", rationale.headline)
         self.assertIn("tastes", rationale.what_to_watch)

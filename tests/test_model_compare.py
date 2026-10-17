@@ -27,7 +27,6 @@ from core.time_models import (
     BeanMeanTimeModel,
     EngineTimeModel,
     Predictor,
-    PriorOnlyTimeModel,
     log_time,
 )
 
@@ -55,7 +54,6 @@ def _history(n: int, beans: int = 2, seed: int = 0) -> list[ShotRecord]:
         )
         out.append(
             ShotRecord(
-                method="espresso",
                 dose_g=dose,
                 setup_id=1,
                 bean_id=bean + 1,
@@ -116,7 +114,7 @@ class TestHeldOutSchemes(unittest.TestCase):
 
     def test_unmeasured_shots_are_neither_held_out_nor_trained_on(self) -> None:
         shots = _history(6)
-        shots.append(ShotRecord(method="espresso", dose_g=18.0, grind_clicks=30.0))
+        shots.append(ShotRecord(dose_g=18.0, grind_clicks=30.0))
         spy = SpyModel()
         points = held_out_predictions(shots, [spy], "loo")
 
@@ -144,7 +142,7 @@ class TestCompareModels(unittest.TestCase):
     def test_engine_beats_ignoring_the_grinder_on_simulated_shots(self) -> None:
         """The simulator's grind matters, so a law that reads it must win."""
         shots = _history(30)
-        models = [EngineTimeModel("espresso", K6), BeanMeanTimeModel()]
+        models = [EngineTimeModel(K6), BeanMeanTimeModel()]
         for scheme in ("loo", "walk_forward"):
             result = compare_models(shots, models, scheme)
             scores = {s.name: s.mae for s in result.scores}
@@ -171,7 +169,7 @@ class TestCompareModels(unittest.TestCase):
 
     def test_gaps_are_paired_against_the_first_model(self) -> None:
         shots = _history(MIN_SHOTS_FOR_PREDICTION + 5)
-        models = [EngineTimeModel("espresso", K6), BeanMeanTimeModel()]
+        models = [EngineTimeModel(K6), BeanMeanTimeModel()]
         result = compare_models(shots, models)
         engine, bean_mean = result.scores
 
@@ -182,9 +180,6 @@ class TestCompareModels(unittest.TestCase):
         self.assertAlmostEqual(bean_mean.diff, bean_mean.mae - engine.mae)
         self.assertGreater(bean_mean.diff_se, 0.0)
         self.assertIn("vs engine", result.render())
-
-    def test_prior_only_declines_for_moka(self) -> None:
-        self.assertIsNone(PriorOnlyTimeModel("moka", K6).fit(_history(5)))
 
 
 class TestChallengers(unittest.TestCase):
@@ -199,7 +194,6 @@ class TestChallengers(unittest.TestCase):
     def test_each_fits_and_predicts_a_finite_ln_time(self) -> None:
         shots = _history(15)
         unseen = ShotRecord(
-            method="espresso",
             dose_g=18.0,
             bean_id=99,
             grind_clicks=33.0,
@@ -217,14 +211,14 @@ class TestChallengers(unittest.TestCase):
                 self.assertLess(abs(value - 2.7), 2.0, model.name)
 
     def test_a_shot_without_a_grind_is_abstained_on(self) -> None:
-        shot = ShotRecord(method="espresso", dose_g=18.0, yield_g=36.0, time_s=28.0)
+        shot = ShotRecord(dose_g=18.0, yield_g=36.0, time_s=28.0)
         for model in self.models:
             predictor = model.fit(_history(10))
             assert predictor is not None
             self.assertIsNone(predictor(shot), model.name)
 
     def test_ranked_alongside_the_engine(self) -> None:
-        models = [EngineTimeModel("espresso", K6), *self.models]
+        models = [EngineTimeModel(K6), *self.models]
         result = compare_models(_history(20), models, "walk_forward")
         self.assertTrue(result.sufficient)
         self.assertTrue(all(s.mae is not None for s in result.scores))

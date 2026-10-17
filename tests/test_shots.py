@@ -40,7 +40,6 @@ class TestClassifyDataQuality(unittest.TestCase):
                 grind_clicks=33.0,
                 time_s=27,
                 yield_g=32.0,
-                water_g=None,
                 rating=4,
                 taste_axis=None,
             ),
@@ -52,27 +51,35 @@ class TestClassifyDataQuality(unittest.TestCase):
             classify_data_quality(
                 grind_clicks=33.0,
                 time_s=27,
-                yield_g=None,
-                water_g=250.0,
+                yield_g=32.0,
                 rating=None,
                 taste_axis="sour",
             ),
             "measured",
         )
 
+    def test_classify_requires_yield(self) -> None:
+        shot = {
+            "grind_clicks": 20,
+            "time_s": 28,
+            "rating": 4,
+            "taste_axis": "balanced",
+        }
+        self.assertEqual(classify_data_quality(**shot, yield_g=None), "partial")
+        self.assertEqual(classify_data_quality(**shot, yield_g=36.0), "measured")
+
     def test_missing_measurements_downgrade_to_partial(self) -> None:
         # Each of these alone is enough to keep a row out of calibration.
         for kwargs in (
             {"grind_clicks": None},
             {"time_s": None},
-            {"yield_g": None, "water_g": None},
+            {"yield_g": None},
             {"rating": None, "taste_axis": None},
         ):
             base = {
                 "grind_clicks": 33.0,
                 "time_s": 27,
                 "yield_g": 32.0,
-                "water_g": None,
                 "rating": 4,
                 "taste_axis": None,
             }

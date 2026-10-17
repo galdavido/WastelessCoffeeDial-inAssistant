@@ -19,7 +19,6 @@ class FeedbackRequest(BaseModel):
     # Measured outcome. All optional, and absent means unmeasured -- never
     # substituted with a default, because calibration reads these as truth.
     yield_g: float | None = None
-    water_g: float | None = None
     # A float, even though the column is whole seconds: the wizard's timer
     # reports tenths, and an int here rejected every timed shot outright.
     # Rounding to the second happens on the way into the row.
@@ -69,9 +68,6 @@ class SetupInput(BaseModel):
     name: Name
     grinder_id: int
     machine_id: int
-    # Drives the target bands and which levers the engine may move. Left
-    # unset, it is inferred from the brewer.
-    method: Literal["espresso", "pourover", "moka"] | None = None
 
 
 class SetupSelectInput(BaseModel):
@@ -88,7 +84,7 @@ class EquipmentInput(BaseModel):
     guess.
     """
 
-    type: Literal["grinder", "espresso_machine", "filter", "other"]
+    type: Literal["grinder", "espresso_machine"]
     brand: Name
     model: Name
     grind_min_clicks: float | None = None

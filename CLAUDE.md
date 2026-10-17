@@ -239,7 +239,10 @@ Settled by the owner; each stays as is unless there is a new reason.
 - **`pip-audit` stays advisory in CI.** Advisories arrive without any code
   change and would redden unrelated PRs. Read its output whenever
   dependencies are bumped.
-- **Moka stays as it is for now.** The moka extract averages ~80 °C and the
-  final sputtering phase extracts the harshest compounds (Navarini 2009),
-  which argues for a heat-cut prompt, but moka and pour-over are set aside to
-  concentrate on espresso; revisit with a dedicated flow.
+- **Espresso only (2026-10-15).** Pour-over, moka, ristretto and lungo were
+  removed from the engine, API, database (migration 0010) and PWA; equipment
+  is a grinder or an espresso machine. The research is kept in
+  `docs/science.md` Appendix A. When moka returns it needs its own flow: its
+  extract averages ~80 °C and the final sputtering phase extracts the
+  harshest compounds (Navarini 2009), which argues for a heat-cut prompt
+  rather than a grind change.

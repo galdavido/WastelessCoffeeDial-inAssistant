@@ -31,7 +31,6 @@ from dataclasses import dataclass, field
 
 from .brewing import (
     GrinderCaps,
-    Method,
     ShotRecord,
     dose_log,
     dose_term,
@@ -63,9 +62,9 @@ class Calibration:
     beta_fitted: float | None = None
     shrink_weight: float = 0.0
     kappa: float = 0.0
-    # The dose term: ln T_r gains gamma * ln(dose). Zero where the law has no
-    # dose term (pour-over, moka) -- see docs/science.md#dose-term. Shrunk
-    # toward the Darcy prior exactly as beta is.
+    # The dose term: ln T_r gains gamma * ln(dose) -- see
+    # docs/science.md#dose-term. Shrunk toward the Darcy prior exactly as beta
+    # is.
     gamma: float = 0.0
     gamma_prior: float = 0.0
     gamma_fitted: float | None = None
@@ -318,21 +317,14 @@ def slope_fit_ready(n_eff: int, span: float, caps: GrinderCaps) -> bool:
 
 def fit_setup(
     shots: Sequence[ShotRecord],
-    method: Method,
     caps: GrinderCaps,
-    beta_prior_value: float | None,
+    beta_prior_value: float,
     bean_id: int | None = None,
 ) -> Calibration:
     """Fit the grind law for one setup, shrunk toward the physical prior."""
-    if beta_prior_value is None:
-        # Moka: brew time is stove heat, not permeability. There is no grind
-        # law to fit and pretending otherwise would invent a lever.
-        return Calibration(beta=None, beta_source="none", confidence=0.0)
-
-    # The dose term is espresso's: a pump holds the pressure fixed, so Darcy's
-    # bed-depth scaling applies. Pour-over drawdown is set by the pour and the
-    # head of water, and moka never reaches here. docs/science.md#dose-term.
-    gamma_prior = value_of("dose_exponent_prior") if method == "espresso" else 0.0
+    # A pump holds the pressure fixed, so Darcy's bed-depth scaling applies.
+    # docs/science.md#dose-term.
+    gamma_prior = value_of("dose_exponent_prior")
 
     points = _usable(shots)
     distinct = sorted({clicks for clicks, _ in points})
@@ -340,7 +332,7 @@ def fit_setup(
     n_eff = len(distinct)
     span = (distinct[-1] - distinct[0]) if len(distinct) >= 2 else 0.0
 
-    kappa = value_of("kappa_espresso" if method == "espresso" else "kappa_pourover")
+    kappa = value_of("kappa")
 
     fitted: float | None = None
     pair_gamma = gamma_prior
@@ -386,12 +378,7 @@ def fit_setup(
     offsets = bean_offsets(shots, alpha, beta, gamma)
     delta = offsets.get(bean_id, 0.0) if bean_id is not None else 0.0
 
-    cap = 1.0
-    if method == "pourover":
-        cap = value_of("confidence_cap_pourover")
-    elif method == "moka":
-        cap = value_of("confidence_cap_moka")
-    confidence = weight * min(1.0, n_eff / 8.0) * cap
+    confidence = weight * min(1.0, n_eff / 8.0)
 
     return Calibration(
         beta=beta,

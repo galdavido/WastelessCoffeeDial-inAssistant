@@ -37,7 +37,7 @@ K6 = GrinderCaps(
     um_per_click=16.0,
     finer_direction="lower_is_finer",
 )
-TARGET = target_for("espresso")
+TARGET = target_for()
 RWANDA, BRAZIL = 7, 8
 NAMES = {RWANDA: "Gicumbi Red Bourbon", BRAZIL: "Cerrado"}
 
@@ -45,7 +45,6 @@ NAMES = {RWANDA: "Gicumbi Red Bourbon", BRAZIL: "Cerrado"}
 def _shot(bean_id: int, clicks: float, time_s: float, temp: float) -> ShotRecord:
     dose = 18.0 if bean_id == RWANDA else 16.0
     return ShotRecord(
-        method="espresso",
         dose_g=dose,
         setup_id=1,
         bean_id=bean_id,
@@ -71,11 +70,9 @@ HISTORY = [
 
 def _result(bean_id: int | None = RWANDA) -> EngineResult:
     """An EngineResult built the way recommend() builds one, minus the DB."""
-    calibration = fit_setup(
-        HISTORY, "espresso", K6, beta_prior("espresso", K6), bean_id=bean_id
-    )
+    calibration = fit_setup(HISTORY, K6, beta_prior(K6), bean_id=bean_id)
     return EngineResult(
-        recipe=Recipe(method="espresso", dose_g=18.0, grind_clicks=29.0),
+        recipe=Recipe(dose_g=18.0, grind_clicks=29.0),
         rationale=Rationale(headline="h", why="w", what_to_watch="x"),
         calibration=calibration,
         tier="A",
@@ -196,11 +193,9 @@ class TestThePictureMatchesTheEngine(unittest.TestCase):
         """A shot alone at its setting for its coffee cannot pair with anything."""
         lonely = _shot(BRAZIL, 41.0, 21.0, 88.0)
         history = [*HISTORY, lonely]
-        calibration = fit_setup(
-            history, "espresso", K6, beta_prior("espresso", K6), bean_id=BRAZIL
-        )
+        calibration = fit_setup(history, K6, beta_prior(K6), bean_id=BRAZIL)
         result = EngineResult(
-            recipe=Recipe(method="espresso", dose_g=16.0, grind_clicks=36.0),
+            recipe=Recipe(dose_g=16.0, grind_clicks=36.0),
             rationale=Rationale(headline="h", why="w", what_to_watch="x"),
             calibration=calibration,
             tier="A",
@@ -255,9 +250,9 @@ class TestThePictureMatchesTheEngine(unittest.TestCase):
 
 class TestItStaysHonestWithNothingToShow(unittest.TestCase):
     def test_an_empty_history_serialises_without_inventing_a_law(self) -> None:
-        calibration = fit_setup([], "espresso", K6, beta_prior("espresso", K6))
+        calibration = fit_setup([], K6, beta_prior(K6))
         result = EngineResult(
-            recipe=Recipe(method="espresso", dose_g=18.0),
+            recipe=Recipe(dose_g=18.0),
             rationale=Rationale(headline="h", why="w", what_to_watch="x"),
             calibration=calibration,
             tier="D",
@@ -275,12 +270,10 @@ class TestItStaysHonestWithNothingToShow(unittest.TestCase):
     def test_two_settings_draw_no_fit_that_did_not_happen(self) -> None:
         """A comparable pair exists, but below the gate no median was taken."""
         history = HISTORY[:2]  # one coffee, two settings
-        calibration = fit_setup(
-            history, "espresso", K6, beta_prior("espresso", K6), bean_id=RWANDA
-        )
+        calibration = fit_setup(history, K6, beta_prior(K6), bean_id=RWANDA)
         self.assertEqual(calibration.beta_source, "prior")
         result = EngineResult(
-            recipe=Recipe(method="espresso", dose_g=18.0, grind_clicks=28.0),
+            recipe=Recipe(dose_g=18.0, grind_clicks=28.0),
             rationale=Rationale(headline="h", why="w", what_to_watch="x"),
             calibration=calibration,
             tier="C",

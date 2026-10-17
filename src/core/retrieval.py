@@ -21,14 +21,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from database.models import Bean, BrewSetup, DialInLog
+from database.models import Bean, DialInLog
 
-from .brewing import Method, ShotRecord, value_of
+from .brewing import ShotRecord, value_of
 
 # Coarse regional buckets, so a Kenyan bean is a partial match for an
 # Ethiopian one but not for a Brazilian.
@@ -117,18 +117,16 @@ def similarity(target: BeanFeatures, candidate: BeanFeatures) -> float:
     return score
 
 
-def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRecord:
+def to_shot_record(log: DialInLog, bean: Bean | None) -> ShotRecord:
     days = None
     if bean is not None and bean.roast_date is not None and log.created_at is not None:
         days = (log.created_at.date() - bean.roast_date).days
     return ShotRecord(
-        method=method,
         dose_g=float(log.dose_g),
         setup_id=log.setup_id,
         bean_id=log.bean_id,
         grind_clicks=float(log.grind_clicks) if log.grind_clicks is not None else None,
         yield_g=float(log.yield_g) if log.yield_g is not None else None,
-        water_g=float(log.water_g) if log.water_g is not None else None,
         time_s=float(log.time_s) if log.time_s is not None else None,
         taste_axis=log.taste_axis,  # type: ignore[arg-type]
         astringent=log.astringent,
@@ -145,7 +143,7 @@ def to_shot_record(log: DialInLog, bean: Bean | None, method: Method) -> ShotRec
 
 
 def fetch_calibration_shots(
-    db: Session, owner: str, setup_id: int | None, method: Method
+    db: Session, owner: str, setup_id: int | None
 ) -> list[ShotRecord]:
     """Shots usable for fitting the grind law.
 
@@ -167,9 +165,7 @@ def fetch_calibration_shots(
         .where(DialInLog.time_s.is_not(None))
         .order_by(DialInLog.created_at.desc())
     )
-    return [
-        to_shot_record(log, bean, method) for log, bean in db.execute(stmt).tuples()
-    ]
+    return [to_shot_record(log, bean) for log, bean in db.execute(stmt).tuples()]
 
 
 def shots_for_bean(
@@ -277,43 +273,20 @@ def classify_tier(
     return "D" if has_hardware_caps else "E"
 
 
-def calibration_protocol(method: Method, dose_g: float, out_g: float) -> str:
+def calibration_protocol(dose_g: float, out_g: float) -> str:
     """What to do when the engine cannot name a first grind setting.
 
-    Said instead of a number, never alongside an invented one. For espresso and
-    pour-over the dial cannot be located without the grinder's microns per
-    click (docs/science.md#cold-start) -- the middle of the range is *not* a
-    stand-in, because that range spans espresso to French press. For moka there
-    is no grind law to solve at all: the stove sets the brew time.
+    Said instead of a number, never alongside an invented one. The dial cannot
+    be located without the grinder's microns per click
+    (docs/science.md#cold-start) -- the middle of the range is *not* a
+    stand-in, because that range spans espresso to French press.
     """
-    if method == "moka":
-        return (
-            f"A moka pot's grind isn't solved from brew time -- the stove sets "
-            f"that, not the grind -- so there is no setting to calculate. Use a "
-            f"grind a little coarser than espresso that doesn't pack when you "
-            f"fill the basket, brew {dose_g:g} g with {out_g:g} g of water, and "
-            f"note how it tastes."
-        )
-    brew = (
-        f"pull {dose_g:g} g in to {out_g:g} g out"
-        if method == "espresso"
-        else f"brew {dose_g:g} g with {out_g:g} g of water"
-    )
     return (
         "I can't place this grinder's dial yet -- that needs its microns per "
         "click, which isn't recorded -- so any setting I gave you would be "
-        f"invented. Start where you normally would, {brew}, and note the "
-        "setting, the time and how it tastes: one measured shot is all I need "
-        "to solve the next setting properly. Adding your grinder's microns per "
-        "click under Equipment gets you a starting number next time."
+        f"invented. Start where you normally would, pull {dose_g:g} g in to "
+        f"{out_g:g} g out, and note the setting, the time and how it tastes: "
+        "one measured shot is all I need to solve the next setting properly. "
+        "Adding your grinder's microns per click under Equipment gets you a "
+        "starting number next time."
     )
-
-
-def get_active_setup_method(setup: BrewSetup | Any | None) -> Method:
-    """Brew method for a setup, defaulting to espresso when unset."""
-    method = getattr(setup, "method", None)
-    if method == "pourover":
-        return "pourover"
-    if method == "moka":
-        return "moka"
-    return "espresso"

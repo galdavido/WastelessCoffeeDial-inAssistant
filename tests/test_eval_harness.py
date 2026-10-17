@@ -34,7 +34,7 @@ K6 = GrinderCaps(
     um_per_click=16.0,
     finer_direction="lower_is_finer",
 )
-TARGET = target_for("espresso")
+TARGET = target_for()
 
 
 def _history(clicks: list[float]) -> list[ShotRecord]:
@@ -46,7 +46,6 @@ def _history(clicks: list[float]) -> list[ShotRecord]:
         sim = simulate_shot(c, K6, bed, target_yield_g=36.0)
         out.append(
             ShotRecord(
-                method="espresso",
                 dose_g=18.0,
                 setup_id=1,
                 bean_id=1,
@@ -89,7 +88,7 @@ class TestPredictionMetric(unittest.TestCase):
     def test_enough_shots_unlocks_the_prediction_metric(self) -> None:
         # M3 needs no ratings and no taste, so it goes green first.
         history = _history([float(c) for c in range(28, 50)])
-        metric = held_out_time_error(history, "espresso", K6)
+        metric = held_out_time_error(history, K6)
         self.assertTrue(metric.sufficient, metric.render())
         assert metric.value is not None
         # Predicting log-time to within ~0.5 nats is a loose but real bar.
@@ -98,7 +97,7 @@ class TestPredictionMetric(unittest.TestCase):
     def test_prediction_beats_the_unfitted_prior(self) -> None:
         """If calibration does not beat its own prior, it earns nothing."""
         history = _history([float(c) for c in range(28, 50)])
-        metric = held_out_time_error(history, "espresso", K6)
+        metric = held_out_time_error(history, K6)
         if metric.baselines.get("prior_only") is not None:
             assert metric.value is not None
             self.assertLessEqual(metric.value, metric.baselines["prior_only"])
@@ -108,14 +107,14 @@ class TestInvariantMetrics(unittest.TestCase):
     def test_guardrail_violations_are_zero(self) -> None:
         """M4 is a regression test: any violation is a bug, not a score."""
         history = _history([float(c) for c in range(20, 50, 2)])
-        metric = guardrail_violations(history, TARGET, K6, MACHINE, "espresso")
+        metric = guardrail_violations(history, TARGET, K6, MACHINE)
         self.assertTrue(metric.sufficient)
         self.assertEqual(metric.value, 0.0)
 
     def test_engine_abstains_when_it_cannot_locate_the_dial(self) -> None:
         """M5 must be 1.0: no micron-per-click means no invented number."""
         unlocatable = GrinderCaps(min_clicks=0.0, max_clicks=100.0)
-        metric = cold_start_abstention([unlocatable], "espresso")
+        metric = cold_start_abstention([unlocatable])
         self.assertEqual(metric.value, 1.0)
 
 

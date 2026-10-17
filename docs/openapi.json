@@ -209,10 +209,6 @@
             "title": "Id",
             "type": "integer"
           },
-          "method": {
-            "title": "Method",
-            "type": "string"
-          },
           "rating": {
             "anyOf": [
               {
@@ -287,17 +283,6 @@
             ],
             "title": "Tr"
           },
-          "water_g": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Water G"
-          },
           "yield_g": {
             "anyOf": [
               {
@@ -314,12 +299,10 @@
           "id",
           "created_at",
           "setup_id",
-          "method",
           "grind_clicks",
           "grind_setting",
           "dose_g",
           "yield_g",
-          "water_g",
           "time_s",
           "taste_axis",
           "astringent",
@@ -805,9 +788,7 @@
           "type": {
             "enum": [
               "grinder",
-              "espresso_machine",
-              "filter",
-              "other"
+              "espresso_machine"
             ],
             "title": "Type",
             "type": "string"
@@ -1172,17 +1153,6 @@
             ],
             "title": "Time S"
           },
-          "water_g": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Water G"
-          },
           "yield_g": {
             "anyOf": [
               {
@@ -1491,17 +1461,6 @@
             "title": "Used In Fit",
             "type": "boolean"
           },
-          "water_g": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Water G"
-          },
           "yield_g": {
             "anyOf": [
               {
@@ -1523,7 +1482,6 @@
           "time_s",
           "dose_g",
           "yield_g",
-          "water_g",
           "brew_temp_c",
           "preinfusion_s",
           "pause_s",
@@ -2058,15 +2016,6 @@
             "title": "Guardrails Hit",
             "type": "array"
           },
-          "method": {
-            "enum": [
-              "espresso",
-              "pourover",
-              "moka"
-            ],
-            "title": "Method",
-            "type": "string"
-          },
           "pause_s": {
             "anyOf": [
               {
@@ -2111,17 +2060,6 @@
             ],
             "title": "Target Time S"
           },
-          "water_g": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Water G"
-          },
           "yield_g": {
             "anyOf": [
               {
@@ -2135,11 +2073,9 @@
           }
         },
         "required": [
-          "method",
           "grind_clicks",
           "dose_g",
           "yield_g",
-          "water_g",
           "brew_temp_c",
           "target_time_lo_s",
           "target_time_s",
@@ -2324,22 +2260,6 @@
             "title": "Machine Id",
             "type": "integer"
           },
-          "method": {
-            "anyOf": [
-              {
-                "enum": [
-                  "espresso",
-                  "pourover",
-                  "moka"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Method"
-          },
           "name": {
             "maxLength": 200,
             "title": "Name",
@@ -2367,17 +2287,6 @@
           "machine": {
             "$ref": "#/components/schemas/EquipmentOut"
           },
-          "method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Method"
-          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2386,7 +2295,6 @@
         "required": [
           "id",
           "name",
-          "method",
           "grinder",
           "machine"
         ],
@@ -2543,48 +2451,20 @@
             "type": "number"
           },
           "time_hi": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Time Hi"
+            "title": "Time Hi",
+            "type": "number"
           },
           "time_lo": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Time Lo"
+            "title": "Time Lo",
+            "type": "number"
           },
           "tr_hi": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tr Hi"
+            "title": "Tr Hi",
+            "type": "number"
           },
           "tr_lo": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tr Lo"
+            "title": "Tr Lo",
+            "type": "number"
           }
         },
         "required": [

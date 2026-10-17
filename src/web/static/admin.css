@@ -81,7 +81,6 @@
   color: var(--crema);
 }
 .panel-sub { font-size: 12.5px; color: var(--text-3); }
-.panel-rule { height: 1px; background: var(--border); }
 
 .admin-cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; }
 .panel-wide { min-width: 0; }
@@ -121,18 +120,6 @@
   max-width: 220px;
 }
 .chart-tip b { color: var(--crema); font-variant-numeric: tabular-nums; }
-
-.mix-bar { display: flex; gap: 2px; height: 26px; }
-.mix-seg:first-child { border-radius: 5px 0 0 5px; }
-.mix-seg:last-child { border-radius: 0 5px 5px 0; }
-.mix-seg:only-child { border-radius: 5px; }
-.mix-legend { display: flex; flex-direction: column; gap: 11px; }
-.mix-row { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
-.mix-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
-.mix-name { color: var(--text-1); text-transform: capitalize; }
-.mix-value {
-  margin-left: auto; color: var(--text-1); font-variant-numeric: tabular-nums;
-}
 
 .usage-list { display: flex; flex-direction: column; gap: 10px; }
 .usage-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }

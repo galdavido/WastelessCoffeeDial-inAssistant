@@ -97,9 +97,6 @@ class BrewSetup(Base):
     name: Mapped[str] = mapped_column(String, index=True)
     grinder_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
     machine_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"))
-    # 'espresso' | 'pourover' | 'moka'. Drives target bands and which levers
-    # the correction policy is even allowed to move.
-    method: Mapped[str | None] = mapped_column(String, nullable=True)
 
     grinder: Mapped[Equipment] = relationship(foreign_keys=[grinder_id])
     machine: Mapped[Equipment] = relationship(foreign_keys=[machine_id])
@@ -121,11 +118,9 @@ class Recommendation(Base):
     )
     bean_id: Mapped[int | None] = mapped_column(ForeignKey("beans.id"), nullable=True)
     engine_version: Mapped[str] = mapped_column(String)
-    method: Mapped[str | None] = mapped_column(String, nullable=True)
     grind_clicks: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
     dose_g: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     yield_g: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
-    water_g: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
     brew_temp_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)
     target_time_s: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
     basis: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -165,9 +160,7 @@ class DialInLog(Base):
     setup_id: Mapped[int | None] = mapped_column(
         ForeignKey("brew_setups.id"), nullable=True
     )
-    brew_method: Mapped[str | None] = mapped_column(String, nullable=True)
     grind_clicks: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
-    water_g: Mapped[float | None] = mapped_column(Numeric(6, 1), nullable=True)
     taste_axis: Mapped[str | None] = mapped_column(String, nullable=True)
     astringent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     brew_temp_c: Mapped[float | None] = mapped_column(Numeric(4, 1), nullable=True)

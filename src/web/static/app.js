@@ -29,7 +29,6 @@ let currentRecommendationId = null;
 /* The active setup, mirrored into the header chip. */
 let activeSetupId = null;
 let activeSetupName = '';
-let activeSetupMethod = null;
 /* Navigation */
 let currentTab = 'tab-home';
 let editingBeanId = null;
@@ -940,8 +939,7 @@ function renderRecipe(data) {
     const fields = [
       ['Grind', r.grind_clicks !== null && r.grind_clicks !== undefined ? r.grind_clicks : '—'],
       ['Dose', r.dose_g != null ? `${r.dose_g} g` : '—'],
-      [r.method === 'espresso' ? 'Out' : 'Water',
-       (r.yield_g ?? r.water_g) != null ? `${r.yield_g ?? r.water_g} g` : '—'],
+      ['Out', r.yield_g != null ? `${r.yield_g} g` : '—'],
       ['Time', r.target_time_s == null ? '—'
         : r.target_time_lo_s != null && r.target_time_lo_s !== r.target_time_s
           ? `${r.target_time_lo_s}–${r.target_time_s} s`
@@ -996,10 +994,7 @@ function renderRecipe(data) {
   // different on a different grinder.
   const setupLine = $('recipe-setup-line');
   if (setupLine) {
-    const method = r?.method ? METHOD_LABELS[r.method] || r.method : '';
-    setupLine.textContent = activeSetupName
-      ? `for ${activeSetupName}${method ? ` · ${method}` : ''}`
-      : '';
+    setupLine.textContent = activeSetupName ? `for ${activeSetupName}` : '';
   }
 }
 
@@ -1554,7 +1549,7 @@ function advanceTimer() {
   }
 }
 
-/* Straight to the pull: no pre-infusion on this shot, or the method has none. */
+/* Straight to the pull: no pre-infusion on this shot. */
 function skipToPull() {
   wizMarks = { start: null, pressure: null, pull: performance.now(), stop: null };
   setTimerStage('pulling');
@@ -1623,7 +1618,7 @@ function openShotWizard() {
   const dose = currentScanDose() ?? currentCoffeeData?.preferred_dose_g ?? '';
   $('wiz-grind').value = currentRecipe?.grind_clicks ?? '';
   $('wiz-dose').value = dose === '' ? '' : String(dose);
-  $('wiz-yield').value = currentRecipe?.yield_g ?? currentRecipe?.water_g ?? '';
+  $('wiz-yield').value = currentRecipe?.yield_g ?? '';
   $('wiz-time').value = '';
   // The engine's target if it recommends one, else whatever you used last.
   const temp = currentRecipe?.brew_temp_c ?? lastBrewTempC;
@@ -1640,20 +1635,10 @@ function openShotWizard() {
   document.querySelectorAll('#taste-scale .taste-btn')
     .forEach((b) => b.classList.remove('is-selected'));
 
-  const label = $('wiz-yield-label');
-  if (label) {
-    label.textContent =
-      currentRecipe && currentRecipe.method !== 'espresso' ? 'Water in (g)' : 'Out (g)';
-  }
   const skip = $('btn-timer-skip');
   if (skip) skip.hidden = false;
 
   resetTimer();
-  // No low-pressure phase to hold on a moka pot: start at the pull.
-  if (currentRecipe?.method === 'moka') {
-    skipToPull();
-    if (skip) skip.hidden = true;
-  }
 
   showWizStep(1);
   $('shot-wizard').classList.remove('hidden');
@@ -1861,7 +1846,6 @@ async function loadSetups() {
     const active = cachedSetups.find((s) => Number(s.id) === activeId);
     activeSetupId = activeId || null;
     activeSetupName = active?.name || '';
-    activeSetupMethod = active?.method || null;
     renderSetupChip();
 
     select.innerHTML = '';
@@ -1882,8 +1866,6 @@ async function loadSetups() {
 const EQUIPMENT_TYPE_LABELS = {
   grinder: 'grinder',
   espresso_machine: 'espresso machine',
-  filter: 'filter brewer',
-  other: 'other',
 };
 function labelForType(type) {
   return EQUIPMENT_TYPE_LABELS[type] || type || 'equipment';
@@ -1958,7 +1940,7 @@ function renderEquipmentSelects() {
   if (!cachedEquipmentLibrary.machines.length) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = 'No machines/brewers saved yet';
+    option.textContent = 'No espresso machines saved yet';
     machineSelect.appendChild(option);
   } else {
     cachedEquipmentLibrary.machines.forEach(item => {
@@ -2048,21 +2030,9 @@ function renderSetupManagerList(activeId = null) {
   });
 }
 
-const METHOD_LABELS = {
-  espresso: 'espresso',
-  pourover: 'pour-over',
-  moka: 'moka',
-};
-
 function renderSetupChip() {
   const name = $('setup-chip-name');
-  const method = $('setup-chip-method');
   if (name) name.textContent = activeSetupName || 'No setup';
-  if (method) {
-    method.textContent = activeSetupMethod
-      ? METHOD_LABELS[activeSetupMethod] || activeSetupMethod
-      : '';
-  }
 }
 
 function openSetupSwitch() {
@@ -2082,9 +2052,7 @@ function openSetupSwitch() {
     row.innerHTML = `
       <div class="setup-item-main">
         <span class="setup-item-name">${escapeHtml(setup.name)}</span>
-        <span class="setup-item-method">${escapeHtml(
-          METHOD_LABELS[setup.method] || setup.method || 'espresso'
-        )} · ${escapeHtml(setup.grinder?.model || '')}</span>
+        <span class="setup-item-detail">${escapeHtml(setup.grinder?.model || '')}</span>
       </div>
       ${isActive ? '<span class="setup-active-pill">Active</span>' : ''}
     `;
@@ -2114,7 +2082,7 @@ async function selectSetup(setupId) {
     loadSettings();
 
     // The recipe on screen belongs to the setup it was computed for. Leaving
-    // it there after a switch would show espresso numbers labelled as filter.
+    // it there after a switch would show one grinder's numbers under another.
     if (currentBeanId || currentCoffeeData) {
       await refreshRecommendation({ dose: currentScanDose() });
       loadHistory(currentBeanId);
@@ -2169,7 +2137,7 @@ const CAP_FIELDS = {
 };
 
 function showCapsFor(type) {
-  // A grinder has no basket; a brewer has no burrs.
+  // A grinder has no basket; a machine has no burrs.
   $('equipment-grinder-caps').style.display = type === 'grinder' ? '' : 'none';
   $('equipment-machine-caps').style.display = type === 'grinder' ? 'none' : '';
 }
@@ -2207,7 +2175,6 @@ on('equipment-form-type', 'change', (e) => showCapsFor(e.target.value));
 
 function clearSetupForm() {
   $('setup-form-name').value = '';
-  $('setup-form-method').value = '';
   const grinderSelect = $('setup-form-grinder-id');
   const machineSelect = $('setup-form-machine-id');
   if (grinderSelect) grinderSelect.value = grinderSelect.options[0]?.value || '';
@@ -2220,7 +2187,6 @@ function populateSetupForm(setup) {
   $('setup-form-name').value = setup.name || '';
   $('setup-form-grinder-id').value = String(setup.grinder?.id || '');
   $('setup-form-machine-id').value = String(setup.machine?.id || '');
-  $('setup-form-method').value = setup.method || '';
 }
 
 async function saveSetupFromForm() {
@@ -2228,8 +2194,6 @@ async function saveSetupFromForm() {
     name: $('setup-form-name').value.trim(),
     grinder_id: Number($('setup-form-grinder-id').value),
     machine_id: Number($('setup-form-machine-id').value),
-    // Blank means "work it out from the brewer".
-    method: $('setup-form-method').value || null,
   };
 
   if (!payload.name || !payload.grinder_id || !payload.machine_id) {

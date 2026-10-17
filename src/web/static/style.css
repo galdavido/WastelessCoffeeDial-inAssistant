@@ -1070,7 +1070,6 @@ select.input { background-image: none; }
 #setup-chip-name {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.setup-chip-method { color: var(--text-2); font-size: 11px; opacity: .85; }
 .setup-chip-caret { width: 12px; height: 12px; opacity: .6; flex-shrink: 0; }
 /* The version chip already claimed margin-left:auto; with two chips the
    setup chip takes the space and version sits at the very end. */
@@ -1097,7 +1096,7 @@ select.input { background-image: none; }
 .setup-item.is-active { border-color: var(--accent); background: rgba(198, 123, 69,.12); }
 .setup-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .setup-item-name { font-size: 15px; font-weight: 600; color: var(--text-1); }
-.setup-item-method { font-size: 12px; color: var(--text-2); }
+.setup-item-detail { font-size: 12px; color: var(--text-2); }
 .setup-active-pill {
   font-size: 11px; font-weight: 600; color: var(--accent);
   border: 1px solid var(--accent); border-radius: 20px; padding: 2px 8px;
