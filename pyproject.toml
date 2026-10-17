@@ -84,7 +84,10 @@ warn_redundant_casts = true
 [tool.pyright]
 include = ["src", "tests", "migrations"]
 extraPaths = ["src", "tests"]
-pythonVersion = "3.12"
+# The interpreter every image and CI runs. At 3.12 typeshed has no
+# string.templatelib, so pyright parses the 3.14 stdlib source and reports
+# its t-strings; mypy still checks the 3.12 floor of requires-python.
+pythonVersion = "3.14"
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]

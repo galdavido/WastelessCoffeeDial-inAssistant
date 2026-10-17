@@ -1104,7 +1104,7 @@ def correct(
         and prep_comparable(last, s)
         and normalised_time(s)
     ]
-    logs = []
+    logs: list[float] = []
     for s in pool:
         tr_s = normalised_time(s)
         if tr_s:

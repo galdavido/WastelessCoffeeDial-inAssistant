@@ -64,7 +64,7 @@ class Metric:
     value: float | None = None
     n: int = 0
     required: int = 0
-    baselines: dict[str, float] = field(default_factory=dict)
+    baselines: dict[str, float] = field(default_factory=dict[str, float])
 
     @property
     def sufficient(self) -> bool:
@@ -352,7 +352,7 @@ def _paired(
     """Mean paired error difference against ``reference``, and its SE."""
     if name == reference or len(points) < 2:
         return None, None
-    diffs = []
+    diffs: list[float] = []
     for p in points:
         value, ref = p.predicted[name], p.predicted[reference]
         if value is None or ref is None:

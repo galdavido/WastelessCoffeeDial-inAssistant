@@ -95,7 +95,8 @@ def _recommend(
     )
 
     recommendation_id: int | None = None
-    if bean.id is not None:
+    # Mapped[int] describes a stored row; a transient bean has no id yet.
+    if bean.id is not None:  # pyright: ignore[reportUnnecessaryComparison]
         coffee_data["bean_id"] = bean.id
         # Only persist against a bean that actually exists; a transient
         # stand-in has no row to reference.

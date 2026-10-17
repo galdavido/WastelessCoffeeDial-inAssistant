@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from core.admin_db import admin_enabled, warn_if_half_configured
 from core.admin_routes import register_admin_routes
@@ -62,7 +63,9 @@ def _must_revalidate(path: str) -> bool:
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)

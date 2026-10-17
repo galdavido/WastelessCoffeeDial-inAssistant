@@ -38,7 +38,7 @@ def _require_token(x_admin_token: str | None = Header(default=None)) -> None:
 
 def register_admin_routes(app: FastAPI, static_dir: str) -> None:
     @app.get("/admin", include_in_schema=False)
-    def admin_page() -> FileResponse:
+    def admin_page() -> FileResponse:  # pyright: ignore[reportUnusedFunction]
         # The shell carries no data; the token is asked for in the page and
         # only ever spent on /api/admin/stats.
         return FileResponse(os.path.join(static_dir, "admin.html"))
@@ -50,7 +50,7 @@ def register_admin_routes(app: FastAPI, static_dir: str) -> None:
         dependencies=[Depends(_require_token)],
         include_in_schema=False,
     )
-    def admin_dashboard(
+    def admin_dashboard(  # pyright: ignore[reportUnusedFunction]
         days: int = 90, db: Session = Depends(get_admin_db)
     ) -> dict[str, Any]:
         """Every number on the dashboard, for a window of ``days``."""

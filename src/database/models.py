@@ -125,7 +125,7 @@ class Recommendation(Base):
     target_time_s: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
     basis: Mapped[str | None] = mapped_column(String, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
-    inputs_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    inputs_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     rationale_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
 
