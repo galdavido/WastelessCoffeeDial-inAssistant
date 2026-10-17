@@ -34,6 +34,9 @@ jobs:
       - name: Type check
         run: mypy src
 
+      - name: Type check (pyright strict, what Pylance shows)
+        run: pyright
+
       - name: Dependency audit
         run: pip-audit --strict --progress-spinner off
         continue-on-error: true

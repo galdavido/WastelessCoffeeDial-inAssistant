@@ -8,5 +8,5 @@
 <!-- How have you tested these changes? -->
 
 - [ ] Checks pass:
-      `ruff check . && ruff format --check . && mypy src && pytest`
+      `ruff check . && ruff format --check . && mypy src && pyright && pytest`
       (API-flow tests need `DATABASE_URL`)
