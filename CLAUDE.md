@@ -44,7 +44,11 @@ The tree is in README's "Project layout"; what it does not say:
   (`parsing.py`, `beans.py`, `setups.py`, `shots.py`), `auth.py`, DB
   bootstrap/session, and the engine: `engine.py` orchestrates `retrieval.py`
   → `calibration.py` → `brewing.py` (pure, no DB) → rationale.
-  `eval_harness.py` + `backtest_cli.py` measure it. `admin_*.py` is the
+  `eval_harness.py` + `backtest_cli.py` measure it; `time_models.py` is the
+  model interface the harness scores, and `challengers.py` the scikit-learn
+  models it compares against the engine (offline only -- the web image has no
+  scikit-learn, and `tests/test_model_compare.py` fails if anything else
+  imports it). `admin_*.py` is the
   dev-only dashboard.
 - `src/ai/` — the two Gemini calls: `vision.py` (bag OCR), `rationale.py`
   (prose around numbers the engine already fixed); `model_selection.py` holds

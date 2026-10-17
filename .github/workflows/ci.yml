@@ -23,7 +23,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e '.[dev]'
+          pip install -e '.[dev,ml]'
 
       - name: Ruff lint
         run: ruff check .
@@ -68,7 +68,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e '.[dev]'
+          pip install -e '.[dev,ml]'
 
       - name: Syntax smoke check
         run: python -m compileall -q src migrations

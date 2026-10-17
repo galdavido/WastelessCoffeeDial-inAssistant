@@ -31,6 +31,7 @@ import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 from .brewing import (
     GrinderCaps,
@@ -41,11 +42,16 @@ from .brewing import (
     beta_prior,
     cold_start_clicks,
     correct,
-    dose_term,
     for_roast,
     normalised_time,
 )
 from .calibration import fit_setup
+from .time_models import (
+    EngineTimeModel,
+    PriorOnlyTimeModel,
+    TimeModel,
+    log_time,
+)
 
 # Below these, a metric reports INSUFFICIENT DATA rather than a number.
 MIN_SHOTS_FOR_PREDICTION = 15
@@ -184,58 +190,207 @@ def _same_direction(a: float, b: float) -> bool:
     return a * b > 0
 
 
+Scheme = Literal["loo", "walk_forward"]
+
+# A model is never asked to predict from fewer shots than this.
+MIN_TRAIN_SHOTS = 3
+
+
+@dataclass
+class HeldOut:
+    """One shot held out, its measured ln T_r and what each model said."""
+
+    shot: ShotRecord
+    actual: float
+    predicted: dict[str, float | None]
+    # No shot of this coffee in the training set: the bag's first pull, where
+    # a model can only carry what it learned from *other* coffees across.
+    new_coffee: bool = False
+
+
+def held_out_predictions(
+    shots: Sequence[ShotRecord],
+    models: Sequence[TimeModel],
+    scheme: Scheme = "loo",
+) -> list[HeldOut]:
+    """Ask every model for each measured shot it was not trained on.
+
+    ``loo`` trains on every other shot -- the most data, but it lets a model
+    see shots pulled *after* the one it predicts. ``walk_forward`` trains only
+    on what came before, which is the question the app actually faces when it
+    recommends the next shot. Training sets are passed newest first, as the
+    database hands them to the engine.
+    """
+    measured = _measured(shots)
+    if scheme == "walk_forward":
+        epoch = datetime(1970, 1, 1, tzinfo=UTC)
+        measured = sorted(measured, key=lambda s: s.created_at or epoch)
+
+    out: list[HeldOut] = []
+    for i, held in enumerate(measured):
+        if scheme == "loo":
+            train = measured[:i] + measured[i + 1 :]
+        else:
+            train = measured[:i][::-1]
+        actual = log_time(held)
+        if len(train) < MIN_TRAIN_SHOTS or actual is None:
+            continue
+        predicted: dict[str, float | None] = {}
+        for model in models:
+            predictor = model.fit(train)
+            value = predictor(held) if predictor is not None else None
+            predicted[model.name] = (
+                value if value is not None and math.isfinite(value) else None
+            )
+        new_coffee = all(s.bean_id != held.bean_id for s in train)
+        out.append(HeldOut(held, actual, predicted, new_coffee))
+    return out
+
+
+def _mae(points: Sequence[HeldOut], name: str) -> float | None:
+    errors = [
+        abs(value - p.actual)
+        for p in points
+        if (value := p.predicted.get(name)) is not None
+    ]
+    return statistics.fmean(errors) if errors else None
+
+
 def held_out_time_error(shots: Sequence[ShotRecord], caps: GrinderCaps) -> Metric:
     """M3: leave-one-out prediction of ln T_r.
 
     Needs neither ratings nor taste, so every measured shot counts -- which is
     why this goes green long before M1 has enough pairs.
     """
-    measured = _measured(shots)
-    prior = beta_prior(caps)
-    errors: list[float] = []
-    prior_errors: list[float] = []
-
-    for i, held in enumerate(measured):
-        rest = measured[:i] + measured[i + 1 :]
-        if len(rest) < 3:
-            continue
-        tr = normalised_time(held)
-        if tr is None or held.grind_clicks is None:
-            continue
-
-        fitted = fit_setup(rest, caps, prior, bean_id=held.bean_id)
-        if fitted.beta is None or fitted.alpha is None:
-            continue
-        # The whole law, as the engine uses it: the coffee's own offset
-        # included. Leaving delta_bean out scored the law on a question it
-        # never answers, and made any term that moves the bean offsets look
-        # worse than it is.
-        predicted = (
-            fitted.alpha
-            + fitted.delta_bean
-            + fitted.beta * held.grind_clicks
-            + dose_term(held.dose_g, held.roast_level_ord, fitted.gamma)
-        )
-        errors.append(abs(predicted - math.log(tr)))
-
-        # Same intercept, unfitted slope: isolates what calibration adds.
-        if prior is not None:
-            prior_fit = fit_setup(rest[:1], caps, prior, bean_id=held.bean_id)
-            if prior_fit.alpha is not None and prior_fit.beta is not None:
-                prior_pred = (
-                    prior_fit.alpha
-                    + prior_fit.delta_bean
-                    + prior_fit.beta * held.grind_clicks
-                    + dose_term(held.dose_g, held.roast_level_ord, prior_fit.gamma)
-                )
-                prior_errors.append(abs(prior_pred - math.log(tr)))
-
+    engine = EngineTimeModel(caps)
+    # Same intercept, unfitted slope: isolates what calibration adds.
+    prior = PriorOnlyTimeModel(caps)
+    points = [
+        p
+        for p in held_out_predictions(shots, [engine, prior])
+        if p.predicted[engine.name] is not None
+    ]
+    prior_mae = _mae(points, prior.name)
     return Metric(
         "M3 held-out ln(T_r) MAE",
-        statistics.fmean(errors) if errors else None,
-        len(errors),
+        _mae(points, engine.name),
+        len(points),
         MIN_SHOTS_FOR_PREDICTION,
-        {"prior_only": statistics.fmean(prior_errors)} if prior_errors else {},
+        {prior.name: prior_mae} if prior_mae is not None else {},
+    )
+
+
+@dataclass
+class ModelScore:
+    name: str
+    mae: float | None
+    abstained: int
+    # The same error split by whether the coffee had shots to learn from.
+    mae_known: float | None = None
+    mae_new: float | None = None
+    # Paired against the first model on the same shots: mean of
+    # (this error - its error) and that mean's standard error. A gap inside
+    # about two standard errors is not a finding.
+    diff: float | None = None
+    diff_se: float | None = None
+
+
+@dataclass
+class Comparison:
+    """Every model scored on the same held-out shots under one scheme."""
+
+    scheme: Scheme
+    n: int
+    required: int
+    scores: list[ModelScore]
+    n_new: int = 0
+
+    @property
+    def sufficient(self) -> bool:
+        return self.n >= self.required
+
+    def render(self) -> str:
+        title = {
+            "loo": "leave-one-out",
+            "walk_forward": "walk-forward (past shots only)",
+        }[self.scheme]
+        if not self.sufficient:
+            return (
+                f"ln(T_r) MAE, {title}: INSUFFICIENT DATA "
+                f"(n={self.n}, need {self.required})"
+            )
+
+        def cell(value: float | None) -> str:
+            return "      -" if value is None else f"{value:7.3f}"
+
+        lines = [f"ln(T_r) MAE, {title} (n={self.n}):"]
+        split = self.n_new > 0
+        if split:
+            lines.append(
+                f"  {'':<12} {'all':>7} {'known':>7} {'new':>7}"
+                f"   (new = a coffee's first shot, n={self.n_new})"
+            )
+        ranked = sorted(self.scores, key=lambda s: math.inf if s.mae is None else s.mae)
+        reference = self.scores[0].name if self.scores else ""
+        for score in ranked:
+            if score.mae is None:
+                row = "abstained"
+            elif split:
+                row = cell(score.mae) + cell(score.mae_known) + cell(score.mae_new)
+            else:
+                row = cell(score.mae)
+            if score.diff is not None and score.diff_se is not None:
+                row += f"   vs {reference} {score.diff:+.3f} ± {score.diff_se:.3f}"
+            note = f"  (abstained on {score.abstained})" if score.abstained else ""
+            lines.append(f"  {score.name:<12}{row}{note}")
+        return "\n".join(lines)
+
+
+def _paired(
+    points: Sequence[HeldOut], name: str, reference: str
+) -> tuple[float | None, float | None]:
+    """Mean paired error difference against ``reference``, and its SE."""
+    if name == reference or len(points) < 2:
+        return None, None
+    diffs = []
+    for p in points:
+        value, ref = p.predicted[name], p.predicted[reference]
+        if value is None or ref is None:
+            continue
+        diffs.append(abs(value - p.actual) - abs(ref - p.actual))
+    if len(diffs) < 2:
+        return None, None
+    return statistics.fmean(diffs), statistics.stdev(diffs) / math.sqrt(len(diffs))
+
+
+def compare_models(
+    shots: Sequence[ShotRecord],
+    models: Sequence[TimeModel],
+    scheme: Scheme = "loo",
+) -> Comparison:
+    """Score every model on the shots *all* of them answered.
+
+    A model that abstains on the hard shots would otherwise look better for
+    it, so abstentions are counted and reported, and the MAE is taken over
+    the common set only.
+    """
+    points = held_out_predictions(shots, models, scheme)
+    common = [p for p in points if all(v is not None for v in p.predicted.values())]
+    known = [p for p in common if not p.new_coffee]
+    new = [p for p in common if p.new_coffee]
+    scores = [
+        ModelScore(
+            model.name,
+            _mae(common, model.name),
+            sum(1 for p in points if p.predicted[model.name] is None),
+            _mae(known, model.name),
+            _mae(new, model.name),
+            *_paired(common, model.name, models[0].name),
+        )
+        for model in models
+    ]
+    return Comparison(
+        scheme, len(common), MIN_SHOTS_FOR_PREDICTION, scores, n_new=len(new)
     )
 
 

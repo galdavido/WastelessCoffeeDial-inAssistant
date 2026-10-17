@@ -5,6 +5,10 @@ Read-only. Prints a report and writes nothing.
 On a database with no measured shots -- which is the state until the shot
 log has been used a few dozen times -- every metric prints INSUFFICIENT DATA
 and the command exits 0. That is the correct result, not a failure.
+
+``--compare`` adds a side-by-side ln(T_r) score of the engine against simple
+baselines and, when scikit-learn is installed (``pip install -e '.[ml]'``),
+the statistical challengers in ``core.challengers``.
 """
 
 from __future__ import annotations
@@ -15,13 +19,40 @@ from database.database import SessionLocal
 from database.models import BrewSetup
 
 from .auth import single_user_owner
-from .brewing import target_for
+from .brewing import GrinderCaps, target_for
 from .engine import grinder_caps, machine_caps
-from .eval_harness import backtest
+from .eval_harness import backtest, compare_models
 from .retrieval import fetch_calibration_shots
+from .time_models import (
+    BeanMeanTimeModel,
+    EngineTimeModel,
+    PriorOnlyTimeModel,
+    TimeModel,
+)
 
 
-def run(setup_id: int | None = None, owner: str | None = None) -> int:
+def comparison_models(caps: GrinderCaps) -> list[TimeModel]:
+    """The engine, its baselines and -- if installed -- the challengers."""
+    models: list[TimeModel] = [
+        EngineTimeModel(caps),
+        PriorOnlyTimeModel(caps),
+        BeanMeanTimeModel(),
+    ]
+    try:
+        from .challengers import challengers
+    except ImportError:
+        print(
+            "  note: scikit-learn is not installed, so only the engine and its "
+            "baselines are compared (pip install -e '.[ml]' adds the rest)."
+        )
+    else:
+        models += challengers()
+    return models
+
+
+def run(
+    setup_id: int | None = None, owner: str | None = None, compare: bool = False
+) -> int:
     # Every row is owner-scoped, so the CLI needs an identity too. There is no
     # request to take one from: default to the single-user owner, which is who
     # this database belongs to on a `single` instance, and let --owner name a
@@ -54,6 +85,11 @@ def run(setup_id: int | None = None, owner: str | None = None) -> int:
                 )
             report = backtest(shots, target_for(), caps, machine)
             print(report.render())
+            if compare:
+                print()
+                models = comparison_models(caps)
+                for scheme in ("loo", "walk_forward"):
+                    print(compare_models(shots, models, scheme).render())
             print()
 
         print(
@@ -78,8 +114,13 @@ def cli() -> None:
         default=None,
         help="whose logs to back-test (default: the single-user owner)",
     )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="also score the engine against baselines and statistical models",
+    )
     args = parser.parse_args()
-    raise SystemExit(run(args.setup_id, args.owner))
+    raise SystemExit(run(args.setup_id, args.owner, args.compare))
 
 
 if __name__ == "__main__":
