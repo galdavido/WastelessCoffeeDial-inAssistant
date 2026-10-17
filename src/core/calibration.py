@@ -409,7 +409,10 @@ def confidence_label(calibration: Calibration) -> str:
     truth matters more than sounding certain.
     """
     c = calibration.confidence
-    if c <= 0.0:
+    # Zero confidence also means "slope still the prior", which happens long
+    # after the first shot (two coffees, no comparable pair). Only say "first
+    # shot" when there is truly nothing measured on this setup yet.
+    if c <= 0.0 and calibration.n_eff == 0:
         return "First shot - this is a starting bracket to measure from"
     if c < 0.3:
         return "Low - based on general guidance rather than your own shots"
