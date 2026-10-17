@@ -107,6 +107,15 @@ def _allowed_tokens(recipe: Recipe, *engine_text: str) -> frozenset[str]:
     return frozenset(tokens)
 
 
+def _as_sentence(text: str) -> str:
+    """The engine's notes are lowercase clauses; the template joins sentences."""
+    text = text.strip()
+    if not text:
+        return text
+    text = text[0].upper() + text[1:]
+    return text if text[-1] in ".!?" else text + "."
+
+
 def render_template(recipe: Recipe, confidence_label: str) -> Rationale:
     """The deterministic explanation. Also the fallback when the LLM fails."""
     bits: list[str] = []
@@ -136,7 +145,7 @@ def render_template(recipe: Recipe, confidence_label: str) -> Rationale:
         watch = f"Anywhere from {lo:g} to {hi:g} seconds is on target."
     return Rationale(
         headline=headline,
-        why=" ".join(why_parts),
+        why=" ".join(_as_sentence(part) for part in why_parts if part.strip()),
         what_to_watch=watch,
     )
 

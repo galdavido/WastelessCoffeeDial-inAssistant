@@ -101,6 +101,28 @@ class TestTemplate(unittest.TestCase):
         rationale = render_template(RECIPE, label)
         self.assertIn(label, rationale.why)
 
+    def test_template_joins_engine_notes_as_sentences(self) -> None:
+        """The engine writes lowercase clauses with no full stop; the fallback
+        once ran them together ("...measured directly Keeping pre-infusion")."""
+        recipe = replace(
+            RECIPE,
+            notes=(
+                "your ratio was 1:1.3; aiming for 1:2 first",
+                "keeping pre-infusion about the same keeps shots comparable",
+            ),
+        )
+        why = render_template(recipe, "Low - based on general guidance").why
+        self.assertEqual(
+            why,
+            "Your ratio was 1:1.3; aiming for 1:2 first. "
+            "Keeping pre-infusion about the same keeps shots comparable. "
+            "Low - based on general guidance.",
+        )
+
+    def test_template_keeps_a_note_that_already_ends_a_sentence(self) -> None:
+        recipe = replace(RECIPE, notes=("Repeat it!",))
+        self.assertEqual(render_template(recipe, "Good.").why, "Repeat it! Good.")
+
     def test_template_without_a_grind_asks_for_a_measurement(self) -> None:
         """Tier E: no click number invented, and it says what to do instead."""
         recipe = Recipe(dose_g=18.0, grind_clicks=None)
