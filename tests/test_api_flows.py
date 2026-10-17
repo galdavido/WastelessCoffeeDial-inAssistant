@@ -12,6 +12,7 @@ and from any rows already in the database.
 from __future__ import annotations
 
 import io
+from contextlib import ExitStack
 from typing import Any
 from unittest.mock import patch
 
@@ -40,24 +41,25 @@ def _template_rationale(recipe: Any, label: str, context: str = "") -> Any:
     return render_template(recipe, label), None
 
 
+def _read_bag(_path: str) -> dict[str, Any]:
+    return dict(_COFFEE)
+
+
 class FlowTestCase(DatabaseTestCase):
     """Stubs Gemini, and gives every user a measured grinder to work with."""
 
     def setUp(self) -> None:
         super().setUp()
-        self._patches = [
-            patch("core.engine.write_rationale", _template_rationale),
-            patch(
-                "core.routes.recipe.analyze_coffee_bag",
-                lambda _path: dict(_COFFEE),
-            ),
-        ]
-        for p in self._patches:
-            p.start()
+        self._patches = ExitStack()
+        self._patches.enter_context(
+            patch("core.engine.write_rationale", _template_rationale)
+        )
+        self._patches.enter_context(
+            patch("core.routes.recipe.analyze_coffee_bag", _read_bag)
+        )
 
     def tearDown(self) -> None:
-        for p in self._patches:
-            p.stop()
+        self._patches.close()
         super().tearDown()
 
     def make_setup(self, api: Any = None) -> dict[str, Any]:
@@ -297,7 +299,7 @@ class TestScanAndPull(FlowTestCase):
 
         with SessionLocal() as db:
             row = db.get(Recommendation, body["recommendation_id"])
-            assert row is not None
+            assert row is not None and row.inputs_json is not None
             self.assertEqual(row.engine_version, ENGINE_VERSION)
             for key in (
                 "gamma",
@@ -468,7 +470,7 @@ class TestLibrary(FlowTestCase):
     def test_the_roast_date_can_be_corrected_by_hand(self) -> None:
         """A scan that misread the year is fixed from the edit form."""
         self.make_setup()
-        record = {
+        record: dict[str, Any] = {
             "roaster": "Hand",
             "name": "Nicaragua",
             "origin": "Nicaragua",
@@ -697,11 +699,13 @@ class TestEquipmentOwnerBackfill(DatabaseTestCase):
 
             conn.execute(text(migration.BACKFILL_SQL))
 
-            owners = dict(
+            owners: dict[int, str | None] = dict(
                 conn.execute(
                     text("SELECT id, owner FROM equipment WHERE id = ANY(:ids)"),
                     {"ids": [solo_g, both_m, unused, other_g]},
-                ).all()
+                )
+                .tuples()
+                .all()
             )
             tx.rollback()
 

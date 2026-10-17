@@ -11,14 +11,14 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 from _fixtures import K6, MACHINE_18G
-from core.brewing import beta_prior, fresh_note, target_for, value_of
+from core.brewing import Basis, Recipe, beta_prior, fresh_note, target_for, value_of
 from core.calibration import fit_setup
-from core.engine import _first_shot_recipe
+from core.engine import _first_shot_recipe  # pyright: ignore[reportPrivateUsage]
 
 TARGET = target_for()
 
 
-def _first_shot(days: int | None) -> tuple:
+def _first_shot(days: int | None) -> tuple[Recipe, Basis, str | None]:
     calibration = fit_setup([], K6, beta_prior(K6))
     bean = SimpleNamespace(
         id=1,

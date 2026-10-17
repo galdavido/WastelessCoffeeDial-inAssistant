@@ -11,7 +11,7 @@ import random
 import re
 import unittest
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -44,7 +44,7 @@ def _history(n: int, beans: int = 2, seed: int = 0) -> list[ShotRecord]:
     """Varied grind, dose and coffee, with a little shot-to-shot noise."""
     rng = random.Random(seed)
     base = datetime(2026, 1, 1, tzinfo=UTC)
-    out = []
+    out: list[ShotRecord] = []
     for i in range(n):
         bean = i % beans
         dose = rng.choice([17.0, 18.0, 19.0])
@@ -73,7 +73,9 @@ class SpyModel:
     """Records every training set it is given; predicts the training mean."""
 
     name: str = "spy"
-    seen: list[tuple[ShotRecord, ...]] = field(default_factory=list)
+    seen: list[tuple[ShotRecord, ...]] = field(
+        default_factory=list[tuple[ShotRecord, ...]]
+    )
     abstain_on: frozenset[int] = frozenset()
 
     def fit(self, train: Sequence[ShotRecord]) -> Predictor | None:
@@ -99,7 +101,8 @@ class TestHeldOutSchemes(unittest.TestCase):
             assert held_at is not None
             self.assertTrue(all(s.created_at and s.created_at < held_at for s in train))
             # Newest first, as the engine gets it from the database.
-            stamps = [s.created_at for s in train]
+            # Every one is set: the assertion above checked.
+            stamps = [s.created_at for s in train if s.created_at is not None]
             self.assertEqual(stamps, sorted(stamps, reverse=True))
 
     def test_leave_one_out_trains_on_everything_else(self) -> None:
@@ -153,9 +156,7 @@ class TestCompareModels(unittest.TestCase):
         """Walk-forward meets each bag's first pull once; LOO almost never."""
         shots = _history(MIN_SHOTS_FOR_PREDICTION + 5, beans=1)
         newcomer = _history(1, beans=1, seed=7)[0]
-        newcomer = ShotRecord(
-            **{**newcomer.__dict__, "bean_id": 42, "created_at": datetime.now(UTC)}
-        )
+        newcomer = replace(newcomer, bean_id=42, created_at=datetime.now(UTC))
         points = held_out_predictions([newcomer, *shots], [BeanMeanTimeModel()], "loo")
         flagged = [p.shot.bean_id for p in points if p.new_coffee]
         self.assertEqual(flagged, [42])

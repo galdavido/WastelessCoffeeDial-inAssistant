@@ -68,7 +68,7 @@ class TestFittingGamma(unittest.TestCase):
             _pull(clicks, dose)
             for clicks, dose in ((40.0, 16.0), (40.0, 19.0), (42.0, 17.0), (42.0, 20.0))
         ]
-        gamma, fitted, weight, pairs = fit_gamma(shots, BETA or 0.0, 2.0)
+        _, fitted, weight, pairs = fit_gamma(shots, BETA or 0.0, 2.0)
         assert fitted is not None
         self.assertAlmostEqual(fitted, 2.0, delta=0.3)
         self.assertEqual(pairs, 6)
@@ -121,7 +121,7 @@ class TestBedDepthNotGrams(unittest.TestCase):
         dark_bed = BedParams(
             dose_g=16.5, bulk_density_kg_m3=light_bed.bulk_density_kg_m3 * 16.5 / 18.5
         )
-        shots = []
+        shots: list[ShotRecord] = []
         for bean_id, roast, bed in ((1, 2, light_bed), (2, 5, dark_bed)):
             for clicks in (36.0, 39.0, 42.0):
                 sim = simulate_shot(clicks, K6, bed, bed.dose_g * 2.0)

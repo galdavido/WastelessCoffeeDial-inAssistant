@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 from ai.rationale import (
     Rationale,
-    _allowed_tokens,
+    _allowed_tokens,  # pyright: ignore[reportPrivateUsage]
     render_template,
     scrub_numerals,
     write_rationale,

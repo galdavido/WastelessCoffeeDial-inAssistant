@@ -156,7 +156,7 @@ class TestBeanOffsets(unittest.TestCase):
         the setup's average bean at the same setting, so it wants a coarser
         dial.
         """
-        shots = []
+        shots: list[ShotRecord] = []
         for bean_id, delta in ((RWANDA, 0.0), (BRAZIL, 0.30)):
             for clicks in (28.0, 32.0, 36.0, 40.0):
                 tr = math.exp(alpha + delta + beta * clicks)

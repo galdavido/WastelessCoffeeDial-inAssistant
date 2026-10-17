@@ -47,7 +47,9 @@ class TestMigration0010(unittest.TestCase):
     def _migrate(self, direction: str, revision: str) -> None:
         from alembic import command
 
-        from core.db_bootstrap import _alembic_config
+        from core.db_bootstrap import (
+            _alembic_config,  # pyright: ignore[reportPrivateUsage]
+        )
 
         getattr(command, direction)(_alembic_config(), revision)
 
