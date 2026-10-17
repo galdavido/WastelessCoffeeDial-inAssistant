@@ -158,6 +158,14 @@ The commands are in README's "Tests and checks".
   `python -m core.openapi_export`; `tests/test_openapi.py` fails until you do,
   and also fails on any `/api/` route without a `response_model`. There is no
   runtime `/openapi.json`, `/docs` or `/redoc` (`openapi_url=None`).
+- **Pyright runs strict over `src`, `tests` and `migrations`** (`[tool.pyright]`
+  in `pyproject.toml`, which Pylance reads too), alongside mypy rather than
+  instead of it. Its version is pinned: each release adds checks. It targets
+  3.14, the interpreter every image runs -- at 3.12 typeshed lacks
+  `string.templatelib` and pyright reports the 3.14 stdlib's own source; mypy
+  keeps the 3.12 floor. Silence one rule on one line,
+  `# pyright: ignore[ruleName]`, with the reason beside it; a test reaching a
+  private helper marks the import with `reportPrivateUsage`.
 - **CI's Postgres service is plain `postgres:16-alpine`** — a migration that
   runs `CREATE EXTENSION vector` would fail CI; add pgvector to the CI service
   if that ever happens.

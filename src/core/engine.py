@@ -589,7 +589,7 @@ def serialize_fit(
             ln_ref - dose_term(shot.dose_g, shot.roast_level_ord, gamma)
         )
 
-    shots = []
+    shots: list[dict[str, Any]] = []
     for index, shot in enumerate(history):
         measured = normalised_time(shot)
         tr = at_ref_dose(measured, shot)

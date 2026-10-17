@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from ai.vision import _parse_coffee_data_response
+from ai.vision import _parse_coffee_data_response  # pyright: ignore[reportPrivateUsage]
 
 
 class TestVision(unittest.TestCase):
@@ -18,7 +18,7 @@ class TestVision(unittest.TestCase):
         parsed_valid = _parse_coffee_data_response(valid_json)
         parsed_invalid = _parse_coffee_data_response(invalid_json)
 
-        self.assertIsNotNone(parsed_valid)
+        assert parsed_valid is not None
         self.assertEqual(parsed_valid["origin"], "Ethiopia")
         self.assertIsNone(parsed_invalid)
 

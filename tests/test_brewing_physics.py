@@ -29,7 +29,9 @@ from core.brewing import (
 class TestDerivedMetrics(unittest.TestCase):
     def test_espresso_ratio_uses_beverage_out(self) -> None:
         shot = ShotRecord(dose_g=18.0, yield_g=36.0, time_s=28)
-        self.assertAlmostEqual(brew_ratio(shot), 2.0)
+        ratio = brew_ratio(shot)
+        assert ratio is not None
+        self.assertAlmostEqual(ratio, 2.0)
 
     def test_brew_ratio_is_yield_over_dose(self) -> None:
         self.assertEqual(brew_ratio(ShotRecord(dose_g=18.0, yield_g=36.0)), 2.0)
@@ -38,13 +40,17 @@ class TestDerivedMetrics(unittest.TestCase):
     def test_normalised_time_matches_the_worked_example(self) -> None:
         # docs/science.md#normalised-time: 18 -> 36 g in 28 s is T_r = 14.
         shot = ShotRecord(dose_g=18.0, yield_g=36.0, time_s=28)
-        self.assertAlmostEqual(normalised_time(shot), 14.0)
+        tr = normalised_time(shot)
+        assert tr is not None
+        self.assertAlmostEqual(tr, 14.0)
 
     def test_normalised_time_is_comparable_across_ratios(self) -> None:
         # The whole point: same extraction rate, different ratios, same T_r.
         short = ShotRecord(dose_g=18.0, yield_g=27.0, time_s=21)
         long = ShotRecord(dose_g=18.0, yield_g=45.0, time_s=35)
-        self.assertAlmostEqual(normalised_time(short), normalised_time(long))
+        tr_short, tr_long = normalised_time(short), normalised_time(long)
+        assert tr_short is not None and tr_long is not None
+        self.assertAlmostEqual(tr_short, tr_long)
 
     def test_metrics_are_none_when_unmeasured(self) -> None:
         shot = ShotRecord(dose_g=18.0)
@@ -105,7 +111,7 @@ class TestTargets(unittest.TestCase):
 class TestRoastTimeModifier(unittest.TestCase):
     """docs/science.md#roast-time-modifier."""
 
-    def _band(self, roast: int | None) -> tuple:
+    def _band(self, roast: int | None) -> tuple[float, float]:
         t = target_for(roast)
         return t.time_lo, t.time_hi
 
@@ -137,7 +143,7 @@ class TestSimulatorReproducesCameron(unittest.TestCase):
 
     def _sweep(self) -> list[tuple[float, float, float]]:
         bed = BedParams(dose_g=18.0)
-        out = []
+        out: list[tuple[float, float, float]] = []
         for clicks in range(10, 61):
             shot = simulate_shot(float(clicks), K6, bed, target_yield_g=36.0)
             out.append((float(clicks), shot.ey_pct, shot.time_s))

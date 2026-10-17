@@ -53,7 +53,7 @@ class Calibration:
     confidence: float = 0.0
     # Every bean on this setup, not just the one asked about: a coffee with no
     # shots of its own is started from the offsets of the ones that resemble it.
-    bean_offsets: dict[int, float] = field(default_factory=dict)
+    bean_offsets: dict[int, float] = field(default_factory=dict[int, float])
     # How beta was arrived at: beta == w*beta_fitted + (1-w)*beta_prior.
     # Kept so the shrinkage can be shown rather than asserted -- beta_fitted is
     # None when there was no usable fit, or when the one there was disagreed

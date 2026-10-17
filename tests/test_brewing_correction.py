@@ -228,6 +228,7 @@ class TestCameronGuardrail(unittest.TestCase):
 
         beta = beta_prior(K6)
         recipe = correct(fast, TARGET, beta, K6, FIXED_TEMP_MACHINE)
+        assert recipe.grind_clicks is not None
         self.assertLess(recipe.grind_clicks, 30.0)
         self.assertIn("so go finer", recipe.grind_note or "")
 
@@ -304,7 +305,7 @@ class TestCameronGuardrail(unittest.TestCase):
 
 class TestTastePolicy(unittest.TestCase):
     def _on_target_shot(self, **overrides: object) -> ShotRecord:
-        base = {
+        base: dict[str, object] = {
             "dose_g": 18.0,
             "grind_clicks": 33.0,
             "yield_g": 36.0,

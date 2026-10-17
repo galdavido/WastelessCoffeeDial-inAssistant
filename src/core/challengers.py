@@ -1,3 +1,6 @@
+# scikit-learn ships no type stubs, and make_pipeline's **steps is untyped:
+# every estimator built here is handed out as Any.
+# pyright: reportMissingTypeStubs=false
 """Statistical challengers to the engine's grind law, for back-testing only.
 
 Each one learns ln T_r from the same shots the engine sees, with none of its
@@ -28,7 +31,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from sklearn.linear_model import RidgeCV
 from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import make_pipeline  # pyright: ignore[reportUnknownVariableType]
 from sklearn.preprocessing import StandardScaler
 
 from .brewing import ShotRecord

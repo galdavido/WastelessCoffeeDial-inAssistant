@@ -13,7 +13,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import the models module so every table is registered on Base.metadata.
-import database.models  # noqa: F401
+import database.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from database.database import Base
 
 config = context.config

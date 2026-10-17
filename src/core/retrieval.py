@@ -119,7 +119,7 @@ def similarity(target: BeanFeatures, candidate: BeanFeatures) -> float:
 
 def to_shot_record(log: DialInLog, bean: Bean | None) -> ShotRecord:
     days = None
-    if bean is not None and bean.roast_date is not None and log.created_at is not None:
+    if bean is not None and bean.roast_date is not None:
         days = (log.created_at.date() - bean.roast_date).days
     return ShotRecord(
         dose_g=float(log.dose_g),
@@ -195,7 +195,7 @@ def fetch_bean_features(
     ``ShotRecord`` deliberately carries no bean attributes -- it is the physics
     row -- so scoring one bean against another needs this lookup.
     """
-    ids = {bean_id for bean_id in bean_ids if bean_id is not None}
+    ids = set(bean_ids)
     if not ids:
         return {}
     stmt = select(Bean).where(Bean.owner == owner).where(Bean.id.in_(ids))

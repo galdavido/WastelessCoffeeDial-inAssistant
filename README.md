@@ -129,6 +129,7 @@ export DATABASE_URL=postgresql+psycopg2://wcda:wcda@localhost:5440/wcda_test
 pytest                            # API tests need the disposable DATABASE_URL
 ruff check . && ruff format --check .
 mypy src
+pyright                           # strict; Pylance reads the same config
 python -m core.openapi_export     # regenerate docs/openapi.json after an API change
 ```
 
@@ -145,7 +146,7 @@ Most tests are pure and need nothing. `tests/test_api_flows.py` drives the
 HTTP API against a real Postgres (Gemini stubbed): it skips locally when no
 database is reachable, and fails in CI instead. CI
 (`.github/workflows/ci.yml`) runs all of it on pushes to `main` and on pull
-requests: lint, format, mypy, migrations, tests and a Docker build.
+requests: lint, format, mypy, pyright, migrations, tests and a Docker build.
 
 ## Project layout
 

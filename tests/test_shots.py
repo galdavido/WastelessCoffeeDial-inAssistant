@@ -11,6 +11,7 @@ These tests pin the rules that stop that happening again. They are DB-free.
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 from core.shots import classify_data_quality
 from core.web_schemas import LogDetailsInput
@@ -59,7 +60,7 @@ class TestClassifyDataQuality(unittest.TestCase):
         )
 
     def test_classify_requires_yield(self) -> None:
-        shot = {
+        shot: dict[str, Any] = {
             "grind_clicks": 20,
             "time_s": 28,
             "rating": 4,
@@ -70,13 +71,14 @@ class TestClassifyDataQuality(unittest.TestCase):
 
     def test_missing_measurements_downgrade_to_partial(self) -> None:
         # Each of these alone is enough to keep a row out of calibration.
-        for kwargs in (
+        variants: tuple[dict[str, Any], ...] = (
             {"grind_clicks": None},
             {"time_s": None},
             {"yield_g": None},
             {"rating": None, "taste_axis": None},
-        ):
-            base = {
+        )
+        for kwargs in variants:
+            base: dict[str, Any] = {
                 "grind_clicks": 33.0,
                 "time_s": 27,
                 "yield_g": 32.0,

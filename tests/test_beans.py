@@ -65,7 +65,9 @@ class TestTransientBean(unittest.TestCase):
 class TestStartingDose(unittest.TestCase):
     def test_lighter_roasts_start_with_more_coffee(self) -> None:
         doses = [starting_dose_for_roast(o) for o in (1, 2, 3, 4, 5)]
-        self.assertEqual(doses, sorted(doses, reverse=True))
+        known = [d for d in doses if d is not None]
+        self.assertEqual(known, doses, "every roast level has a dose")
+        self.assertEqual(known, sorted(known, reverse=True))
         self.assertIsNone(starting_dose_for_roast(None))
 
     def test_without_a_basket_it_is_the_old_18_g_table(self) -> None:

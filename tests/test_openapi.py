@@ -33,7 +33,7 @@ class TestTheContract(unittest.TestCase):
         )
 
     def test_every_api_route_has_a_response_schema(self) -> None:
-        missing = []
+        missing: list[str] = []
         for path, operations in app.openapi()["paths"].items():
             if not path.startswith("/api/"):
                 continue

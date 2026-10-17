@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from sqlalchemy import ColumnElement, or_
 from sqlalchemy.orm import Session
 
 from database.models import BrewSetup, DialInLog, Equipment, Recommendation
@@ -100,7 +100,7 @@ def _in_use(
 ) -> bool:
     """Whether any setup or shot refers to this entry in the given role(s)."""
     for model in (BrewSetup, DialInLog):
-        roles = []
+        roles: list[ColumnElement[bool]] = []
         if as_grinder:
             roles.append(model.grinder_id == equipment_id)
         if as_brewer:

@@ -83,7 +83,7 @@ def analyze_coffee_bag(image: bytes) -> dict[str, Any]:
 
     prompt = _build_prompt()
     parsed_payload: dict[str, Any] | None = None
-    contents: list[types.PartUnionDict] = [prompt, photo]
+    contents: list[types.ContentUnionDict] = [prompt, photo]
 
     def call_model(model_name: str) -> Any:
         return client.models.generate_content(

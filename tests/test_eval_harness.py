@@ -41,7 +41,7 @@ def _history(clicks: list[float]) -> list[ShotRecord]:
     """A plausible measured history at the given settings."""
     base = datetime(2026, 1, 1, tzinfo=UTC)
     bed = BedParams(dose_g=18.0)
-    out = []
+    out: list[ShotRecord] = []
     for i, c in enumerate(clicks):
         sim = simulate_shot(c, K6, bed, target_yield_g=36.0)
         out.append(

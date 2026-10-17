@@ -25,7 +25,7 @@ from _db import Seeded, require_database
 from core.admin_db import admin_enabled
 from core.admin_routes import register_admin_routes
 from core.admin_stats import (
-    _pct,
+    _pct,  # pyright: ignore[reportPrivateUsage]
     dashboard,
     feature_usage,
     fleet_summary,
@@ -304,7 +304,8 @@ class TestComposeHostnamesAreUnambiguous(unittest.TestCase):
         # Attaching db or db-backup to the prod network would put a second
         # `db` on their own network too.
         overlay = (ROOT / "compose.admin.yaml").read_text(encoding="utf-8")
-        services, in_services = [], False
+        services: list[str] = []
+        in_services = False
         for line in overlay.splitlines():
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
