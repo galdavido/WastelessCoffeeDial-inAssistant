@@ -150,7 +150,6 @@ class Seeded:
                 name="Seeded",
                 grinder_id=grinder.id,
                 machine_id=machine.id,
-                method="espresso",
             )
             db.add(setup)
             db.commit()
@@ -173,7 +172,6 @@ class Seeded:
             "dose_g": 18.0,
             "yield_g": 36.0,
             "time_s": 28,
-            "brew_method": "espresso",
             "data_quality": "measured",
         }
         values.update(fields)

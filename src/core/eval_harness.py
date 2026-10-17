@@ -35,7 +35,6 @@ from datetime import UTC, datetime
 from .brewing import (
     GrinderCaps,
     MachineCaps,
-    Method,
     ShotRecord,
     Target,
     apply_guardrails,
@@ -102,12 +101,7 @@ def _improved(before: ShotRecord, after: ShotRecord, target: Target) -> bool:
     ):
         return True
     tr_before, tr_after = normalised_time(before), normalised_time(after)
-    if (
-        tr_before is not None
-        and tr_after is not None
-        and target.tr_lo is not None
-        and target.tr_hi is not None
-    ):
+    if tr_before is not None and tr_after is not None:
         was_out = not (target.tr_lo <= tr_before <= target.tr_hi)
         now_in = target.tr_lo <= tr_after <= target.tr_hi
         if was_out and now_in:
@@ -120,7 +114,6 @@ def direction_agreement(
     target: Target,
     caps: GrinderCaps,
     machine: MachineCaps,
-    method: Method,
 ) -> tuple[Metric, Metric]:
     """M1 and M2, over consecutive shots that led to an improvement."""
     epoch = datetime(1970, 1, 1, tzinfo=UTC)
@@ -140,8 +133,8 @@ def direction_agreement(
             continue
         pairs += 1
 
-        prior = beta_prior(method, caps)
-        fit = fit_setup([before], method, caps, prior)
+        prior = beta_prior(caps)
+        fit = fit_setup([before], caps, prior)
         # Asked at the dose the next shot was actually pulled at, as the app
         # would be when the user changes it.
         recipe = correct(
@@ -191,16 +184,14 @@ def _same_direction(a: float, b: float) -> bool:
     return a * b > 0
 
 
-def held_out_time_error(
-    shots: Sequence[ShotRecord], method: Method, caps: GrinderCaps
-) -> Metric:
+def held_out_time_error(shots: Sequence[ShotRecord], caps: GrinderCaps) -> Metric:
     """M3: leave-one-out prediction of ln T_r.
 
     Needs neither ratings nor taste, so every measured shot counts -- which is
     why this goes green long before M1 has enough pairs.
     """
     measured = _measured(shots)
-    prior = beta_prior(method, caps)
+    prior = beta_prior(caps)
     errors: list[float] = []
     prior_errors: list[float] = []
 
@@ -212,7 +203,7 @@ def held_out_time_error(
         if tr is None or held.grind_clicks is None:
             continue
 
-        fitted = fit_setup(rest, method, caps, prior, bean_id=held.bean_id)
+        fitted = fit_setup(rest, caps, prior, bean_id=held.bean_id)
         if fitted.beta is None or fitted.alpha is None:
             continue
         # The whole law, as the engine uses it: the coffee's own offset
@@ -229,7 +220,7 @@ def held_out_time_error(
 
         # Same intercept, unfitted slope: isolates what calibration adds.
         if prior is not None:
-            prior_fit = fit_setup(rest[:1], method, caps, prior, bean_id=held.bean_id)
+            prior_fit = fit_setup(rest[:1], caps, prior, bean_id=held.bean_id)
             if prior_fit.alpha is not None and prior_fit.beta is not None:
                 prior_pred = (
                     prior_fit.alpha
@@ -253,16 +244,15 @@ def guardrail_violations(
     target: Target,
     caps: GrinderCaps,
     machine: MachineCaps,
-    method: Method,
 ) -> Metric:
     """M4: must be exactly zero. Any output outside the hardware is a bug."""
     measured = _measured(shots)
     violations = 0
     checked = 0
-    prior = beta_prior(method, caps)
+    prior = beta_prior(caps)
 
     for shot in measured:
-        fit = fit_setup(measured, method, caps, prior)
+        fit = fit_setup(measured, caps, prior)
         recipe = correct(shot, target, fit.beta, caps, machine, gamma=fit.gamma)
         recipe = apply_guardrails(recipe, caps, machine, measured, target)
         checked += 1
@@ -285,12 +275,12 @@ def guardrail_violations(
     )
 
 
-def cold_start_abstention(caps_list: Sequence[GrinderCaps], method: Method) -> Metric:
+def cold_start_abstention(caps_list: Sequence[GrinderCaps]) -> Metric:
     """M5: with no way to locate the dial, the engine must decline to guess."""
     unlocatable = [c for c in caps_list if c.um_per_click is None]
     if not unlocatable:
         return Metric("M5 cold-start abstention", None, 0, 1)
-    abstained = sum(1 for c in unlocatable if cold_start_clicks(c, method) is None)
+    abstained = sum(1 for c in unlocatable if cold_start_clicks(c) is None)
     return Metric(
         "M5 cold-start abstention",
         abstained / len(unlocatable),
@@ -304,18 +294,15 @@ def backtest(
     target: Target,
     caps: GrinderCaps,
     machine: MachineCaps,
-    method: Method = "espresso",
 ) -> BacktestReport:
     """Run every metric over one setup's measured history."""
-    m1, m2 = direction_agreement(shots, target, caps, machine, method)
+    m1, m2 = direction_agreement(shots, target, caps, machine)
     return BacktestReport(
         [
             m1,
             m2,
-            held_out_time_error(shots, method, caps),
-            guardrail_violations(shots, target, caps, machine, method),
-            cold_start_abstention(
-                [caps, GrinderCaps(min_clicks=0, max_clicks=100)], method
-            ),
+            held_out_time_error(shots, caps),
+            guardrail_violations(shots, target, caps, machine),
+            cold_start_abstention([caps, GrinderCaps(min_clicks=0, max_clicks=100)]),
         ]
     )

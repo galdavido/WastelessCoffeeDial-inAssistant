@@ -33,7 +33,6 @@ from .brewing import (
     DoseReduction,
     GrinderCaps,
     MachineCaps,
-    Method,
     Recipe,
     ShotRecord,
     Target,
@@ -71,7 +70,6 @@ from .retrieval import (
     classify_tier,
     fetch_bean_features,
     fetch_calibration_shots,
-    get_active_setup_method,
     shots_for_bean,
 )
 
@@ -143,7 +141,6 @@ def recommend(
     bean: Bean | None,
     dose_g: float | None,
     default_dose_g: float,
-    style: str | None = None,
     explain: bool = True,
 ) -> EngineResult:
     """Produce a recommendation for the active setup and this coffee.
@@ -159,7 +156,6 @@ def recommend(
     Every number is unaffected -- only the prose around them changes -- which
     is what lets the fit view show this same pass without a model call.
     """
-    method: Method = get_active_setup_method(setup)
     grinder = setup.grinder if setup else None
     machine = setup.machine if setup else None
     caps = grinder_caps(grinder)
@@ -167,11 +163,11 @@ def recommend(
     roast_ord = bean.roast_level_ord if bean else None
     # The coffee's own band: correction, floor, suggestion and fit view all
     # judge against this one, so they never disagree about "in the band".
-    target = target_for(method, style, roast_ord)
+    target = target_for(roast_ord)
 
     setup_id = setup.id if setup else None
     bean_id = bean.id if bean else None
-    history = fetch_calibration_shots(db, owner, setup_id, method)
+    history = fetch_calibration_shots(db, owner, setup_id)
     # The two roles of history, kept apart. beta is a property of the grinder,
     # so it is fitted across every bean on the setup, where data accumulates
     # fastest. The shot a correction is anchored on is a property of the
@@ -181,8 +177,8 @@ def recommend(
     bean_history = shots_for_bean(history, bean_id)
     tier = classify_tier(history, bean_id, caps.has_range)
 
-    prior = beta_prior(method, caps)
-    calibration = fit_setup(history, method, caps, prior, bean_id=bean_id)
+    prior = beta_prior(caps)
+    calibration = fit_setup(history, caps, prior, bean_id=bean_id)
     label = confidence_label(calibration)
 
     days = _days_since_roast(bean.roast_date if bean else None)
@@ -209,7 +205,6 @@ def recommend(
         recipe, basis, protocol = _first_shot_recipe(
             db,
             owner,
-            method,
             target,
             caps,
             machine_spec,
@@ -257,7 +252,6 @@ def recommend(
     # one change and not two.
     experiment = preinfusion_experiment(
         history,
-        method,
         grind_is_stuck="grind_channeling_floor" in recipe.guardrails_hit,
     )
     pi_s: float | None
@@ -324,7 +318,6 @@ def recommend(
 def _first_shot_recipe(
     db: Session,
     owner: str,
-    method: Method,
     target: Target,
     caps: GrinderCaps,
     machine_spec: MachineCaps,
@@ -351,11 +344,7 @@ def _first_shot_recipe(
     if fresh_warning:
         notes.append(fresh_warning)
     basis: Basis
-    tr_aim = (
-        (target.tr_lo + target.tr_hi) / 2.0
-        if target.tr_lo is not None and target.tr_hi is not None
-        else None
-    )
+    tr_aim = (target.tr_lo + target.tr_hi) / 2.0
     delta, borrowed = borrow_bean_offset(
         BeanFeatures(
             roast_level_ord=roast_ord,
@@ -366,18 +355,14 @@ def _first_shot_recipe(
         calibration.bean_offsets,
         fetch_bean_features(db, owner, calibration.bean_offsets),
     )
-    grind = (
-        clicks_for_target(
-            calibration.alpha,
-            calibration.beta,
-            tr_aim,
-            delta,
-            gamma=calibration.gamma,
-            dose_g=dose_g,
-            roast_level_ord=roast_ord,
-        )
-        if tr_aim is not None
-        else None
+    grind = clicks_for_target(
+        calibration.alpha,
+        calibration.beta,
+        tr_aim,
+        delta,
+        gamma=calibration.gamma,
+        dose_g=dose_g,
+        roast_level_ord=roast_ord,
     )
     if grind is not None:
         grind = snap_to_step(grind, caps)
@@ -398,22 +383,18 @@ def _first_shot_recipe(
         # size -- never the middle of the hardware range, which spans espresso
         # to French press and so sits far too coarse.
         basis = "prior"
-        grind = cold_start_clicks(caps, method)
+        grind = cold_start_clicks(caps)
         if grind is None:
-            # No way to locate the dial (moka, or no microns per click). Any
-            # click number here would be invented, so ask for one measurement.
-            protocol = calibration_protocol(
-                method, dose_g, round(dose_g * target.ratio_aim, 1)
-            )
+            # No way to locate the dial without microns per click. Any click
+            # number here would be invented, so ask for one measurement.
+            protocol = calibration_protocol(dose_g, round(dose_g * target.ratio_aim, 1))
             notes.append(protocol)
     recipe = Recipe(
-        method=method,
         # The caller's dose, not whatever was in the basket for a different
         # coffee.
         dose_g=dose_g,
         grind_clicks=grind,
-        yield_g=round(dose_g * target.ratio_aim, 1) if method == "espresso" else None,
-        water_g=round(dose_g * target.ratio_aim, 1) if method != "espresso" else None,
+        yield_g=round(dose_g * target.ratio_aim, 1),
         # A first shot still deserves a temperature to aim at, from the
         # roast-level band. Suppressed by the guardrails when the machine
         # cannot hold one.
@@ -443,11 +424,9 @@ def persist_recommendation(
         setup_id=setup.id if setup else None,
         bean_id=bean.id if bean else None,
         engine_version=ENGINE_VERSION,
-        method=recipe.method,
         grind_clicks=recipe.grind_clicks,
         dose_g=recipe.dose_g,
         yield_g=recipe.yield_g,
-        water_g=recipe.water_g,
         brew_temp_c=recipe.brew_temp_c,
         target_time_s=recipe.target_time_s,
         basis=recipe.basis,
@@ -481,11 +460,9 @@ def serialize_result(result: EngineResult) -> dict[str, Any]:
     recipe = result.recipe
     return {
         "recipe": {
-            "method": recipe.method,
             "grind_clicks": recipe.grind_clicks,
             "dose_g": recipe.dose_g,
             "yield_g": recipe.yield_g,
-            "water_g": recipe.water_g,
             "brew_temp_c": recipe.brew_temp_c,
             "target_time_lo_s": recipe.target_time_lo_s,
             "target_time_s": recipe.target_time_s,
@@ -545,8 +522,6 @@ def _exclusion_reason(
 
 def _unfitted_reason(calibration: Calibration, caps: GrinderCaps) -> str | None:
     """Why no slope was fitted at all, or None when the fit ran."""
-    if calibration.beta_prior_value is None:
-        return "this brew method has no grind law to fit"
     if slope_fit_ready(calibration.n_eff, calibration.click_span, caps):
         return None
     return (
@@ -628,7 +603,6 @@ def serialize_fit(
                 "time_s": shot.time_s,
                 "dose_g": shot.dose_g,
                 "yield_g": shot.yield_g,
-                "water_g": shot.water_g,
                 "brew_temp_c": shot.brew_temp_c,
                 "preinfusion_s": shot.preinfusion_s,
                 "pause_s": shot.pause_s,

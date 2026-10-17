@@ -29,14 +29,13 @@ from core.calibration import bean_offsets, fit_gamma, fit_setup
 
 # Unlike tests/_fixtures.MACHINE_18G, no basket size is known.
 MACHINE = MachineCaps(basket_size_g=None, temp_controllable=False)
-TARGET = target_for("espresso")
-BETA = beta_prior("espresso", K6)
+TARGET = target_for()
+BETA = beta_prior(K6)
 
 
 def _pull(clicks: float, dose_g: float, bean_id: int = 1) -> ShotRecord:
     sim = simulate_shot(clicks, K6, BedParams(dose_g=dose_g), dose_g * 2.0)
     return ShotRecord(
-        method="espresso",
         dose_g=dose_g,
         bean_id=bean_id,
         grind_clicks=clicks,
@@ -90,21 +89,13 @@ class TestFittingGamma(unittest.TestCase):
         self.assertIsNone(fitted)
         self.assertEqual(pairs, 0)
 
-    def test_pour_over_and_moka_have_no_dose_term(self) -> None:
-        shots = [_pull(c, d) for c, d in ((36.0, 16.0), (40.0, 18.0), (44.0, 20.0))]
-        pourover = [replace(s, method="pourover", water_g=s.yield_g) for s in shots]
-        calibration = fit_setup(
-            pourover, "pourover", K6, beta_prior("pourover", K6), bean_id=1
-        )
-        self.assertEqual(calibration.gamma, 0.0)
-
 
 class TestTheDoseNoLongerHidesInTheBeanOffset(unittest.TestCase):
     def test_two_identical_coffees_dosed_differently_get_the_same_offset(self) -> None:
         """The reference-history confound: one bag always 18 g, one always 16 g."""
         shots = [_pull(c, 18.0, bean_id=1) for c in (36.0, 39.0, 42.0)]
         shots += [_pull(c, 16.0, bean_id=2) for c in (36.0, 39.0, 42.0)]
-        calibration = fit_setup(shots, "espresso", K6, BETA, bean_id=1)
+        calibration = fit_setup(shots, K6, BETA, bean_id=1)
         offsets = calibration.bean_offsets
         self.assertLess(abs(offsets[1] - offsets[2]), 0.02)
 
@@ -136,7 +127,6 @@ class TestBedDepthNotGrams(unittest.TestCase):
                 sim = simulate_shot(clicks, K6, bed, bed.dose_g * 2.0)
                 shots.append(
                     ShotRecord(
-                        method="espresso",
                         dose_g=bed.dose_g,
                         bean_id=bean_id,
                         grind_clicks=clicks,
@@ -145,12 +135,12 @@ class TestBedDepthNotGrams(unittest.TestCase):
                         roast_level_ord=roast,
                     )
                 )
-        offsets = fit_setup(shots, "espresso", K6, BETA, bean_id=1).bean_offsets
+        offsets = fit_setup(shots, K6, BETA, bean_id=1).bean_offsets
         self.assertLess(abs(offsets[1] - offsets[2]), 0.03)
 
         # Reading grams as depth would call the dark coffee a faster one.
         grams_only = [replace(s, roast_level_ord=None) for s in shots]
-        wrong = fit_setup(grams_only, "espresso", K6, BETA, bean_id=1).bean_offsets
+        wrong = fit_setup(grams_only, K6, BETA, bean_id=1).bean_offsets
         self.assertGreater(abs(wrong[1] - wrong[2]), 0.05)
 
     def test_a_new_dark_coffee_differs_only_by_its_smaller_drink(self) -> None:

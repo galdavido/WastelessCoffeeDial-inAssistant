@@ -18,7 +18,6 @@ def classify_data_quality(
     grind_clicks: float | None,
     time_s: int | None,
     yield_g: float | None,
-    water_g: float | None,
     rating: int | None,
     taste_axis: str | None,
 ) -> str:
@@ -31,7 +30,7 @@ def classify_data_quality(
     complete = (
         grind_clicks is not None
         and time_s is not None
-        and (yield_g is not None or water_g is not None)
+        and yield_g is not None
         and has_outcome
     )
     return "measured" if complete else "partial"
@@ -83,7 +82,6 @@ def resolve_log_values(
             grind_clicks=grind_clicks,
             time_s=time_s,
             yield_g=yield_g,
-            water_g=None,
             rating=rating,
             taste_axis=None,
         ),
@@ -91,14 +89,13 @@ def resolve_log_values(
 
 
 def new_shot(owner: str, bean_id: int, setup: BrewSetup, **fields: Any) -> DialInLog:
-    """A shot row logged on `setup`: its equipment and method are the setup's."""
+    """A shot row logged on `setup`: its equipment is the setup's."""
     return DialInLog(
         owner=owner,
         bean_id=bean_id,
         grinder_id=setup.grinder_id,
         machine_id=setup.machine_id,
         setup_id=setup.id,
-        brew_method=setup.method,
         **fields,
     )
 
@@ -176,7 +173,6 @@ def save_shot(db: Any, owner: str, setup: BrewSetup, body: FeedbackRequest) -> B
             # Whatever the user actually measured; anything they left blank
             # stays None rather than being filled with a default.
             yield_g=body.yield_g,
-            water_g=body.water_g,
             time_s=time_s,
             taste_axis=body.taste_axis,
             astringent=body.astringent,
@@ -188,7 +184,6 @@ def save_shot(db: Any, owner: str, setup: BrewSetup, body: FeedbackRequest) -> B
                 grind_clicks=grind_clicks,
                 time_s=time_s,
                 yield_g=body.yield_g,
-                water_g=body.water_g,
                 rating=None,
                 taste_axis=body.taste_axis,
             ),

@@ -19,7 +19,6 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
-Method = Literal["espresso", "pourover", "moka"]
 TasteAxis = Literal["very_sour", "sour", "balanced", "bitter", "very_bitter"]
 ConstantKind = Literal["PHYSICS", "LITERATURE", "CALIBRATED", "HEURISTIC"]
 # Where a recipe's numbers came from. "history" and "calibrated" mean a
@@ -60,39 +59,13 @@ CONSTANTS: dict[str, Constant] = {
     ),
     "kozeny_carman_denominator": Constant(180.0, "dimensionless", "PHYSICS", "#kozeny"),
     # --- literature: espresso -------------------------------------------
-    "espresso_ratio_aim": Constant(2.0, "ratio", "LITERATURE", "#ratio-espresso"),
-    "espresso_ratio_lo": Constant(1.8, "ratio", "LITERATURE", "#ratio-espresso"),
-    "espresso_ratio_hi": Constant(2.5, "ratio", "LITERATURE", "#ratio-espresso"),
-    "espresso_time_lo": Constant(25.0, "s", "LITERATURE", "#ratio-espresso"),
-    "espresso_time_hi": Constant(30.0, "s", "LITERATURE", "#ratio-espresso"),
-    "espresso_temp_lo": Constant(90.5, "C", "LITERATURE", "#ratio-espresso"),
-    "espresso_temp_hi": Constant(96.0, "C", "LITERATURE", "#ratio-espresso"),
-    "ristretto_ratio_aim": Constant(1.25, "ratio", "LITERATURE", "#ratio-ristretto"),
-    "ristretto_ratio_lo": Constant(1.0, "ratio", "LITERATURE", "#ratio-ristretto"),
-    "ristretto_ratio_hi": Constant(1.5, "ratio", "LITERATURE", "#ratio-ristretto"),
-    "ristretto_time_lo": Constant(20.0, "s", "LITERATURE", "#ratio-ristretto"),
-    "ristretto_time_hi": Constant(28.0, "s", "LITERATURE", "#ratio-ristretto"),
-    "lungo_ratio_aim": Constant(2.75, "ratio", "LITERATURE", "#ratio-lungo"),
-    "lungo_ratio_lo": Constant(2.5, "ratio", "LITERATURE", "#ratio-lungo"),
-    "lungo_ratio_hi": Constant(3.0, "ratio", "LITERATURE", "#ratio-lungo"),
-    "lungo_time_lo": Constant(28.0, "s", "LITERATURE", "#ratio-lungo"),
-    "lungo_time_hi": Constant(36.0, "s", "LITERATURE", "#ratio-lungo"),
-    # --- literature: pour-over and moka ----------------------------------
-    "pourover_ratio_aim": Constant(16.0, "ratio", "LITERATURE", "#ratio-pourover"),
-    "pourover_ratio_lo": Constant(15.0, "ratio", "LITERATURE", "#ratio-pourover"),
-    "pourover_ratio_hi": Constant(17.0, "ratio", "LITERATURE", "#ratio-pourover"),
-    "pourover_time_lo": Constant(165.0, "s", "LITERATURE", "#ratio-pourover"),
-    "pourover_time_hi": Constant(195.0, "s", "LITERATURE", "#ratio-pourover"),
-    "pourover_temp_lo": Constant(92.0, "C", "LITERATURE", "#ratio-pourover"),
-    "pourover_temp_hi": Constant(96.0, "C", "LITERATURE", "#ratio-pourover"),
-    "moka_ratio_aim": Constant(8.0, "ratio", "LITERATURE", "#ratio-moka"),
-    "moka_ratio_lo": Constant(7.0, "ratio", "LITERATURE", "#ratio-moka"),
-    "moka_ratio_hi": Constant(10.0, "ratio", "LITERATURE", "#ratio-moka"),
-    "moka_temp_lo": Constant(90.0, "C", "LITERATURE", "#ratio-moka"),
-    "moka_temp_hi": Constant(96.0, "C", "LITERATURE", "#ratio-moka"),
-    "moka_choked_time_s": Constant(
-        480.0, "s", "LITERATURE", "#ratio-moka", "beyond this the pot is choked"
-    ),
+    "ratio_aim": Constant(2.0, "ratio", "LITERATURE", "#ratio-espresso"),
+    "ratio_lo": Constant(1.8, "ratio", "LITERATURE", "#ratio-espresso"),
+    "ratio_hi": Constant(2.5, "ratio", "LITERATURE", "#ratio-espresso"),
+    "time_lo": Constant(25.0, "s", "LITERATURE", "#ratio-espresso"),
+    "time_hi": Constant(30.0, "s", "LITERATURE", "#ratio-espresso"),
+    "temp_lo": Constant(90.5, "C", "LITERATURE", "#ratio-espresso"),
+    "temp_hi": Constant(96.0, "C", "LITERATURE", "#ratio-espresso"),
     # --- literature: other ------------------------------------------------
     "degas_rest_days": Constant(7.0, "days", "LITERATURE", "#degassing"),
     "temp_light_lo": Constant(94.0, "C", "LITERATURE", "#temp-by-roast"),
@@ -102,8 +75,7 @@ CONSTANTS: dict[str, Constant] = {
     "temp_dark_lo": Constant(90.5, "C", "LITERATURE", "#temp-by-roast"),
     "temp_dark_hi": Constant(92.5, "C", "LITERATURE", "#temp-by-roast"),
     # --- calibrated -------------------------------------------------------
-    "d_ref_espresso_um": Constant(300.0, "um", "CALIBRATED", "#beta-prior"),
-    "d_ref_pourover_um": Constant(700.0, "um", "CALIBRATED", "#beta-prior"),
+    "d_ref_um": Constant(300.0, "um", "CALIBRATED", "#beta-prior"),
     "beta_prior_unknown_grinder": Constant(
         -0.06,
         "per_click",
@@ -129,8 +101,7 @@ CONSTANTS: dict[str, Constant] = {
         "the dose the law's intercept is quoted at; a centring choice that "
         "changes no prediction",
     ),
-    "kappa_espresso": Constant(4.0, "shots", "HEURISTIC", "#shrinkage"),
-    "kappa_pourover": Constant(8.0, "shots", "HEURISTIC", "#shrinkage"),
+    "kappa": Constant(4.0, "shots", "HEURISTIC", "#shrinkage"),
     "kappa_bean": Constant(2.0, "shots", "HEURISTIC", "#shrinkage"),
     "kappa_dose": Constant(
         4.0,
@@ -306,8 +277,6 @@ CONSTANTS: dict[str, Constant] = {
     ),
     "basket_fill_lo": Constant(0.75, "fraction", "HEURISTIC", "#limits"),
     "basket_fill_hi": Constant(1.05, "fraction", "HEURISTIC", "#limits"),
-    "confidence_cap_pourover": Constant(0.6, "fraction", "HEURISTIC", "#method-levers"),
-    "confidence_cap_moka": Constant(0.4, "fraction", "HEURISTIC", "#method-levers"),
 }
 
 
@@ -355,15 +324,13 @@ class MachineCaps:
 
 @dataclass(frozen=True)
 class ShotRecord:
-    """One measured shot, method-normalised. Only 'measured' rows belong here."""
+    """One measured espresso shot. Only 'measured' rows belong here."""
 
-    method: Method
     dose_g: float
     setup_id: int | None = None
     bean_id: int | None = None
     grind_clicks: float | None = None
     yield_g: float | None = None
-    water_g: float | None = None
     time_s: float | None = None
     taste_axis: TasteAxis | None = None
     astringent: bool | None = None
@@ -384,97 +351,53 @@ class ShotRecord:
 
 @dataclass(frozen=True)
 class Target:
-    """Target band for one method/style."""
+    """The espresso target band."""
 
     ratio_lo: float
     ratio_hi: float
     ratio_aim: float
-    time_lo: float | None
-    time_hi: float | None
+    time_lo: float
+    time_hi: float
     temp_lo: float
     temp_hi: float
 
     @property
-    def tr_lo(self) -> float | None:
+    def tr_lo(self) -> float:
         """Target band expressed as normalised time. See docs/science.md#normalised-time."""
-        return None if self.time_lo is None else self.time_lo / self.ratio_aim
+        return self.time_lo / self.ratio_aim
 
     @property
-    def tr_hi(self) -> float | None:
-        return None if self.time_hi is None else self.time_hi / self.ratio_aim
+    def tr_hi(self) -> float:
+        return self.time_hi / self.ratio_aim
 
 
-TARGETS: dict[str, Target] = {
-    "espresso": Target(
-        value_of("espresso_ratio_lo"),
-        value_of("espresso_ratio_hi"),
-        value_of("espresso_ratio_aim"),
-        value_of("espresso_time_lo"),
-        value_of("espresso_time_hi"),
-        value_of("espresso_temp_lo"),
-        value_of("espresso_temp_hi"),
-    ),
-    "ristretto": Target(
-        value_of("ristretto_ratio_lo"),
-        value_of("ristretto_ratio_hi"),
-        value_of("ristretto_ratio_aim"),
-        value_of("ristretto_time_lo"),
-        value_of("ristretto_time_hi"),
-        value_of("espresso_temp_lo"),
-        value_of("espresso_temp_hi"),
-    ),
-    "lungo": Target(
-        value_of("lungo_ratio_lo"),
-        value_of("lungo_ratio_hi"),
-        value_of("lungo_ratio_aim"),
-        value_of("lungo_time_lo"),
-        value_of("lungo_time_hi"),
-        value_of("espresso_temp_lo"),
-        value_of("espresso_temp_hi"),
-    ),
-    "pourover": Target(
-        value_of("pourover_ratio_lo"),
-        value_of("pourover_ratio_hi"),
-        value_of("pourover_ratio_aim"),
-        value_of("pourover_time_lo"),
-        value_of("pourover_time_hi"),
-        value_of("pourover_temp_lo"),
-        value_of("pourover_temp_hi"),
-    ),
-    # Moka has no target time: brew time is set by stove heat input, not by
-    # bed permeability, so claiming one would be dishonest.
-    "moka": Target(
-        value_of("moka_ratio_lo"),
-        value_of("moka_ratio_hi"),
-        value_of("moka_ratio_aim"),
-        None,
-        None,
-        value_of("moka_temp_lo"),
-        value_of("moka_temp_hi"),
-    ),
-}
+ESPRESSO = Target(
+    value_of("ratio_lo"),
+    value_of("ratio_hi"),
+    value_of("ratio_aim"),
+    value_of("time_lo"),
+    value_of("time_hi"),
+    value_of("temp_lo"),
+    value_of("temp_hi"),
+)
 
 
-def target_for(
-    method: Method, style: str | None = None, roast_level_ord: int | None = None
-) -> Target:
-    """Target band for a method, optionally an espresso style (ristretto/lungo).
+def target_for(roast_level_ord: int | None = None) -> Target:
+    """The espresso target band, its time moved for the coffee's roast.
 
-    With the coffee's roast, the time band moves with it; see `for_roast`.
+    See `for_roast`.
     """
-    if method == "espresso" and style in ("ristretto", "lungo"):
-        return for_roast(TARGETS[style], roast_level_ord)
-    return for_roast(TARGETS[method], roast_level_ord)
+    return for_roast(ESPRESSO, roast_level_ord)
 
 
 def for_roast(target: Target, roast_level_ord: int | None) -> Target:
     """The time band moved for this coffee's roast. docs/science.md#roast-time-modifier.
 
     Lighter roasts a touch longer, darker a touch shorter, split at the same
-    roast levels as the temperature bands. An unknown roast, and a method with
-    no time band (moka), keep the band as it is.
+    roast levels as the temperature bands. An unknown roast keeps the band as
+    it is.
     """
-    if target.time_lo is None or target.time_hi is None or roast_level_ord is None:
+    if roast_level_ord is None:
         return target
     step = value_of("roast_time_modifier_s")
     if roast_level_ord <= 2:
@@ -494,16 +417,10 @@ def for_roast(target: Target, roast_level_ord: int | None) -> Target:
 
 
 def brew_ratio(shot: ShotRecord) -> float | None:
-    """Beverage-out per dry gram for espresso; water-in per dry gram otherwise."""
-    if shot.dose_g <= 0:
+    """Beverage out per dry gram."""
+    if shot.dose_g <= 0 or shot.yield_g is None or shot.yield_g <= 0:
         return None
-    numerator = shot.yield_g if shot.method == "espresso" else shot.water_g
-    # Fall back to whichever mass was actually recorded.
-    if numerator is None:
-        numerator = shot.water_g if shot.method == "espresso" else shot.yield_g
-    if numerator is None or numerator <= 0:
-        return None
-    return numerator / shot.dose_g
+    return shot.yield_g / shot.dose_g
 
 
 def normalised_time(shot: ShotRecord) -> float | None:
@@ -527,20 +444,12 @@ def taste_offset(taste: TasteAxis | None) -> int | None:
 # --------------------------------------------------------------------------
 
 
-def beta_prior(method: Method, caps: GrinderCaps) -> float | None:
-    """d ln(T_r) / d click, from Darcy + Kozeny-Carman.
-
-    None for moka: brew time there is set by stove heat, not permeability, so
-    grind must never be solved from time. See docs/science.md#beta-law.
-    """
-    if method == "moka":
-        return None
+def beta_prior(caps: GrinderCaps) -> float:
+    """d ln(T_r) / d click, from Darcy + Kozeny-Carman. See docs/science.md#beta-law."""
     if caps.um_per_click is None:
         # Magnitude only; the dial direction supplies the sign, as below.
         return abs(value_of("beta_prior_unknown_grinder")) * caps.finer_sign
-    d_ref = value_of(
-        "d_ref_espresso_um" if method == "espresso" else "d_ref_pourover_um"
-    )
+    d_ref = value_of("d_ref_um")
     exponent = value_of("kozeny_carman_exponent")
     magnitude = exponent * caps.um_per_click / d_ref
     # Sign follows the dial: on a 'lower_is_finer' grinder, turning the number
@@ -549,7 +458,7 @@ def beta_prior(method: Method, caps: GrinderCaps) -> float | None:
     return magnitude * caps.finer_sign
 
 
-def cold_start_clicks(caps: GrinderCaps, method: Method) -> float | None:
+def cold_start_clicks(caps: GrinderCaps) -> float | None:
     """Where to start on a grinder we have never measured a shot on.
 
     Hand grinders are zeroed at burr contact, so the dial reads out roughly
@@ -563,11 +472,9 @@ def cold_start_clicks(caps: GrinderCaps, method: Method) -> float | None:
     um_per_click there is no way to locate the dial, so this returns None and
     the caller abstains rather than guessing. See docs/science.md#cold-start.
     """
-    if method == "moka" or caps.um_per_click is None or caps.um_per_click <= 0:
+    if caps.um_per_click is None or caps.um_per_click <= 0:
         return None
-    d_ref = value_of(
-        "d_ref_espresso_um" if method == "espresso" else "d_ref_pourover_um"
-    )
+    d_ref = value_of("d_ref_um")
     estimate = d_ref / caps.um_per_click
     if caps.finer_sign > 0:
         # On a higher-is-finer dial the scale runs the other way.
@@ -640,7 +547,7 @@ def dose_term(dose_g: float | None, roast_level_ord: int | None, gamma: float) -
     a lighter dose at the *same* depth still makes a smaller drink at the same
     ratio, and a shorter shot. Within one coffee the second term is a constant
     and cancels; across roasts it is the part of the dose that is not depth.
-    Zero when the method has no dose term.
+    Zero when gamma is zero: the dose term is switched off.
     """
     if not gamma or not dose_g or dose_g <= 0:
         return 0.0
@@ -669,8 +576,8 @@ def clicks_for_target(
     from the last shot would be correcting from a *different* coffee, which is
     what made every bean on a setup come back with the same number.
 
-    Returns None when the setup has no fitted intercept or no slope -- moka,
-    or a grinder nothing has been measured on -- so the caller can fall back
+    Returns None when the setup has no fitted intercept or no slope -- a
+    grinder nothing has been measured on -- so the caller can fall back
     to the cold start instead of solving with a term it does not have.
     """
     if alpha is None or not beta or tr_target <= 0:
@@ -898,12 +805,7 @@ def channeling_signs(
         sour = s.taste_axis in ("sour", "very_sour")
         # 3. Long *and* sour: water spent a long time in the basket and still
         #    under-extracted, so it was not passing through the coffee.
-        if (
-            sour
-            and target is not None
-            and target.tr_hi is not None
-            and tr > target.tr_hi
-        ):
+        if sour and target is not None and tr > target.tr_hi:
             signs.append(
                 ChannelingSign(
                     s.grind_clicks,
@@ -1070,11 +972,9 @@ def _preinfuses_consistently(shots: Sequence[ShotRecord]) -> bool:
 class Recipe:
     """What the engine recommends. Every number here is arithmetic, not prose."""
 
-    method: Method
     dose_g: float
     grind_clicks: float | None = None
     yield_g: float | None = None
-    water_g: float | None = None
     brew_temp_c: float | None = None
     # The time to aim for, as a band: anything inside it is on target. The
     # grind is solved for its middle. Equal ends when the shot's own time is
@@ -1106,7 +1006,6 @@ class Recipe:
             self.dose_g,
             self.grind_clicks,
             self.yield_g,
-            self.water_g,
             self.brew_temp_c,
             self.target_time_lo_s,
             self.target_time_s,
@@ -1175,7 +1074,7 @@ def correct(
     ``gamma`` is the law's dose exponent (docs/science.md#dose-term). The
     anchor's time is carried to the new dose with it before anything is
     compared, so a dose change moves the grind by exactly what it is expected
-    to do to the shot. Zero means the law has no dose term for this method.
+    to do to the shot. Zero switches the dose term off.
 
     ``replicates`` are this coffee's other shots. Those at the last shot's
     setting and dose, prepared the same way, are averaged with it, and a new
@@ -1187,7 +1086,7 @@ def correct(
     dose = last.dose_g if dose_g is None else dose_g
     dose_changed = abs(dose - last.dose_g) >= value_of("dose_pair_min_diff_g")
     if dose_changed and not gamma:
-        # No dose term for this method, so the setting below is still solved
+        # No dose term, so the setting below is still solved
         # for the anchor's dose. Say so rather than let the time move without
         # warning.
         notes.append(
@@ -1228,15 +1127,9 @@ def correct(
 
     def build(**overrides: object) -> Recipe:
         base: dict[str, object] = {
-            "method": last.method,
             "dose_g": dose,
             "grind_clicks": grind,
-            "yield_g": round(target.ratio_aim * dose, 1)
-            if last.method == "espresso"
-            else None,
-            "water_g": round(target.ratio_aim * dose, 1)
-            if last.method != "espresso"
-            else None,
+            "yield_g": round(target.ratio_aim * dose, 1),
             "brew_temp_c": temp,
             "target_time_lo_s": target.time_lo,
             "target_time_s": target.time_hi,
@@ -1255,11 +1148,9 @@ def correct(
         )
         return build()
 
-    # 2. Time out of band -> grind is the lever. Espresso and pour-over only:
-    #    for moka, brew time is stove heat, not grind.
-    if beta is not None and tr is not None and target.tr_lo is not None:
+    # 2. Time out of band -> grind is the lever.
+    if beta is not None and tr is not None:
         tr_lo, tr_hi = target.tr_lo, target.tr_hi
-        assert tr_hi is not None
         if fresh:
             widen = value_of("fresh_band_widening")
             centre = (tr_lo + tr_hi) / 2
@@ -1350,14 +1241,7 @@ def correct(
                     "tasted sour with the timing on target, so let it run a "
                     "little longer rather than changing the grind"
                 )
-                return build(
-                    yield_g=round(longer * dose, 1)
-                    if last.method == "espresso"
-                    else None,
-                    water_g=round(longer * dose, 1)
-                    if last.method != "espresso"
-                    else None,
-                )
+                return build(yield_g=round(longer * dose, 1))
             if machine.temp_controllable and temp is not None and temp < temp_hi:
                 notes.append(
                     "still sour at the long end of the ratio range, so extract a "
@@ -1388,10 +1272,7 @@ def correct(
                 "rather than over-extraction -- shortening the shot instead of "
                 "touching the grind"
             )
-            return build(
-                yield_g=round(shorter * dose, 1) if last.method == "espresso" else None,
-                water_g=round(shorter * dose, 1) if last.method != "espresso" else None,
-            )
+            return build(yield_g=round(shorter * dose, 1))
         if grind is not None:
             notes.append(
                 "drying and bitter with the timing on target: one step coarser"
@@ -1403,10 +1284,7 @@ def correct(
         shorter = max(target.ratio_aim * 0.9, target.ratio_lo)
         if ratio is None or ratio > shorter + 0.05:
             notes.append("drying and bitter: over-extracted, so stop it a bit sooner")
-            return build(
-                yield_g=round(shorter * dose, 1) if last.method == "espresso" else None,
-                water_g=round(shorter * dose, 1) if last.method != "espresso" else None,
-            )
+            return build(yield_g=round(shorter * dose, 1))
         if machine.temp_controllable and temp is not None and temp > temp_lo:
             notes.append("drying and bitter: over-extracted, so down 1 C")
             return build(brew_temp_c=max(temp - 1.0, temp_lo))
@@ -1538,7 +1416,7 @@ def dose_reduction(
     a markedly lighter dose has been tried on this coffee: from then on its
     shots are the evidence, and the dose term lets the law learn from them.
     """
-    if recipe.method != "espresso" or not bean_history:
+    if not bean_history:
         return None
     if "grind_channeling_floor" not in recipe.guardrails_hit:
         return None
@@ -1615,7 +1493,6 @@ class PrepExperiment:
 
 def preinfusion_experiment(
     shots: Sequence[ShotRecord],
-    method: Method,
     grind_is_stuck: bool,
 ) -> PrepExperiment | None:
     """Propose a longer pre-infusion when the grind has nothing left to give.
@@ -1637,10 +1514,6 @@ def preinfusion_experiment(
     Returns None when the experiment does not apply or has already gathered
     enough shots, after which `prep_advice` compares the two durations.
     """
-    # Espresso only: this is about pressurised flow through a puck. A
-    # pour-over bloom is a different mechanism with a different purpose.
-    if method != "espresso":
-        return None
     if not grind_is_stuck:
         return None
 
@@ -1932,21 +1805,17 @@ def apply_guardrails(
             dose = min(max(dose, lo), hi)
             hits.append("dose_basket_capacity")
             notes.append(f"your basket holds about {machine.basket_size_g:g} g")
-    elif recipe.method == "espresso":
-        # An espresso basket range. A dripper or a moka funnel of unknown size
-        # has no such bound, and clamping a 30 g pour-over to 22 g is wrong.
+    else:
+        # Without a recorded basket: the range of espresso baskets.
         lo, hi = value_of("dose_min_g"), value_of("dose_max_g")
         if dose < lo or dose > hi:
             dose = min(max(dose, lo), hi)
             hits.append("dose_plausible_range")
-    water_g = recipe.water_g
     if dose != asked_dose and asked_dose > 0:
         # Keep the ratio: the output was sized for the dose that was asked for.
         scale = dose / asked_dose
         if yield_g is not None:
             yield_g = round(yield_g * scale, 1)
-        if water_g is not None:
-            water_g = round(water_g * scale, 1)
 
     # --- ratio / yield -------------------------------------------------
     if target is not None and yield_g is not None and dose > 0:
@@ -1980,7 +1849,6 @@ def apply_guardrails(
         dose_g=round(dose, 1),
         grind_clicks=grind,
         yield_g=yield_g,
-        water_g=water_g,
         brew_temp_c=temp,
         guardrails_hit=tuple(hits),
         notes=tuple(notes),

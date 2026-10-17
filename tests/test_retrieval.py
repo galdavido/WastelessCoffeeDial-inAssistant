@@ -54,7 +54,6 @@ class TestSimilarity(unittest.TestCase):
 class TestColdStartCascade(unittest.TestCase):
     def _shot(self, clicks: float, bean_id: int = 1) -> ShotRecord:
         return ShotRecord(
-            method="espresso",
             dose_g=18.0,
             bean_id=bean_id,
             grind_clicks=clicks,
@@ -88,7 +87,7 @@ class TestColdStartCascade(unittest.TestCase):
         self.assertEqual(classify_tier(shots, bean_id=1, has_hardware_caps=True), "B")
 
     def test_incomplete_shots_are_ignored(self) -> None:
-        partial = ShotRecord(method="espresso", dose_g=18.0, grind_clicks=33.0)
+        partial = ShotRecord(dose_g=18.0, grind_clicks=33.0)
         self.assertEqual(
             classify_tier([partial], bean_id=1, has_hardware_caps=False), "E"
         )

@@ -21,7 +21,7 @@
 
   <!-- ?v= must match the sw.js CACHE version. A changed URL cannot be served
        from a stale cache entry, so CSS and JS can never fall out of sync. -->
-  <link rel="stylesheet" href="/static/style.css?v=49" />
+  <link rel="stylesheet" href="/static/style.css?v=50" />
 </head>
 <body>
   <div id="app">
@@ -40,7 +40,6 @@
              means something different on each. Tap to switch. -->
         <button class="chip setup-chip" id="setup-chip" type="button" aria-haspopup="dialog">
           <span id="setup-chip-name">—</span>
-          <span class="setup-chip-method" id="setup-chip-method"></span>
           <svg class="setup-chip-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <!-- Which bundle you are actually running. Tap for detail, or to
@@ -276,7 +275,7 @@
                     <line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
                   </svg>
                   <div>
-                    <span class="gear-role">Machine / brewer</span>
+                    <span class="gear-role">Espresso machine</span>
                     <span class="gear-name" id="active-machine-name">—</span>
                   </div>
                 </div>
@@ -588,22 +587,12 @@
           <div class="form-section-title">Add / edit setup</div>
           <div class="form-grid">
             <label class="field"><span class="field-label">Setup name</span>
-              <input class="input" id="setup-form-name" placeholder="e.g. Home espresso, Work, V60" /></label>
+              <input class="input" id="setup-form-name" placeholder="e.g. Home espresso, Work" /></label>
             <label class="field"><span class="field-label">Grinder</span>
               <select class="input" id="setup-form-grinder-id"></select></label>
-            <label class="field"><span class="field-label">Machine / brewer</span>
+            <label class="field"><span class="field-label">Espresso machine</span>
               <select class="input" id="setup-form-machine-id"></select></label>
-            <label class="field"><span class="field-label">Brew method</span>
-              <select class="input" id="setup-form-method">
-                <option value="">Auto (from brewer)</option>
-                <option value="espresso">Espresso</option>
-                <option value="pourover">Pour-over</option>
-                <option value="moka">Moka pot</option>
-              </select></label>
           </div>
-          <p class="dialog-hint">The method sets the target ratio and time, and
-            which levers are worth changing. Moka time is set by the stove, not
-            the grind, so the engine won't pretend to control it.</p>
         </div>
       </div>
       <div class="dialog-actions">
@@ -629,8 +618,6 @@
               <select class="input" id="equipment-form-type">
                 <option value="grinder">Grinder</option>
                 <option value="espresso_machine">Espresso Machine</option>
-                <option value="filter">Filter Brewer</option>
-                <option value="other">Other</option>
               </select></label>
             <label class="field"><span class="field-label">Brand</span>
               <input class="input" id="equipment-form-brand" placeholder="e.g. Kingrinder" /></label>
@@ -691,6 +678,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=49"></script>
+  <script src="/static/app.js?v=50"></script>
 </body>
 </html>

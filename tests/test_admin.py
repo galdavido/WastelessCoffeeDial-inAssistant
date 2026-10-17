@@ -29,7 +29,6 @@ from core.admin_stats import (
     dashboard,
     feature_usage,
     fleet_summary,
-    method_mix,
     per_owner,
     weekly_activity,
 )
@@ -226,26 +225,6 @@ class TestAdminStatsAgainstTheDatabase(unittest.TestCase):
 
         self.assertIsInstance(self.summary()["shots_change_pct"], float)
 
-    def test_method_mix_counts_each_method_and_names_unspecified(self) -> None:
-        from database.database import SessionLocal
-
-        def mix() -> dict[str, int]:
-            with SessionLocal() as db:
-                return {m["method"]: m["shots"] for m in method_mix(db, self.DAYS)}
-
-        before = mix()
-        seeded = Seeded()
-        seeded.add_shot(brew_method="moka")
-        seeded.add_shot(brew_method="moka")
-        seeded.add_shot(brew_method=None)
-        after = mix()
-
-        self.assertEqual(after.get("moka", 0) - before.get("moka", 0), 2)
-        self.assertEqual(after.get("unspecified", 0) - before.get("unspecified", 0), 1)
-        with SessionLocal() as db:
-            shares = [m["share_pct"] for m in method_mix(db, self.DAYS)]
-        self.assertAlmostEqual(sum(shares), 100.0, delta=0.6)
-
     def test_weekly_activity_puts_this_weeks_shots_in_this_week(self) -> None:
         from database.database import SessionLocal
 
@@ -289,7 +268,7 @@ class TestAdminStatsAgainstTheDatabase(unittest.TestCase):
 
         self.assertEqual(
             set(data),
-            {"summary", "weekly", "methods", "usage", "people", "generated_at"},
+            {"summary", "weekly", "usage", "people", "generated_at"},
         )
 
     def test_no_section_carries_what_a_person_drinks(self) -> None:

@@ -144,49 +144,6 @@ function renderWeekly(weeks) {
   bindTip(host);
 }
 
-/* ── Method mix: three series, so a legend AND direct labels ────────────── */
-
-function renderMethods(methods) {
-  const host = $('chart-methods');
-  const total = methods.reduce((sum, m) => sum + m.shots, 0);
-  if (!total) {
-    host.innerHTML = '<p class="chart-empty">Nothing logged in this window.</p>';
-    return;
-  }
-  const hue = (i) => `var(--cat-${(i % 3) + 1})`;
-
-  const segs = methods.map((m, i) => {
-    const el = document.createElement('div');
-    el.className = 'mix-seg';
-    el.style.width = `${(m.shots / total) * 100}%`;
-    el.style.background = hue(i);
-    return el;
-  });
-  const bar = document.createElement('div');
-  bar.className = 'mix-bar';
-  segs.forEach((s) => bar.appendChild(s));
-
-  const legend = document.createElement('div');
-  legend.className = 'mix-legend';
-  methods.forEach((m, i) => {
-    const row = document.createElement('div');
-    row.className = 'mix-row';
-    const sw = document.createElement('span');
-    sw.className = 'mix-swatch';
-    sw.style.background = hue(i);
-    const name = document.createElement('span');
-    name.className = 'mix-name';
-    name.textContent = m.method;
-    const val = document.createElement('span');
-    val.className = 'mix-value';
-    val.textContent = `${pct(m.share_pct)} · ${m.shots}`;
-    row.append(sw, name, val);
-    legend.appendChild(row);
-  });
-
-  host.replaceChildren(bar, legend);
-}
-
 /* ── Sparkline: 12 weeks of one person's shots ──────────────────────────── */
 
 function sparkline(weekly, weeks) {
@@ -309,7 +266,6 @@ async function load() {
   $('admin-dash').hidden = false;
   renderKpis(data.summary);
   renderWeekly(data.weekly);
-  renderMethods(data.methods);
   renderUsage(data.usage);
   renderPeople(data.people, data.weekly);
   status.textContent = '';

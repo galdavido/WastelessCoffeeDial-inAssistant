@@ -41,7 +41,7 @@ class TestBacktestCli(unittest.TestCase):
         code, out = run_cli("--owner", seeded.owner)
 
         self.assertEqual(code, 0)
-        self.assertIn("Seeded  [espresso]  -- 2 measured shots", out)
+        self.assertIn("Seeded  -- 2 measured shots", out)
         metrics = [line for line in out.splitlines() if "INSUFFICIENT DATA (n=" in line]
         self.assertGreaterEqual(len(metrics), 2)
         self.assertEqual(len(metrics), len({line.split(":")[0] for line in metrics}))

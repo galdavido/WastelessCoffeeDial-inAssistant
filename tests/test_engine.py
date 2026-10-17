@@ -15,11 +15,11 @@ from core.brewing import beta_prior, fresh_note, target_for, value_of
 from core.calibration import fit_setup
 from core.engine import _first_shot_recipe
 
-TARGET = target_for("espresso")
+TARGET = target_for()
 
 
 def _first_shot(days: int | None) -> tuple:
-    calibration = fit_setup([], "espresso", K6, beta_prior("espresso", K6))
+    calibration = fit_setup([], K6, beta_prior(K6))
     bean = SimpleNamespace(
         id=1,
         roast_level_ord=3,
@@ -30,7 +30,6 @@ def _first_shot(days: int | None) -> tuple:
     return _first_shot_recipe(
         None,  # type: ignore[arg-type]
         "owner",
-        "espresso",
         TARGET,
         K6,
         MACHINE_18G,
